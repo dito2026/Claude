@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowDownToLine, Pencil, Plus, SlidersHorizontal } from 'lucide-react';
+import { ArrowDownToLine, Pencil, Plus, SlidersHorizontal, Smartphone } from 'lucide-react';
 import { useCollection } from '../data/hooks';
-import type { Product, ProductType, StockMovement } from '../lib/types';
+import type { PhoneUnit, Product, ProductType, StockMovement } from '../lib/types';
 import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
+import { RegisterUnitsModal, UnitsTab } from '../components/PhoneUnits';
 import { adjustStock, isLowStock, receiveStock, saveProduct, tracksStock, type ProductInput } from '../services/inventory';
 
 const TYPES: ProductType[] = ['REPUESTO', 'ACCESORIO', 'EQUIPO', 'SERVICIO'];
@@ -25,8 +26,11 @@ export const EMPTY_PRODUCT: ProductInput = {
 export function Inventory() {
   const { rows: products, loading } = useCollection<Product>('products');
   const movements = useCollection<StockMovement>('stockMovements').rows;
+  const phoneUnits = useCollection<PhoneUnit>('phoneUnits').rows;
+  const [registering, setRegistering] = useState<Product | null>(null);
+  const availableUnits = (pid: string) => phoneUnits.filter((u) => u.productId === pid && u.status === 'disponible').length;
   const { can } = useAuth();
-  const [tab, setTab] = useState<'productos' | 'kardex'>('productos');
+  const [tab, setTab] = useState<'productos' | 'celulares' | 'kardex'>('productos');
   const [q, setQ] = useState('');
   const [type, setType] = useState<ProductType | 'TODOS' | 'BAJO'>('TODOS');
   const [edit, setEdit] = useState<{ id?: string; data: ProductInput } | null>(null);
@@ -60,6 +64,7 @@ export function Inventory() {
       />
       <div className="tabs">
         <button className={tab === 'productos' ? 'active' : ''} onClick={() => setTab('productos')}>Productos</button>
+        <button className={tab === 'celulares' ? 'active' : ''} onClick={() => setTab('celulares')}>Celulares (IMEI)</button>
         <button className={tab === 'kardex' ? 'active' : ''} onClick={() => setTab('kardex')}>Kardex (movimientos)</button>
       </div>
 
@@ -85,13 +90,17 @@ export function Inventory() {
                           <td><span className="strong">{p.name}</span><small>{[p.brand, p.model, p.color].filter(Boolean).join(' · ')}</small></td>
                           <td><Badge tone="" >{p.type}</Badge></td>
                           <td className="num">{p.type === 'SERVICIO' ? <span className="faint">—</span> : !tracksStock(p) ? <Badge tone="info">Sin inventario</Badge> : (
-                            <Badge tone={p.stock <= 0 ? 'red' : isLowStock(p) ? 'warn' : 'ok'}>{p.stock}</Badge>
+                            <><Badge tone={p.stock <= 0 ? 'red' : isLowStock(p) ? 'warn' : 'ok'}>{p.stock}</Badge>
+                              {p.type === 'EQUIPO' && p.stock > availableUnits(p.id) && <small className="red">{p.stock - availableUnits(p.id)} sin IMEI</small>}</>
                           )}</td>
                           <td className="num">{money(p.cost)}</td>
                           <td className="num">{p.price ? money(p.price) : <span className="faint">según OT</span>}</td>
                           <td className="num">{margin === null ? '—' : `${margin}%`}</td>
                           <td className="right nowrap">
-                            {tracksStock(p) && can('inventory.receive') && (
+                            {p.type === 'EQUIPO' && can('inventory.receive') && (
+                              <button className="btn sm" title="Ingresar celulares con IMEI" onClick={() => setRegistering(p)}><Smartphone size={15} />Ingresar</button>
+                            )}
+                            {tracksStock(p) && p.type !== 'EQUIPO' && can('inventory.receive') && (
                               <button className="btn sm ghost" title="Entrada (compra)" onClick={() => setStockOp({ p, kind: 'entrada' })}><ArrowDownToLine size={15} /></button>
                             )}
                             {tracksStock(p) && can('inventory.edit') && (
@@ -110,6 +119,8 @@ export function Inventory() {
           </div>
         </>
       )}
+
+      {tab === 'celulares' && <UnitsTab />}
 
       {tab === 'kardex' && (
         <>
@@ -149,6 +160,7 @@ export function Inventory() {
 
       {edit && <ProductModal edit={edit} onClose={() => setEdit(null)} />}
       {stockOp && <StockModal {...stockOp} onClose={() => setStockOp(null)} />}
+      {registering && <RegisterUnitsModal product={registering} unregistered={Math.max(0, registering.stock - availableUnits(registering.id))} onClose={() => setRegistering(null)} />}
     </>
   );
 }
@@ -174,7 +186,10 @@ export function ProductModal({ edit, onClose, onSaved }: { edit: { id?: string; 
         <Field label="Modelo compatible"><input className="input" value={d.model} onChange={(e) => set('model', e.target.value)} /></Field>
         <Field label="Costo unitario"><MoneyInput value={d.cost} onChange={(v) => set('cost', v)} /></Field>
         <Field label={d.type === 'REPUESTO' ? 'Precio de venta (opcional)' : 'Precio de venta'}><MoneyInput value={d.price} onChange={(v) => set('price', v)} /></Field>
-        {d.type !== 'SERVICIO' && (
+        {d.type === 'EQUIPO' && (
+          <div className="alert info full">Celulares: se controlan uno por uno con su IMEI. El stock sube al ingresarlos («Ingresar» en la lista o una compra) y baja al venderlos escogiendo el IMEI.</div>
+        )}
+        {d.type !== 'SERVICIO' && d.type !== 'EQUIPO' && (
           <label className="checkbox full">
             <input type="checkbox" checked={d.trackStock !== false} onChange={(e) => set('trackStock', e.target.checked)} />
             Controlar inventario (descontar stock al vender o usar en reparación)
@@ -185,7 +200,7 @@ export function ProductModal({ edit, onClose, onSaved }: { edit: { id?: string; 
         )}
         {tracksStock(d) && (
           <>
-            {!edit.id && <Field label="Stock inicial"><input className="input num" type="number" min={0} value={d.stock} onChange={(e) => set('stock', Number(e.target.value))} /></Field>}
+            {!edit.id && d.type !== 'EQUIPO' && <Field label="Stock inicial"><input className="input num" type="number" min={0} value={d.stock} onChange={(e) => set('stock', Number(e.target.value))} /></Field>}
             <Field label="Stock mínimo (alerta)"><input className="input num" type="number" min={0} value={d.minStock} onChange={(e) => set('minStock', Number(e.target.value))} /></Field>
           </>
         )}

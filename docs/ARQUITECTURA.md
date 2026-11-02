@@ -205,9 +205,8 @@ La regla usa el documento `meta/bootstrap`, que solo se puede crear una vez.
 - Migración del historial. Las ventas, órdenes de taller y movimientos de caja anteriores se
   quedan en las hojas de cálculo; la app solo recibe los datos base (ver §10).
 
-1. Equipos por IMEI: compra, venta, garantía y el *historial clínico por IMEI*.
-2. Métricas avanzadas y libro fiscal de operaciones diarias (DIAN).
-3. Portal del cliente para consultar el estado de su OT con el número y el teléfono.
+1. Métricas avanzadas y libro fiscal de operaciones diarias (DIAN).
+2. Portal del cliente para consultar el estado de su OT con el número y el teléfono.
 
 ## 10. Importación de datos base
 
@@ -254,3 +253,19 @@ proveedor, ítems, total, `paymentType` contado/crédito, vencimiento, `paid`, `
 - **Artículo libre**: en el POS se puede vender una línea que no está en el catálogo (descripción,
   precio y costo); en una OT, un *repuesto libre* (`parts[].productId` vacío). No tocan inventario,
   pero el precio, el costo y la utilidad quedan en la factura y en la caja.
+
+## 13. Celulares por IMEI
+
+Los productos tipo `EQUIPO` siempre controlan inventario y se manejan **unidad por unidad**:
+
+- `phoneUnits/{IMEI}`: un documento por celular (IMEI 1 y 2, modelo, condición nuevo/usado, costo,
+  proveedor, compra, estado `disponible`/`vendido`, factura, cliente, precio y garantía).
+- `imeiIndex/{IMEI}`: reserva cada IMEI (principal y secundario). Como el id del documento es el
+  IMEI y la regla solo permite crearlo si no existe, **un IMEI no puede registrarse dos veces**.
+- Validación: IMEI de 15 dígitos con dígito de control (Luhn), o serial alfanumérico (iPad, etc.).
+- **Entrada:** solo con IMEI, en *Inventario → Ingresar* o en una compra a proveedor (un IMEI por
+  unidad). El stock suelto (stock inicial, entradas o ajustes al alza) está bloqueado para celulares.
+- **Venta:** en el POS se escoge el IMEI exacto (o se escribe o escanea en el buscador); la factura
+  rechaza celulares sin IMEI, IMEI vendidos o de otro modelo. Al vender se calcula la garantía con
+  los meses del producto. Anular la factura devuelve el equipo a *disponible*.
+- Los celulares no se pueden usar como repuesto de una orden de reparación.

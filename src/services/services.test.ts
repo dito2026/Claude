@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { backend } from '../data';
 import type { LocalBackend } from '../data/local';
-import type { CashMovement, Customer, Invoice, Product, RepairOrder, StockMovement } from '../lib/types';
+import type { CashMovement, Customer, Invoice, InvoiceItem, Product, RepairOrder, StockMovement } from '../lib/types';
 import { saveProduct, adjustStock, receiveStock } from './inventory';
 import { addDeposit, addPart, createOrder, removePart, orderTotal } from './orders';
 import { closeSession, expectedByMethod, openSession, addMovement } from './cash';
@@ -368,5 +368,86 @@ describe('venta sin inventario', () => {
     });
     expect(r.number).toBe(1);
     expect(await backend.list('stockMovements')).toHaveLength(0);
+  });
+});
+
+describe('celulares por IMEI', () => {
+  type Unit = import('../lib/types').PhoneUnit;
+  const phone = () => product({ sku: 'CEL-1', type: 'EQUIPO', name: 'iPhone 14 Pro Max 128GB', cost: 1350000, price: 1650000, stock: 5, warrantyMonths: 6 });
+  const IMEI_A = '358497893736757';
+  const IMEI_B = '359253622999425';
+
+  it('valida IMEI: 15 dígitos con dígito de control, o serial alfanumérico', async () => {
+    const { imeiError } = await import('./phones');
+    expect(imeiError(IMEI_A)).toBeNull();
+    expect(imeiError('SM57C36HGJT')).toBeNull();
+    expect(imeiError('358497893736758')).toMatch(/no es válido/);
+    expect(imeiError('123')).toMatch(/no es un IMEI|15 dígitos/);
+  });
+
+  it('el celular no entra con stock suelto: solo con IMEI, y el IMEI es único', async () => {
+    const { registerUnits } = await import('./phones');
+    const pid = await saveProduct(actor, phone());
+    expect(await stockOf(pid)).toBe(0); // el stock inicial se ignora
+    await expect(receiveStock(actor, pid, 1)).rejects.toThrow(/IMEI/);
+    await registerUnits(actor, pid, [{ imei: IMEI_A, condition: 'USADO' }], { cost: 0, supplierName: '', note: '', alreadyInStock: false });
+    expect(await stockOf(pid)).toBe(1);
+    await expect(
+      registerUnits(actor, pid, [{ imei: '358 4978 9373 6757', condition: 'NUEVO' }], { cost: 0, supplierName: '', note: '', alreadyInStock: false }),
+    ).rejects.toThrow(/ya está registrado/);
+    await expect(
+      registerUnits(actor, pid, [{ imei: IMEI_B, condition: 'NUEVO' }, { imei: IMEI_B, condition: 'NUEVO' }], { cost: 0, supplierName: '', note: '', alreadyInStock: false }),
+    ).rejects.toThrow(/repetido/);
+    expect(await stockOf(pid)).toBe(1);
+  });
+
+  it('se vende solo escogiendo un IMEI disponible; anular lo devuelve', async () => {
+    const { registerUnits } = await import('./phones');
+    const pid = await saveProduct(actor, phone());
+    await registerUnits(actor, pid, [{ imei: IMEI_A, condition: 'USADO' }], { cost: 1300000, supplierName: 'Nano', note: '', alreadyInStock: false });
+    await openSession(actor, 0);
+    const line = { productId: pid, description: 'iPhone 14 Pro Max 128GB', kind: 'producto' as const, qty: 1, unitPrice: 1650000, unitCost: 1300000 };
+    const sale = (items: InvoiceItem[]) => createInvoice(actor, {
+      customer: { name: 'Edwin', phone: '', document: '' }, items, discount: 0, taxRate: 0,
+      payments: [{ method: 'Efectivo', amount: 1650000 * items.length }], cashierName: 'T',
+    });
+    await expect(sale([line])).rejects.toThrow(/escogiendo el IMEI/);
+    const r = await sale([{ ...line, unitId: IMEI_A, imei: IMEI_A }]);
+    expect(await stockOf(pid)).toBe(0);
+    let u = (await backend.get<Unit>('phoneUnits', IMEI_A))!;
+    expect(u).toMatchObject({ status: 'vendido', invoiceNumber: 1, customerName: 'Edwin', salePrice: 1650000 });
+    expect(u.warrantyUntil).toBeTruthy();
+    await expect(sale([{ ...line, unitId: IMEI_A, imei: IMEI_A }])).rejects.toThrow(/ya fue vendido/);
+
+    await voidInvoice(actor, r.id, 'Devolución');
+    u = (await backend.get<Unit>('phoneUnits', IMEI_A))!;
+    expect(u.status).toBe('disponible');
+    expect(u.invoiceId).toBeFalsy();
+    expect(await stockOf(pid)).toBe(1);
+  });
+
+  it('compra de celulares exige un IMEI por unidad y los registra', async () => {
+    const { saveSupplier, createPurchase } = await import('./purchases');
+    const pid = await saveProduct(actor, phone());
+    const sid = await saveSupplier(actor, { name: 'Nano', nit: '', phone: '', termDays: 30, notes: '', active: true });
+    const supplier = (await backend.get<import('../lib/types').Supplier>('suppliers', sid))!;
+    const base = { supplier, paymentType: 'credito' as const, method: 'Efectivo', invoiceRef: '', note: '', updateCost: true };
+    await expect(createPurchase(actor, { ...base, items: [{ productId: pid, name: 'iPhone', qty: 2, unitCost: 1300000 }] }))
+      .rejects.toThrow(/IMEI de cada celular/);
+    await createPurchase(actor, {
+      ...base,
+      items: [{ productId: pid, name: 'iPhone', qty: 0, unitCost: 1300000, units: [{ imei: IMEI_A, condition: 'NUEVO' }, { imei: IMEI_B, condition: 'NUEVO' }] }],
+    });
+    expect(await stockOf(pid)).toBe(2);
+    const units = await backend.list<Unit>('phoneUnits');
+    expect(units.map((u) => u.imei).sort()).toEqual([IMEI_A, IMEI_B].sort());
+    expect(units[0]).toMatchObject({ supplierName: 'Nano', purchaseNumber: 1, cost: 1300000, status: 'disponible' });
+  });
+
+  it('los celulares no se usan como repuesto de una OT', async () => {
+    const pid = await saveProduct(actor, phone());
+    const c = await newCustomer();
+    const o = await newOrder(c);
+    await expect(addPart(actor, o.id, pid, 1)).rejects.toThrow(/IMEI en Facturación/);
   });
 });

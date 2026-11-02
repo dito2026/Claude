@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Ban, Minus, PenLine, Plus, Trash2, Wrench, X } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
-import type { Customer, Invoice, InvoiceItem, InvoiceItemKind, Payment, Product, RepairOrder } from '../lib/types';
+import type { Customer, Invoice, InvoiceItem, InvoiceItemKind, Payment, PhoneUnit, Product, RepairOrder } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
@@ -14,6 +14,8 @@ import { depositsTotal } from '../services/orders';
 import { customerRef } from '../services/orders';
 import { useSettings } from '../services/settings';
 import { tracksStock } from '../services/inventory';
+import { isPhone, normalizeImei } from '../services/phones';
+import { UnitPickerModal } from '../components/PhoneUnits';
 import type { CashState } from '../services/cash';
 
 export function Billing() {
@@ -72,7 +74,23 @@ function Pos() {
     [products, q],
   );
 
+  const phoneUnits = useCollection<PhoneUnit>('phoneUnits').rows;
+  const [picker, setPicker] = useState<Product | null>(null);
+  const addUnit = (u: PhoneUnit) => {
+    const p = products.find((x) => x.id === u.productId);
+    setItems((xs) => xs.some((x) => x.unitId === u.id) ? xs : [...xs, {
+      productId: u.productId, description: `${u.productName}${u.condition === 'USADO' ? ' (usado)' : ''}`, kind: 'producto',
+      qty: 1, unitPrice: p?.price ?? 0, unitCost: u.cost, imei: u.imei, unitId: u.id,
+    }]);
+  };
+  const imeiQuery = normalizeImei(q);
+  const imeiHits = imeiQuery.length >= 5
+    ? phoneUnits.filter((u) => u.status === 'disponible' && (u.imei.includes(imeiQuery) || (u.imei2 ?? '').includes(imeiQuery))
+      && !items.some((x) => x.unitId === u.id)).slice(0, 6)
+    : [];
+
   const add = (p: Product) => {
+    if (isPhone(p)) return setPicker(p); // los celulares se venden escogiendo el IMEI
     setItems((xs) => {
       const i = xs.findIndex((x) => x.productId === p.id && !x.stockAlreadyMoved);
       if (i >= 0) return xs.map((x, k) => (k === i ? { ...x, qty: x.qty + 1 } : x));
@@ -144,7 +162,7 @@ function Pos() {
           {catalog.map((p) => {
             const out = tracksStock(p) && p.stock <= 0;
             return (
-              <button key={p.id} className="product-tile" disabled={out || !p.price} onClick={() => add(p)}>
+              <button key={p.id} className="product-tile" disabled={out || (!p.price && !isPhone(p))} onClick={() => add(p)}>
                 <small className="faint mono">{p.sku} · {p.type}</small>
                 <span style={{ fontWeight: 500 }}>{p.name}</span>
                 <span className="faint" style={{ fontSize: 12 }}>{p.type === 'SERVICIO' ? 'Servicio' : tracksStock(p) ? `Stock ${p.stock}` : 'Sin inventario'}</span>
@@ -153,7 +171,18 @@ function Pos() {
             );
           })}
         </div>
-        {catalog.length === 0 && <Empty>No hay productos que coincidan.</Empty>}
+        {imeiHits.length > 0 && (
+          <div className="product-grid">
+            {imeiHits.map((u) => (
+              <button key={u.id} className="product-tile" style={{ borderColor: 'var(--red)' }} onClick={() => { addUnit(u); setQ(''); }}>
+                <small className="red mono">IMEI {u.imei}</small>
+                <span style={{ fontWeight: 500 }}>{u.productName}</span>
+                <span className="faint" style={{ fontSize: 12 }}>{u.condition}{u.color ? ` · ${u.color}` : ''}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {catalog.length === 0 && imeiHits.length === 0 && <Empty>No hay productos que coincidan.</Empty>}
       </div>
 
       <div className="card" style={{ position: 'sticky', top: 76 }}>
@@ -169,10 +198,11 @@ function Pos() {
                   <div key={i} className="list-row" style={{ padding: '10px 0', alignItems: 'flex-start' }}>
                     <div className="grow">
                       <div style={{ fontWeight: 500 }}>{it.description}</div>
+                      {it.imei && <small className="mono red" style={{ display: 'block' }}>IMEI {it.imei}</small>}
                       <small className="faint">{it.kind === 'repuesto' ? 'Repuesto de la OT' : it.kind === 'mano_obra' ? 'Mano de obra' : money(it.unitPrice) + ' c/u'}</small>
                       {over && <div className="red" style={{ fontSize: 12 }}>Solo hay {p!.stock} en stock</div>}
                     </div>
-                    {it.stockAlreadyMoved || it.kind === 'mano_obra' ? (
+                    {it.stockAlreadyMoved || it.kind === 'mano_obra' || it.unitId ? (
                       <span className="mono">{it.qty}</span>
                     ) : (
                       <div className="row gap-sm" style={{ flexWrap: 'nowrap' }}>
@@ -230,6 +260,7 @@ function Pos() {
       </div>
 
       {done && <InvoiceModal inv={done} s={settings} onClose={() => setDone(null)} />}
+ {picker && <UnitPickerModal product={picker} exclude={items.map((x) => x.unitId ?? '')} onPick={addUnit} onClose={() => setPicker(null)} />}
       {freeItem && <FreeItemModal onClose={() => setFreeItem(false)} onAdd={(it) => setItems((xs) => [...xs, it])} />}
     </div>
   );

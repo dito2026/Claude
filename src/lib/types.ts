@@ -211,6 +211,8 @@ export interface InvoiceItem {
   unitPrice: number;
   unitCost: number;
   imei?: string;
+  /** celular vendido (colección phoneUnits, id = IMEI) */
+  unitId?: string;
   /** true si el stock ya fue descontado (repuestos de una OT) */
   stockAlreadyMoved?: boolean;
 }
@@ -294,6 +296,8 @@ export interface PurchaseItem {
   name: string;
   qty: number;
   unitCost: number;
+  /** celulares: un IMEI por unidad (qty = units.length) */
+  units?: PhoneUnitInput[];
 }
 
 export interface SupplierPayment {
@@ -317,4 +321,38 @@ export interface Purchase extends BaseDoc {
   payments: SupplierPayment[];
   status: 'pagada' | 'pendiente' | 'parcial';
   note: string;
+}
+
+// ---------------- Celulares por IMEI ----------------
+export type PhoneCondition = 'NUEVO' | 'USADO';
+
+export interface PhoneUnitInput {
+  imei: string;
+  imei2?: string;
+  condition: PhoneCondition;
+  color?: string;
+  notes?: string;
+}
+
+/** Un celular físico. El id del documento es el IMEI (así no se puede repetir). */
+export interface PhoneUnit extends BaseDoc {
+  imei: string;
+  imei2: string;
+  productId: string;
+  productName: string;
+  condition: PhoneCondition;
+  color: string;
+  cost: number;
+  supplierName: string;
+  purchaseId?: string;
+  purchaseNumber?: number;
+  status: 'disponible' | 'vendido';
+  invoiceId?: string;
+  invoiceNumber?: number;
+  soldAt?: string;
+  salePrice?: number;
+  customerName?: string;
+  warrantyMonths: number;
+  warrantyUntil?: string;
+  notes: string;
 }

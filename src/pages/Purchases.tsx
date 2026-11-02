@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { HandCoins, PackagePlus, Pencil, Plus, Trash2, Truck } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
-import type { Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
+import type { PhoneCondition, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { dateOnly, dateTime, fromLocalInput, matches, money, pad, toLocalInput, addDays, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
@@ -13,6 +13,7 @@ import {
 import { useSettings } from '../services/settings';
 import type { CashState } from '../services/cash';
 import { EMPTY_PRODUCT, ProductModal } from './Inventory';
+import { ImeiTextarea, parseImeiLines } from '../components/PhoneUnits';
 
 const EMPTY_SUPPLIER: SupplierInput = { name: '', nit: '', phone: '', termDays: 30, notes: '', active: true };
 
@@ -270,6 +271,12 @@ function NewPurchaseModal({ suppliers, onClose }: { suppliers: Supplier[]; onClo
   const [updateCost, setUpdateCost] = useState(true);
   const [newProduct, setNewProduct] = useState(false);
   const [pendingProduct, setPendingProduct] = useState('');
+  // Celulares: IMEI por línea de compra
+  const [imeiText, setImeiText] = useState<Record<string, string>>({});
+  const [imeiCond, setImeiCond] = useState<Record<string, PhoneCondition>>({});
+  const isPhoneLine = (it: PurchaseItem) => products.find((p) => p.id === it.productId)?.type === 'EQUIPO';
+  const lineUnits = (it: PurchaseItem) => parseImeiLines(imeiText[it.productId] ?? '', imeiCond[it.productId] ?? 'NUEVO');
+  const effectiveItems = items.map((it) => (isPhoneLine(it) ? { ...it, units: lineUnits(it), qty: lineUnits(it).length } : it));
 
   const supplier = suppliers.find((s) => s.id === supplierId) ?? null;
   useEffect(() => {
@@ -293,12 +300,12 @@ function NewPurchaseModal({ suppliers, onClose }: { suppliers: Supplier[]; onClo
       .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 12),
     [products, q],
   );
-  const total = items.reduce((a, i) => a + i.qty * i.unitCost, 0);
+  const total = effectiveItems.reduce((a, i) => a + i.qty * i.unitCost, 0);
   const setItem = (k: number, patch: Partial<PurchaseItem>) => setItems((xs) => xs.map((x, i) => (i === k ? { ...x, ...patch } : x)));
   const needsCash = paymentType === 'contado' && !cash?.openSessionId;
 
   const submit = () => run(() => createPurchase(actor, {
-    supplier: supplier!, items, paymentType, method, invoiceRef, note, updateCost,
+    supplier: supplier!, items: effectiveItems, paymentType, method, invoiceRef, note, updateCost,
     dueDate: paymentType === 'credito' && due ? fromLocalInput(due) : undefined,
   }), paymentType === 'credito' ? 'Compra a crédito registrada · stock actualizado' : 'Compra de contado registrada · stock actualizado')
     .then((ok) => ok && onClose());
@@ -361,10 +368,21 @@ function NewPurchaseModal({ suppliers, onClose }: { suppliers: Supplier[]; onClo
               <tbody>
                 {items.map((it, k) => (
                   <tr key={it.productId}>
-                    <td className="strong">{it.name}</td>
-                    <td><input className="input num" type="number" min={1} value={it.qty} onChange={(e) => setItem(k, { qty: Math.max(1, Math.floor(Number(e.target.value) || 1)) })} /></td>
+                    <td>
+                      <span className="strong">{it.name}</span>
+                      {isPhoneLine(it) && (
+                        <div className="stack" style={{ gap: 6, marginTop: 6 }}>
+                          <ImeiTextarea value={imeiText[it.productId] ?? ''} onChange={(v) => setImeiText({ ...imeiText, [it.productId]: v })} />
+                          <Seg value={imeiCond[it.productId] ?? 'NUEVO'} onChange={(v) => setImeiCond({ ...imeiCond, [it.productId]: v })}
+                            options={[{ value: 'NUEVO', label: 'Nuevos' }, { value: 'USADO', label: 'Usados' }]} />
+                        </div>
+                      )}
+                    </td>
+                    <td>{isPhoneLine(it)
+                      ? <div className="num strong" title="Un celular por IMEI">{lineUnits(it).length}</div>
+                      : <input className="input num" type="number" min={1} value={it.qty} onChange={(e) => setItem(k, { qty: Math.max(1, Math.floor(Number(e.target.value) || 1)) })} />}</td>
                     <td><MoneyInput value={it.unitCost} onChange={(v) => setItem(k, { unitCost: v })} /></td>
-                    <td className="num">{money(it.qty * it.unitCost)}</td>
+                    <td className="num">{money((isPhoneLine(it) ? lineUnits(it).length : it.qty) * it.unitCost)}</td>
                     <td className="right"><button className="btn sm ghost" onClick={() => setItems(items.filter((_, i) => i !== k))}><Trash2 size={14} /></button></td>
                   </tr>
                 ))}

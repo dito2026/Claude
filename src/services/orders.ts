@@ -152,6 +152,7 @@ export async function addPart(actor: Actor, orderId: string, productId: string, 
       throw new BusinessError('La orden está cerrada.');
     }
     if (p.type === 'SERVICIO') throw new BusinessError('Los servicios no se agregan como repuesto.');
+    if (p.type === 'EQUIPO') throw new BusinessError('Los celulares se venden por IMEI en Facturación, no como repuesto.');
     // ---- escrituras ----
     moveStock(tx, actor, p, -qty, 'reparacion', {
       refType: 'repairOrder',

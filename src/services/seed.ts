@@ -6,6 +6,7 @@ import type { Customer, Product, Technician } from '../lib/types';
 import { DEFAULT_SETTINGS } from './settings';
 import { created, type Actor } from './common';
 import { saveProduct } from './inventory';
+import { registerUnits } from './phones';
 import { addPart, createOrder, setStatus } from './orders';
 import { openSession } from './cash';
 import { createInvoice } from './billing';
@@ -75,6 +76,10 @@ export async function seedDemo() {
   ];
   const pid: Record<string, string> = {};
   for (const p of items) pid[p.sku] = await saveProduct(admin, p);
+  await registerUnits(admin, pid['EQ-0001'], [
+    { imei: '351234567890124', condition: 'NUEVO', color: 'Negro' },
+    { imei: '351234567890132', condition: 'NUEVO', color: 'Azul' },
+  ], { cost: 520000, supplierName: 'Nano', note: 'Ejemplo', alreadyInStock: false });
 
   // Caja y operación de ejemplo
   await openSession(admin, 200000);

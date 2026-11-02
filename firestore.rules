@@ -115,6 +115,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---- Celulares por IMEI ----
+    // phoneUnits/{IMEI}: un documento por equipo; imeiIndex/{IMEI} reserva cada IMEI (principal y secundario)
+    match /phoneUnits/{imei} {
+      allow read: if isStaff();
+      allow create, update: if isCashier();
+      allow delete: if false;
+    }
+    match /imeiIndex/{imei} {
+      allow read: if isStaff();
+      allow create: if isCashier() && !exists(/databases/$(database)/documents/imeiIndex/$(imei));
+      allow update, delete: if false;
+    }
+
     // ---- Compras y proveedores ----
     match /suppliers/{id} {
       allow read, create, update: if isCashier();

@@ -1,11 +1,12 @@
 import { backend } from '../data';
-import type { CustomerRef, Invoice, InvoiceItem, Payment, Product, RepairOrder } from '../lib/types';
+import type { CustomerRef, Invoice, InvoiceItem, Payment, PhoneUnit, Product, RepairOrder } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { addDays } from '../lib/format';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
 import { requireOpenSession, writeMovement } from './cash';
 import { moveStock } from './inventory';
 import { depositsTotal } from './orders';
+import { isPhone, markAvailable, markSold } from './phones';
 
 export interface InvoiceDraft {
   customerId?: string;
@@ -91,6 +92,22 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
         products.set(p.id, p);
       }
     }
+    // Celulares: solo con IMEI de inventario, una unidad por línea, disponible y del mismo modelo
+    const units = new Map<string, PhoneUnit>();
+    for (const it of items) {
+      const p = it.productId ? products.get(it.productId) : undefined;
+      if (p && isPhone(p) && !it.unitId) {
+        throw new BusinessError(`«${p.name}»: los celulares se venden escogiendo el IMEI del inventario.`);
+      }
+      if (!it.unitId) continue;
+      if (units.has(it.unitId)) throw new BusinessError(`El IMEI ${it.unitId} está dos veces en la venta.`);
+      if (it.qty !== 1) throw new BusinessError('Cada celular (IMEI) se vende en una línea con cantidad 1.');
+      const u = await tx.get<PhoneUnit>('phoneUnits', it.unitId);
+      if (!u) throw new BusinessError(`El IMEI ${it.unitId} no está en el inventario.`);
+      if (u.status !== 'disponible') throw new BusinessError(`El IMEI ${u.imei} ya fue vendido (factura ${u.invoiceNumber}).`);
+      if (u.productId !== it.productId) throw new BusinessError(`El IMEI ${u.imei} no corresponde a «${it.description}».`);
+      units.set(u.id, u);
+    }
 
     // ---------- ESCRITURAS ----------
     writeCounter(tx, 'invoices', number);
@@ -119,6 +136,16 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
           refType: 'invoice',
           refId: invoiceId,
           refNumber: number,
+        });
+      }
+    }
+
+    for (const it of items) {
+      const u = it.unitId ? units.get(it.unitId) : undefined;
+      if (u) {
+        markSold(tx, u, {
+          invoiceId, invoiceNumber: number, at: now,
+          price: it.unitPrice, customerName: draft.customer.name || 'Consumidor final',
         });
       }
     }
@@ -169,6 +196,12 @@ export async function voidInvoice(actor: Actor, invoiceId: string, reason: strin
       }
     }
     const order = inv.repairOrderId ? await tx.get<RepairOrder>('repairOrders', inv.repairOrderId) : null;
+    const soldUnits: PhoneUnit[] = [];
+    for (const it of inv.items) {
+      if (!it.unitId) continue;
+      const u = await tx.get<PhoneUnit>('phoneUnits', it.unitId);
+      if (u && u.invoiceId === inv.id) soldUnits.push(u);
+    }
 
     // ---------- ESCRITURAS ----------
     const now = new Date().toISOString();
@@ -185,6 +218,7 @@ export async function voidInvoice(actor: Actor, invoiceId: string, reason: strin
         moveStock(tx, actor, p, it.qty, 'anulacion', { refType: 'invoice', refId: inv.id, refNumber: inv.number });
       }
     }
+    for (const u of soldUnits) markAvailable(tx, u);
     for (const pay of inv.payments) {
       writeMovement(tx, actor, sessionId, {
         direction: 'egreso',

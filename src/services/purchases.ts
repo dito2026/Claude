@@ -8,6 +8,7 @@ import { addDays } from '../lib/format';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
 import { requireOpenSession, writeMovement } from './cash';
 import { moveStock } from './inventory';
+import { assertImeisFree, cleanUnits, isPhone, writeUnits } from './phones';
 
 export type SupplierInput = Omit<Supplier, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>;
 
@@ -83,7 +84,12 @@ export interface PurchaseDraft {
  * si es de contado, saca el dinero de la caja abierta. A crédito queda por pagar.
  */
 export async function createPurchase(actor: Actor, d: PurchaseDraft) {
-  const items = d.items.filter((i) => i.qty > 0);
+  // Celulares: un IMEI por unidad; la cantidad la dan los IMEI
+  const items = d.items
+    .map((i) => (i.units ? { ...i, units: cleanUnits(i.units), qty: i.units.length } : i))
+    .filter((i) => i.qty > 0);
+  const allUnits = items.flatMap((i) => i.units ?? []);
+  cleanUnits(allUnits); // IMEI repetidos entre líneas
   if (!d.supplier?.id) throw new BusinessError('Seleccione el proveedor.');
   if (items.length === 0) throw new BusinessError('Agregue al menos un producto a la compra.');
   if (items.some((i) => !Number.isInteger(i.qty) || i.unitCost < 0)) throw new BusinessError('Revise cantidades y costos.');
@@ -102,7 +108,12 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
         if (p.type === 'SERVICIO') throw new BusinessError(`«${p.name}» es un servicio: no maneja inventario.`);
         products.set(p.id, p);
       }
+      const p = products.get(it.productId)!;
+      if (isPhone(p) && !(it.units && it.units.length === it.qty)) {
+        throw new BusinessError(`«${p.name}»: escriba el IMEI de cada celular comprado.`);
+      }
     }
+    await assertImeisFree(tx, allUnits);
 
     // ---------- ESCRITURAS ----------
     writeCounter(tx, 'purchases', number);
@@ -131,6 +142,9 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
       if (d.updateCost && it.unitCost > 0 && it.unitCost !== p.cost) {
         p.cost = it.unitCost;
         tx.update('products', p.id, { cost: it.unitCost });
+      }
+      if (it.units?.length) {
+        writeUnits(tx, actor, p, it.units, { cost: it.unitCost, supplierName: d.supplier.name, purchaseId: pid, purchaseNumber: number });
       }
       moveStock(tx, actor, p, it.qty, 'compra', {
         refType: 'purchase',

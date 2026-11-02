@@ -16,7 +16,8 @@ export interface StockRef {
  * qty > 0 entra, qty < 0 sale. No permite stock negativo.
  */
 /** ¿Este producto lleva control de stock? (servicios y productos marcados «sin inventario» no) */
-export const tracksStock = (p: Pick<Product, 'type' | 'trackStock'>) => p.type !== 'SERVICIO' && p.trackStock !== false;
+export const tracksStock = (p: Pick<Product, 'type' | 'trackStock'>) =>
+  p.type === 'EQUIPO' || (p.type !== 'SERVICIO' && p.trackStock !== false); // los celulares siempre
 
 export function moveStock(
   tx: Tx,
@@ -61,7 +62,8 @@ export async function saveProduct(actor: Actor, input: ProductInput, id?: string
     return id;
   }
   return backend.transaction(async (tx) => {
-    const initial = tracksStock(data) ? Math.max(0, Number(data.stock) || 0) : 0;
+    // Los celulares entran por IMEI (Ingresar equipos o compras), nunca como número suelto.
+    const initial = tracksStock(data) && data.type !== 'EQUIPO' ? Math.max(0, Number(data.stock) || 0) : 0;
     const newId = tx.create('products', { ...data, stock: 0, ...created(actor) });
     if (initial > 0) {
       moveStock(tx, actor, { ...(data as Product), id: newId, stock: 0 }, initial, 'inicial', {
@@ -80,6 +82,7 @@ export async function receiveStock(actor: Actor, productId: string, qty: number,
     const p = await tx.get<Product>('products', productId);
     if (!p) throw new BusinessError('Producto no encontrado.');
     if (!tracksStock(p)) throw new BusinessError('Este producto no controla inventario.');
+    if (p.type === 'EQUIPO') throw new BusinessError('Los celulares se ingresan con su IMEI («Ingresar equipos» o una compra).');
     if (unitCost !== undefined && unitCost > 0) {
       p.cost = unitCost;
       tx.update('products', p.id, { cost: unitCost });
@@ -96,6 +99,9 @@ export async function adjustStock(actor: Actor, productId: string, newStock: num
     const p = await tx.get<Product>('products', productId);
     if (!p) throw new BusinessError('Producto no encontrado.');
     if (!tracksStock(p)) throw new BusinessError('Este producto no controla inventario.');
+    if (p.type === 'EQUIPO' && newStock > (Number(p.stock) || 0)) {
+      throw new BusinessError('Para subir el stock de celulares ingréselos con su IMEI.');
+    }
     const delta = newStock - (Number(p.stock) || 0);
     if (delta === 0) return p.stock;
     return moveStock(tx, actor, p, delta, 'ajuste', { refType: 'manual', note });

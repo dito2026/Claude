@@ -1,0 +1,159 @@
+import { useMemo, useState } from 'react';
+import { Smartphone } from 'lucide-react';
+import { useCollection } from '../data/hooks';
+import type { PhoneCondition, PhoneUnit, PhoneUnitInput, Product } from '../lib/types';
+import { dateOnly, matches, money, pad } from '../lib/format';
+import { useAuth } from '../auth/AuthContext';
+import { registerUnits, warrantyActive } from '../services/phones';
+import { Badge, Empty, Field, Modal, MoneyInput, SearchBox, Seg, useAction } from './ui';
+
+/** Texto con un IMEI por línea → unidades. Acepta «IMEI1 / IMEI2» o «IMEI1, IMEI2» para doble SIM. */
+export function parseImeiLines(text: string, condition: PhoneCondition, color = ''): PhoneUnitInput[] {
+  return text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const [imei, imei2] = l.split(/[/,;|]/).map((x) => x.trim());
+      return { imei, imei2: imei2 || '', condition, color };
+    });
+}
+
+export function ImeiTextarea({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <textarea
+      className="input mono"
+      rows={4}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={'Un celular por línea. Doble SIM: IMEI1 / IMEI2\n358497893736757\n359253622999425 / 359253622999433'}
+    />
+  );
+}
+
+/** Ingresar celulares con IMEI a un producto tipo EQUIPO (sin compra a proveedor). */
+export function RegisterUnitsModal({ product, unregistered, onClose }: { product: Product; unregistered: number; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const [text, setText] = useState('');
+  const [condition, setCondition] = useState<PhoneCondition>('NUEVO');
+  const [color, setColor] = useState(product.color || '');
+  const [cost, setCost] = useState(product.cost);
+  const [supplierName, setSupplierName] = useState('');
+  const [already, setAlready] = useState(unregistered > 0);
+  const units = parseImeiLines(text, condition, color);
+  return (
+    <Modal title={`Ingresar equipos · ${product.name}`} onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || units.length === 0}
+          onClick={() => run(() => registerUnits(actor, product.id, units, { cost, supplierName, note: '', alreadyInStock: already, unregistered }),
+            `${units.length} equipo(s) registrados`).then((ok) => ok && onClose())}>
+          Registrar {units.length || ''} equipo{units.length === 1 ? '' : 's'}
+        </button></>}>
+      <div className="stack">
+        {unregistered > 0 && (
+          <label className="alert warn" style={{ cursor: 'pointer' }}>
+            <input type="checkbox" checked={already} onChange={(e) => setAlready(e.target.checked)} style={{ accentColor: 'var(--red)' }} />
+            <span>Hay <b>{unregistered}</b> equipo(s) de este modelo en stock sin IMEI registrado. Marque esta casilla para solo registrar sus IMEI (no suma stock).</span>
+          </label>
+        )}
+        <Field label="IMEI (uno por línea)" required><ImeiTextarea value={text} onChange={setText} /></Field>
+        <div className="form-grid">
+          <Field label="Condición">
+            <Seg value={condition} onChange={setCondition} options={[{ value: 'NUEVO', label: 'Nuevo' }, { value: 'USADO', label: 'Usado' }]} />
+          </Field>
+          <Field label="Color"><input className="input" value={color} onChange={(e) => setColor(e.target.value)} /></Field>
+          <Field label="Costo por equipo"><MoneyInput value={cost} onChange={setCost} /></Field>
+          <Field label="Proveedor (opcional)"><input className="input" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} /></Field>
+        </div>
+        <div className="faint" style={{ fontSize: 12 }}>
+          Para compras a un proveedor (contado o crédito) use mejor <b>Compras y proveedores → Nueva compra</b>: ahí también se escriben los IMEI y queda la cuenta por pagar.
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** Elegir el IMEI exacto que se vende. */
+export function UnitPickerModal({ product, exclude, onPick, onClose }: {
+  product: Product; exclude: string[]; onPick: (u: PhoneUnit) => void; onClose: () => void;
+}) {
+  const all = useCollection<PhoneUnit>('phoneUnits').rows;
+  const [q, setQ] = useState('');
+  const list = all
+    .filter((u) => u.productId === product.id && u.status === 'disponible' && !exclude.includes(u.id))
+    .filter((u) => matches(q, u.imei, u.imei2, u.color, u.condition))
+    .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+  return (
+    <Modal title={`¿Qué ${product.name} vende?`} onClose={onClose}>
+      <div className="stack">
+        <SearchBox value={q} onChange={setQ} placeholder="Escriba o escanee el IMEI" />
+        <div className="card" style={{ maxHeight: 360, overflowY: 'auto' }}>
+          {list.length === 0 ? <Empty icon={<Smartphone size={34} />}>No hay equipos disponibles de este modelo{q ? ' con ese IMEI' : ''}.</Empty> : list.map((u) => (
+            <div key={u.id} className="list-row" style={{ cursor: 'pointer' }} onClick={() => { onPick(u); onClose(); }}>
+              <div className="grow">
+                <div className="mono strong">{u.imei}</div>
+                <small className="faint">{[u.imei2 && `IMEI 2: ${u.imei2}`, u.color, u.supplierName && `Prov. ${u.supplierName}`, `Ingresó ${dateOnly(u.createdAt)}`].filter(Boolean).join(' · ')}</small>
+              </div>
+              <Badge tone={u.condition === 'NUEVO' ? 'ok' : 'warn'}>{u.condition}</Badge>
+              <span className="mono">{money(u.cost)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** Pestaña de Inventario: todos los celulares por IMEI (historial y garantía). */
+export function UnitsTab() {
+  const { rows } = useCollection<PhoneUnit>('phoneUnits');
+  const [q, setQ] = useState('');
+  const [status, setStatus] = useState<'disponible' | 'vendido' | 'todos'>('disponible');
+  const list = useMemo(
+    () => rows
+      .filter((u) => status === 'todos' || u.status === status)
+      .filter((u) => matches(q, u.imei, u.imei2, u.productName, u.customerName, u.supplierName, u.invoiceNumber))
+      .sort((a, b) => (b.soldAt ?? b.createdAt ?? '').localeCompare(a.soldAt ?? a.createdAt ?? '')),
+    [rows, q, status],
+  );
+  const available = rows.filter((u) => u.status === 'disponible');
+  return (
+    <>
+      <div className="row" style={{ marginBottom: 14 }}>
+        <Seg value={status} onChange={setStatus} options={[
+          { value: 'disponible', label: `Disponibles (${available.length})` },
+          { value: 'vendido', label: 'Vendidos' },
+          { value: 'todos', label: 'Todos' },
+        ]} />
+        <SearchBox value={q} onChange={setQ} placeholder="IMEI, modelo, cliente o factura" />
+        <span className="faint">Valor disponible a costo: {money(available.reduce((a, u) => a + u.cost, 0))}</span>
+      </div>
+      <div className="card">
+        {list.length === 0 ? <Empty icon={<Smartphone size={36} />}>No hay celulares en esta vista. Ingréselos desde «Productos» (botón del celular) o con una compra.</Empty> : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>IMEI</th><th>Equipo</th><th>Condición</th><th>Ingreso</th><th className="num">Costo</th><th>Estado</th><th>Venta</th><th>Garantía</th></tr></thead>
+              <tbody>
+                {list.map((u) => (
+                  <tr key={u.id}>
+                    <td><span className="mono strong">{u.imei}</span>{u.imei2 && <small className="mono">{u.imei2}</small>}</td>
+                    <td>{u.productName}<small>{[u.color, u.supplierName && `Prov. ${u.supplierName}`, u.purchaseNumber && `Compra C-${pad(u.purchaseNumber, 4)}`].filter(Boolean).join(' · ')}</small></td>
+                    <td><Badge tone={u.condition === 'NUEVO' ? 'ok' : 'warn'}>{u.condition}</Badge></td>
+                    <td className="nowrap">{dateOnly(u.createdAt)}</td>
+                    <td className="num">{money(u.cost)}</td>
+                    <td><Badge tone={u.status === 'disponible' ? 'info' : ''}>{u.status === 'disponible' ? 'Disponible' : 'Vendido'}</Badge></td>
+                    <td>{u.status === 'vendido' ? <>{u.customerName}<small>Fact. {pad(u.invoiceNumber, 6)} · {dateOnly(u.soldAt)} · {money(u.salePrice)}</small></> : <span className="faint">—</span>}</td>
+                    <td>{u.status !== 'vendido' ? <span className="faint">{u.warrantyMonths} meses</span>
+                      : u.warrantyUntil ? <Badge tone={warrantyActive(u) ? 'ok' : ''}>{warrantyActive(u) ? 'Vigente' : 'Vencida'} · {dateOnly(u.warrantyUntil)}</Badge>
+                      : <span className="faint">Sin garantía</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
