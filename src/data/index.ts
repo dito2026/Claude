@@ -13,7 +13,10 @@ export const firebaseConfig = {
   appId: env.VITE_FIREBASE_APP_ID as string | undefined,
 };
 
-export const cloudConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+// Las pruebas (vitest) y VITE_DEMO=1 usan siempre el backend local, nunca la nube real.
+const forceLocal = env.MODE === 'test' || env.VITE_DEMO === '1';
+
+export const cloudConfigured = !forceLocal && Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
 
 export const backend: Backend = cloudConfigured
   ? new FirestoreBackend(firebaseConfig)
