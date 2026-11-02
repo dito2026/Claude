@@ -13,7 +13,8 @@ guardan los datos y qué reglas de negocio se respetan.
 | RUT y Cámara de Comercio | Los datos fiscales del encabezado de la factura. **No se copian al código**: se escriben en *Configuración* dentro de la app. |
 
 Ningún archivo existente se modifica ni se borra. La app es un proyecto nuevo y la hoja de cálculo
-sigue funcionando como hasta ahora. Más adelante puede servir como fuente para migrar los datos (ver §9).
+sigue funcionando como hasta ahora. **No se migran datos anteriores**: la app arranca con una base
+de datos nueva y vacía (ver §9).
 
 ## 2. Stack tecnológico
 
@@ -197,11 +198,14 @@ La regla usa el documento `meta/bootstrap`, que solo se puede crear una vez.
 
 ## 9. Hoja de ruta (siguientes fases)
 
-**Fuera del alcance:** facturación electrónica DIAN. La app emite comprobantes POS internos
-(tirilla, WhatsApp y correo) y no se integrará con un proveedor de facturación electrónica.
+**Fuera del alcance:**
+- Facturación electrónica DIAN. La app emite comprobantes POS internos (tirilla, WhatsApp y
+  correo) y no se integrará con un proveedor de facturación electrónica.
+- Migración de datos anteriores. No se importa nada de *Digital Cell POS* ni de otras hojas: la
+  base de datos en la nube empieza vacía y los clientes, el inventario y los técnicos se registran
+  directamente en la app.
 
-1. Importar los datos desde *Digital Cell POS* (clientes, inventario, técnicos y órdenes abiertas).
-2. Equipos por IMEI: compra, venta, garantía y el *historial clínico por IMEI*.
-3. Proveedores, compras a crédito y cuentas por pagar.
-4. Métricas avanzadas y libro fiscal de operaciones diarias (DIAN).
-5. Portal del cliente para consultar el estado de su OT con el número y el teléfono.
+1. Equipos por IMEI: compra, venta, garantía y el *historial clínico por IMEI*.
+2. Proveedores, compras a crédito y cuentas por pagar.
+3. Métricas avanzadas y libro fiscal de operaciones diarias (DIAN).
+4. Portal del cliente para consultar el estado de su OT con el número y el teléfono.
