@@ -1,0 +1,277 @@
+// Modelos de dominio de DIGITAL CELL PRO. Ver docs/ARQUITECTURA.md §4.
+
+export type Role = 'admin' | 'cajero' | 'tecnico';
+
+export interface BaseDoc {
+  id: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
+export interface UserProfile extends BaseDoc {
+  name: string;
+  email: string;
+  role: Role;
+  active: boolean;
+  technicianId?: string;
+}
+
+export interface BusinessSettings {
+  name: string;
+  slogan: string;
+  nit: string;
+  address: string;
+  city: string;
+  phone: string;
+  email: string;
+  ticketFooter: string;
+  paymentMethods: string[];
+  expenseCategories: string[];
+  defaultWarrantyDays: number;
+  taxRate: number; // 0 = no responsable de IVA
+}
+
+export interface Technician extends BaseDoc {
+  name: string;
+  phone: string;
+  specialty: string;
+  active: boolean;
+  commissionPct: number;
+  userId?: string;
+}
+
+export interface Customer extends BaseDoc {
+  document: string;
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+  notes: string;
+}
+
+export interface CustomerRef {
+  name: string;
+  phone: string;
+  document: string;
+  email?: string;
+}
+
+export type ProductType = 'ACCESORIO' | 'REPUESTO' | 'EQUIPO' | 'SERVICIO';
+
+export interface Product extends BaseDoc {
+  sku: string;
+  type: ProductType;
+  name: string;
+  brand: string;
+  model: string;
+  color: string;
+  cost: number;
+  price: number;
+  stock: number;
+  minStock: number;
+  warrantyMonths: number;
+  line: string;
+  active: boolean;
+}
+
+export type StockReason =
+  | 'compra'
+  | 'venta'
+  | 'reparacion'
+  | 'devolucion_reparacion'
+  | 'ajuste'
+  | 'anulacion'
+  | 'inicial';
+
+export interface StockMovement extends BaseDoc {
+  productId: string;
+  productName: string;
+  kind: 'entrada' | 'salida' | 'ajuste';
+  qty: number; // con signo
+  reason: StockReason;
+  refType?: 'repairOrder' | 'invoice' | 'manual';
+  refId?: string;
+  refNumber?: number;
+  unitCost: number;
+  stockAfter: number;
+  note?: string;
+}
+
+export const ORDER_STATUSES = [
+  'Recibido',
+  'En diagnóstico',
+  'Esperando aprobación',
+  'Esperando repuesto',
+  'En reparación',
+  'Reparado / Listo',
+  'Entregado',
+  'No reparado',
+] as const;
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
+export const OPEN_STATUSES: OrderStatus[] = ORDER_STATUSES.filter(
+  (s) => s !== 'Entregado' && s !== 'No reparado',
+) as OrderStatus[];
+
+export type Priority = 'baja' | 'normal' | 'alta' | 'urgente';
+
+export interface OrderPart {
+  lineId: string;
+  productId: string;
+  name: string;
+  qty: number;
+  unitCost: number;
+  unitPrice: number;
+}
+
+export interface Deposit {
+  amount: number;
+  method: string;
+  at: string;
+}
+
+export interface TimelineEntry {
+  at: string;
+  by: string;
+  status?: OrderStatus;
+  note: string;
+}
+
+export interface Device {
+  brand: string;
+  model: string;
+  imei: string;
+  color: string;
+  unlockCode: string;
+  accessories: string;
+  condition: string;
+}
+
+export interface RepairOrder extends BaseDoc {
+  number: number;
+  customerId: string;
+  customer: CustomerRef;
+  device: Device;
+  reportedIssue: string;
+  diagnosis: string;
+  technicianId: string;
+  technicianName: string;
+  technicianUserId: string;
+  status: OrderStatus;
+  priority: Priority;
+  promisedAt: string;
+  budget: number;
+  laborPrice: number;
+  technicianPay: number;
+  parts: OrderPart[];
+  deposits: Deposit[];
+  warrantyDays: number;
+  warrantyUntil?: string;
+  deliveredAt?: string;
+  invoiceId?: string;
+  invoiceNumber?: number;
+  timeline: TimelineEntry[];
+}
+
+export type TicketType = 'garantia' | 'reclamo' | 'consulta' | 'seguimiento';
+export type TicketStatus = 'abierto' | 'en_proceso' | 'esperando_cliente' | 'resuelto' | 'cerrado';
+
+export interface TicketComment {
+  at: string;
+  by: string;
+  text: string;
+}
+
+export interface Ticket extends BaseDoc {
+  number: number;
+  type: TicketType;
+  subject: string;
+  description: string;
+  customerId: string;
+  customerName: string;
+  repairOrderId?: string;
+  repairOrderNumber?: number;
+  imei?: string;
+  priority: Priority;
+  status: TicketStatus;
+  assignedTo: string;
+  comments: TicketComment[];
+}
+
+export type InvoiceItemKind = 'producto' | 'repuesto' | 'mano_obra' | 'servicio';
+
+export interface InvoiceItem {
+  productId?: string;
+  description: string;
+  kind: InvoiceItemKind;
+  qty: number;
+  unitPrice: number;
+  unitCost: number;
+  imei?: string;
+  /** true si el stock ya fue descontado (repuestos de una OT) */
+  stockAlreadyMoved?: boolean;
+}
+
+export interface Payment {
+  method: string;
+  amount: number;
+}
+
+export interface Invoice extends BaseDoc {
+  number: number;
+  customerId?: string;
+  customer: CustomerRef;
+  items: InvoiceItem[];
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  /** abonos previos de la OT aplicados a esta factura */
+  depositsApplied: number;
+  payments: Payment[];
+  repairOrderId?: string;
+  repairOrderNumber?: number;
+  status: 'pagada' | 'credito' | 'anulada';
+  cashSessionId: string;
+  cashierName: string;
+  voidReason?: string;
+  voidedAt?: string;
+  voidedBy?: string;
+}
+
+export interface CashSession extends BaseDoc {
+  status: 'abierta' | 'cerrada';
+  openedAt: string;
+  openedBy: string;
+  openingCash: number;
+  closedAt?: string;
+  closedBy?: string;
+  expected?: Record<string, number>;
+  counted?: Record<string, number>;
+  difference?: number;
+  notes?: string;
+}
+
+export type CashCategory =
+  | 'venta'
+  | 'abono_cliente'
+  | 'gasto'
+  | 'pago_proveedor'
+  | 'pago_tecnico'
+  | 'retiro'
+  | 'ingreso_otro'
+  | 'anulacion';
+
+export interface CashMovement extends BaseDoc {
+  sessionId: string;
+  direction: 'ingreso' | 'egreso';
+  category: CashCategory;
+  expenseCategory?: string;
+  method: string;
+  amount: number;
+  description: string;
+  refType?: 'invoice' | 'repairOrder' | 'technician' | 'manual';
+  refId?: string;
+}
+
+export const CREDIT_METHOD = 'Crédito tienda';

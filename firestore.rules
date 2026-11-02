@@ -1,0 +1,124 @@
+rules_version = '2';
+
+// DIGITAL CELL PRO — reglas de seguridad por rol.
+// Roles: admin · cajero · tecnico (campo `role` en users/{uid}).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function profilePath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function profile() { return get(profilePath()).data; }
+    function hasProfile() { return signedIn() && exists(profilePath()); }
+    function active() { return hasProfile() && profile().active == true; }
+    function role() { return profile().role; }
+    function isAdmin() { return active() && role() == 'admin'; }
+    function isCashier() { return active() && role() in ['admin', 'cajero']; }
+    function isStaff() { return active() && role() in ['admin', 'cajero', 'tecnico']; }
+    function bootstrapPath() { return /databases/$(database)/documents/meta/bootstrap; }
+
+    // ---- Primer administrador (solo una vez, en base vacía) ----
+    match /meta/bootstrap {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && !exists(bootstrapPath())
+        && getAfter(profilePath()).data.role == 'admin'
+        && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Puntero a la caja abierta (meta/cash.openSessionId)
+    match /meta/cash {
+      allow read: if isStaff();
+      allow write: if isCashier();
+    }
+
+    // ---- Usuarios ----
+    match /users/{uid} {
+      allow read: if isStaff() || (signedIn() && request.auth.uid == uid);
+      allow create: if isAdmin()
+        || (signedIn() && request.auth.uid == uid
+            && !exists(bootstrapPath())
+            && existsAfter(bootstrapPath())
+            && request.resource.data.role == 'admin');
+      allow update: if isAdmin();
+      allow delete: if false; // se desactivan, no se borran
+    }
+
+    // ---- Configuración ----
+    match /settings/{doc} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // ---- Consecutivos: solo incrementos de 1 ----
+    match /counters/{name} {
+      allow read: if isStaff();
+      allow create: if isStaff() && request.resource.data.value == 1;
+      allow update: if isStaff() && request.resource.data.value == resource.data.value + 1;
+      allow delete: if false;
+    }
+
+    // ---- Técnicos ----
+    match /technicians/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // ---- Clientes ----
+    match /customers/{id} {
+      allow read: if isStaff();
+      allow create, update: if isCashier();
+      allow delete: if isAdmin();
+    }
+
+    // ---- Inventario ----
+    // Los técnicos actualizan solo el stock (al usar repuestos en una OT).
+    match /products/{id} {
+      allow read: if isStaff();
+      allow create, delete: if isAdmin();
+      allow update: if isCashier()
+        || (isStaff() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'updatedAt']));
+    }
+
+    // Kardex: solo se agregan registros
+    match /stockMovements/{id} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if false;
+    }
+
+    // ---- Servicio técnico ----
+    match /repairOrders/{id} {
+      allow read: if isStaff();
+      allow create: if isCashier();
+      allow update: if isCashier()
+        || (active() && role() == 'tecnico' && resource.data.technicianUserId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /tickets/{id} {
+      allow read, create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ---- Facturación y caja ----
+    match /invoices/{id} {
+      allow read, create: if isCashier();
+      // Solo se permite anular (admin). Nunca borrar.
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'voidReason', 'voidedAt', 'voidedBy', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /cashSessions/{id} {
+      allow read, create, update: if isCashier();
+      allow delete: if false;
+    }
+
+    // Libro de caja: solo se agregan registros
+    match /cashMovements/{id} {
+      allow read, create: if isCashier();
+      allow update, delete: if false;
+    }
+  }
+}
