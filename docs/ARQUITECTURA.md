@@ -192,14 +192,16 @@ La regla usa el documento `meta/bootstrap`, que solo se puede crear una vez.
 - La tipografía es *Inter* para la interfaz y *JetBrains Mono* para números, IMEI y consecutivos.
 - Las tarjetas son planas, con bordes de 1 px, sin sombras pesadas, con densidad de información
   alta y espacio amplio.
-- La factura se imprime en formato tirilla de 80 mm y la OT como recibo de ingreso. También se
+- El comprobante de venta se imprime en formato tirilla de 80 mm y la OT como recibo de ingreso. También se
   pueden enviar por WhatsApp y por correo, como en el MVP anterior.
 
 ## 9. Hoja de ruta (siguientes fases)
+
+**Fuera del alcance:** facturación electrónica DIAN. La app emite comprobantes POS internos
+(tirilla, WhatsApp y correo) y no se integrará con un proveedor de facturación electrónica.
 
 1. Importar los datos desde *Digital Cell POS* (clientes, inventario, técnicos y órdenes abiertas).
 2. Equipos por IMEI: compra, venta, garantía y el *historial clínico por IMEI*.
 3. Proveedores, compras a crédito y cuentas por pagar.
 4. Métricas avanzadas y libro fiscal de operaciones diarias (DIAN).
-5. Facturación electrónica DIAN a través de un proveedor tecnológico, cuando el negocio esté obligado.
-6. Portal del cliente para consultar el estado de su OT con el número y el teléfono.
+5. Portal del cliente para consultar el estado de su OT con el número y el teléfono.
