@@ -224,3 +224,42 @@ describe('tickets y datos demo', () => {
     await backend.auth.signIn('admin@digitalcell.demo', 'demo1234');
   });
 });
+
+describe('importación de datos anteriores', () => {
+  it('importa datos base, registra el stock en el kardex y no duplica al repetir', async () => {
+    const { importData } = await import('./importer');
+    const { DEFAULT_SETTINGS } = await import('./settings');
+    const file = {
+      version: 1 as const,
+      settings: { nit: '123', phone: '' },
+      customers: [{ name: 'Gloria', document: '42', phone: '300' }, { name: 'Edwin', document: '' }],
+      products: [
+        { sku: 'ACC-1', type: 'ACCESORIO' as const, name: 'Cargador', cost: 10000, price: 20000, stock: 25 },
+        { sku: '', type: 'SERVICIO' as const, name: 'Virus', cost: 10000, price: 30000, stock: 9 },
+      ],
+      technicians: [{ name: 'Caballo' }, { name: 'Andres' }],
+    };
+    const state = async () => ({
+      customers: await backend.list<Customer>('customers'),
+      products: await backend.list<Product>('products'),
+      technicians: await backend.list('technicians') as never[],
+      settings: DEFAULT_SETTINGS,
+    });
+    const r = await importData(actor, file, await state());
+    expect(r.customers.added).toBe(2);
+    expect(r.products.added).toBe(2);
+    expect(r.technicians.added).toBe(2);
+    const cargador = (await backend.list<Product>('products')).find((p) => p.sku === 'ACC-1')!;
+    expect(cargador.stock).toBe(25);
+    expect((await kardex(cargador.id))[0]).toMatchObject({ reason: 'inicial', qty: 25 });
+    const virus = (await backend.list<Product>('products')).find((p) => p.name === 'Virus')!;
+    expect(virus.stock).toBe(0);
+    const s = (await backend.get<{ nit: string; name: string }>('settings', 'business'))!;
+    expect(s).toMatchObject({ nit: '123', name: 'Digital Cell' });
+
+    const again = await importData(actor, file, await state());
+    expect(again.customers).toEqual({ added: 0, skipped: 2 });
+    expect(again.products).toEqual({ added: 0, skipped: 2 });
+    expect(again.technicians).toEqual({ added: 0, skipped: 2 });
+  });
+});

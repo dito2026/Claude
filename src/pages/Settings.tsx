@@ -3,6 +3,7 @@ import type { BusinessSettings } from '../lib/types';
 import { backend, cloudConfigured } from '../data';
 import { Field, PageHead, useAction } from '../components/ui';
 import { saveSettings, useSettings } from '../services/settings';
+import { ImportCard } from '../components/ImportCard';
 
 export function SettingsPage() {
   const current = useSettings();
@@ -55,6 +56,7 @@ export function SettingsPage() {
             </button>
           )}
         </div>
+        <ImportCard />
       </div>
     </>
   );

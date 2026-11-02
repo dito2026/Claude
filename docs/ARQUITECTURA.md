@@ -13,8 +13,9 @@ guardan los datos y qué reglas de negocio se respetan.
 | RUT y Cámara de Comercio | Los datos fiscales del encabezado de la factura. **No se copian al código**: se escriben en *Configuración* dentro de la app. |
 
 Ningún archivo existente se modifica ni se borra. La app es un proyecto nuevo y la hoja de cálculo
-sigue funcionando como hasta ahora. **No se migran datos anteriores**: la app arranca con una base
-de datos nueva y vacía (ver §9).
+sigue funcionando como hasta ahora. De ella se copian **solo los datos base** (configuración del
+negocio, clientes, inventario y técnicos) con el importador de *Configuración* (ver §10). El
+historial (ventas, órdenes y movimientos de caja) no se migra.
 
 ## 2. Stack tecnológico
 
@@ -201,11 +202,32 @@ La regla usa el documento `meta/bootstrap`, que solo se puede crear una vez.
 **Fuera del alcance:**
 - Facturación electrónica DIAN. La app emite comprobantes POS internos (tirilla, WhatsApp y
   correo) y no se integrará con un proveedor de facturación electrónica.
-- Migración de datos anteriores. No se importa nada de *Digital Cell POS* ni de otras hojas: la
-  base de datos en la nube empieza vacía y los clientes, el inventario y los técnicos se registran
-  directamente en la app.
+- Migración del historial. Las ventas, órdenes de taller y movimientos de caja anteriores se
+  quedan en las hojas de cálculo; la app solo recibe los datos base (ver §10).
 
 1. Equipos por IMEI: compra, venta, garantía y el *historial clínico por IMEI*.
 2. Proveedores, compras a crédito y cuentas por pagar.
 3. Métricas avanzadas y libro fiscal de operaciones diarias (DIAN).
 4. Portal del cliente para consultar el estado de su OT con el número y el teléfono.
+
+## 10. Importación de datos base
+
+*Configuración → Importar datos anteriores* (solo administrador) carga un archivo JSON:
+
+```json
+{
+  "version": 1,
+  "source": "Digital Cell POS",
+  "settings":    { "name": "...", "nit": "...", "address": "...", "phone": "..." },
+  "customers":   [{ "document": "", "name": "", "phone": "", "email": "", "address": "", "notes": "" }],
+  "technicians": [{ "name": "", "phone": "", "specialty": "", "active": true }],
+  "products":    [{ "sku": "", "type": "ACCESORIO", "name": "", "cost": 0, "price": 0, "stock": 0, "minStock": 0 }]
+}
+```
+
+- Se omite lo que ya existe: clientes por documento o nombre, productos por SKU o nombre y técnicos
+  por nombre. Por eso se puede repetir sin duplicar.
+- El stock de cada producto entra como movimiento *Stock inicial* en el kardex.
+- En la configuración solo se reemplazan los campos que vienen con valor.
+- El archivo con los datos reales **no se guarda en el repositorio**, porque contiene datos personales
+  de clientes.
