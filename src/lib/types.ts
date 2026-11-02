@@ -73,6 +73,8 @@ export interface Product extends BaseDoc {
   warrantyMonths: number;
   line: string;
   active: boolean;
+  /** false = se vende sin controlar ni descontar inventario (por defecto true) */
+  trackStock?: boolean;
 }
 
 export type StockReason =
@@ -117,6 +119,7 @@ export type Priority = 'baja' | 'normal' | 'alta' | 'urgente';
 
 export interface OrderPart {
   lineId: string;
+  /** vacío = artículo libre, sin inventario */
   productId: string;
   name: string;
   qty: number;

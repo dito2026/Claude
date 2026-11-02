@@ -6,11 +6,12 @@ import type { OrderStatus, Product, RepairOrder, Technician } from '../lib/types
 import { ORDER_STATUSES } from '../lib/types';
 import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
-import { Badge, CommitMoney, Empty, Field, Modal, MoneyInput, useAction } from '../components/ui';
+import { Badge, CommitMoney, Empty, Field, Modal, MoneyInput, Seg, useAction } from '../components/ui';
+import { tracksStock } from '../services/inventory';
 import { orderTone, priorityTone } from '../components/status';
 import { OrderReceiptModal } from '../components/Receipts';
 import {
-  addDeposit, addPart, depositsTotal, isOverdue, orderTotal, partsTotal, removePart, setStatus, updateOrder,
+  addDeposit, addFreePart, addPart, depositsTotal, isOverdue, orderTotal, partsTotal, removePart, setStatus, updateOrder,
 } from '../services/orders';
 import { useSettings } from '../services/settings';
 
@@ -98,7 +99,7 @@ export function OrderDetail() {
 
           <div className="card">
             <div className="card-head">
-              <h3>Repuestos utilizados <span className="faint">· descontados del inventario</span></h3>
+              <h3>Repuestos utilizados</h3>
               {canWork && <button className="btn sm" onClick={() => setModal('part')}><PackagePlus size={15} />Agregar repuesto</button>}
             </div>
             {o.parts.length === 0 ? <Empty>Sin repuestos todavía.</Empty> : (
@@ -107,7 +108,7 @@ export function OrderDetail() {
                 <tbody>
                   {o.parts.map((p) => (
                     <tr key={p.lineId}>
-                      <td className="strong">{p.name}</td>
+                      <td><span className="strong">{p.name}</span>{!p.productId && <small>Repuesto libre · sin inventario</small>}</td>
                       <td className="num">{p.qty}</td>
                       <td className="num faint">{money(p.unitCost)}</td>
                       <td className="num">{money(p.unitPrice)}</td>
@@ -115,7 +116,7 @@ export function OrderDetail() {
                       <td className="right">
                         {canWork && (
                           <button className="btn sm ghost" title="Quitar y devolver al inventario" disabled={busy}
-                            onClick={() => confirm(`¿Quitar ${p.name}? Se devolverá al inventario.`) && run(() => removePart(actor, o.id, p.lineId), 'Repuesto devuelto al inventario')}>
+                            onClick={() => confirm(`¿Quitar ${p.name}?${p.productId ? ' Si controla inventario, se devolverá al stock.' : ''}`) && run(() => removePart(actor, o.id, p.lineId), 'Repuesto retirado de la orden')}>
                             <Trash2 size={15} />
                           </button>
                         )}
@@ -208,10 +209,13 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
   const { actor } = useAuth();
   const products = useCollection<Product>('products').rows;
   const { run, busy } = useAction();
+  const [mode, setMode] = useState<'catalogo' | 'libre'>('catalogo');
   const [q, setQ] = useState(order.device.model);
   const [sel, setSel] = useState<Product | null>(null);
   const [qty, setQty] = useState(1);
   const [price, setPrice] = useState(0);
+  const [freeName, setFreeName] = useState('');
+  const [freeCost, setFreeCost] = useState(0);
 
   const list = useMemo(
     () => products
@@ -221,6 +225,13 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
       .slice(0, 30),
     [products, q],
   );
+  const available = (p: Product) => !tracksStock(p) || p.stock > 0;
+  const selTracks = sel ? tracksStock(sel) : true;
+
+  const submit = () =>
+    mode === 'libre'
+      ? run(() => addFreePart(actor, order.id, { name: freeName, qty, unitCost: freeCost, unitPrice: price }), 'Repuesto agregado (sin inventario)')
+      : run(() => addPart(actor, order.id, sel!.id, qty, price), selTracks ? 'Repuesto agregado y descontado del inventario' : 'Repuesto agregado (sin inventario)');
 
   return (
     <Modal
@@ -229,40 +240,59 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
       footer={
         <>
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn primary" disabled={!sel || busy}
-            onClick={() => run(() => addPart(actor, order.id, sel!.id, qty, price), 'Repuesto agregado y descontado del inventario').then((ok) => ok && onClose())}>
-            Agregar y descontar stock
+          <button className="btn primary"
+            disabled={busy || (mode === 'catalogo' ? !sel || (selTracks && qty > sel.stock) : !freeName.trim() || !price)}
+            onClick={() => submit().then((ok) => ok && onClose())}>
+            {mode === 'catalogo' && selTracks ? 'Agregar y descontar stock' : 'Agregar a la orden'}
           </button>
         </>
       }
     >
-      {!sel ? (
-        <div className="stack">
-          <input className="input" autoFocus placeholder="Buscar repuesto por nombre, SKU o modelo…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <div className="card" style={{ maxHeight: 360, overflowY: 'auto' }}>
-            {list.length === 0 ? <Empty>Sin resultados. Borre el texto para ver todo.</Empty> : list.map((p) => (
-              <div key={p.id} className="list-row" style={{ cursor: p.stock > 0 ? 'pointer' : 'not-allowed', opacity: p.stock > 0 ? 1 : 0.5 }}
-                onClick={() => p.stock > 0 && (setSel(p), setPrice(p.price || p.cost))}>
-                <div className="grow">{p.name}<small className="faint mono" style={{ display: 'block' }}>{p.sku} · {p.type}</small></div>
-                <Badge tone={p.stock > p.minStock ? 'ok' : p.stock > 0 ? 'warn' : 'red'}>Stock {p.stock}</Badge>
-                <span className="mono">{money(p.price || p.cost)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="stack">
-          <div className="row card" style={{ padding: '10px 14px' }}>
-            <div className="grow"><b>{sel.name}</b><div className="faint">Disponible: {sel.stock} · costo {money(sel.cost)}</div></div>
-            <button className="btn sm ghost" onClick={() => setSel(null)}>Cambiar</button>
-          </div>
-          <div className="form-grid">
-            <Field label="Cantidad"><input className="input num" type="number" min={1} max={sel.stock} value={qty} onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value))))} /></Field>
-            <Field label="Precio al cliente (unitario)"><MoneyInput value={price} onChange={setPrice} /></Field>
-          </div>
-          {qty > sel.stock && <div className="alert error">No hay stock suficiente.</div>}
-        </div>
-      )}
+      <div className="stack">
+        <Seg value={mode} onChange={(m) => { setMode(m); setQty(1); setPrice(0); }} options={[
+          { value: 'catalogo', label: 'Del inventario' },
+          { value: 'libre', label: 'Repuesto libre (sin inventario)' },
+        ]} />
+        {mode === 'libre' ? (
+          <>
+            <div className="form-grid">
+              <Field label="Descripción del repuesto" required className="full"><input className="input" autoFocus value={freeName} onChange={(e) => setFreeName(e.target.value)} placeholder="Ej.: Flex de carga Moto G9 (comprado a Pepe)" /></Field>
+              <Field label="Cantidad"><input className="input num" type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))} /></Field>
+              <Field label="Costo (lo que le costó)"><MoneyInput value={freeCost} onChange={setFreeCost} /></Field>
+              <Field label="Precio al cliente (unitario)" required><MoneyInput value={price} onChange={setPrice} /></Field>
+            </div>
+            <div className="faint" style={{ fontSize: 12 }}>Para repuestos que no maneja en inventario: no descuenta stock, pero el costo y el precio quedan en la orden y en la factura.</div>
+          </>
+        ) : !sel ? (
+          <>
+            <input className="input" autoFocus placeholder="Buscar repuesto por nombre, SKU o modelo…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className="card" style={{ maxHeight: 360, overflowY: 'auto' }}>
+              {list.length === 0 ? <Empty>Sin resultados. Borre el texto o use «Repuesto libre».</Empty> : list.map((p) => (
+                <div key={p.id} className="list-row" style={{ cursor: available(p) ? 'pointer' : 'not-allowed', opacity: available(p) ? 1 : 0.5 }}
+                  onClick={() => available(p) && (setSel(p), setPrice(p.price || p.cost))}>
+                  <div className="grow">{p.name}<small className="faint mono" style={{ display: 'block' }}>{p.sku} · {p.type}</small></div>
+                  {tracksStock(p)
+                    ? <Badge tone={p.stock > p.minStock ? 'ok' : p.stock > 0 ? 'warn' : 'red'}>Stock {p.stock}</Badge>
+                    : <Badge tone="info">Sin inventario</Badge>}
+                  <span className="mono">{money(p.price || p.cost)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="row card" style={{ padding: '10px 14px' }}>
+              <div className="grow"><b>{sel.name}</b><div className="faint">{selTracks ? `Disponible: ${sel.stock}` : 'Sin control de inventario'} · costo {money(sel.cost)}</div></div>
+              <button className="btn sm ghost" onClick={() => setSel(null)}>Cambiar</button>
+            </div>
+            <div className="form-grid">
+              <Field label="Cantidad"><input className="input num" type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))} /></Field>
+              <Field label="Precio al cliente (unitario)"><MoneyInput value={price} onChange={setPrice} /></Field>
+            </div>
+            {selTracks && qty > sel.stock && <div className="alert error">No hay stock suficiente. Registre una compra o use «Repuesto libre».</div>}
+          </>
+        )}
+      </div>
     </Modal>
   );
 }

@@ -244,3 +244,13 @@ proveedor, ítems, total, `paymentType` contado/crédito, vencimiento, `paid`, `
 - **Saldo anterior:** al crear un proveedor se puede registrar lo que ya se le debía; queda como una
   compra a crédito de tipo `saldo_inicial`, sin movimiento de inventario.
 - Las compras no se borran; en Firestore solo se pueden actualizar sus campos de pago.
+
+## 12. Venta sin inventario
+
+- **Producto sin control de stock** (`products.trackStock = false`): se vende y se usa en
+  reparaciones sin límite de cantidad; no mueve stock, no genera kardex ni alertas de reposición.
+  Equivale a «¿Los accesorios descuentan inventario? NO» de la hoja anterior. Los servicios nunca
+  llevan stock.
+- **Artículo libre**: en el POS se puede vender una línea que no está en el catálogo (descripción,
+  precio y costo); en una OT, un *repuesto libre* (`parts[].productId` vacío). No tocan inventario,
+  pero el precio, el costo y la utilidad quedan en la factura y en la caja.

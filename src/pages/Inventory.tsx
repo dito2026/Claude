@@ -6,7 +6,7 @@ import type { Product, ProductType, StockMovement } from '../lib/types';
 import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
-import { adjustStock, isLowStock, receiveStock, saveProduct, type ProductInput } from '../services/inventory';
+import { adjustStock, isLowStock, receiveStock, saveProduct, tracksStock, type ProductInput } from '../services/inventory';
 
 const TYPES: ProductType[] = ['REPUESTO', 'ACCESORIO', 'EQUIPO', 'SERVICIO'];
 const LINE_BY_TYPE: Record<ProductType, string> = {
@@ -19,7 +19,7 @@ const REASON: Record<StockMovement['reason'], string> = {
 
 export const EMPTY_PRODUCT: ProductInput = {
   sku: '', type: 'REPUESTO', name: '', brand: '', model: '', color: '', cost: 0, price: 0, stock: 0,
-  minStock: 1, warrantyMonths: 0, line: 'Servicio técnico', active: true,
+  minStock: 1, warrantyMonths: 0, line: 'Servicio técnico', active: true, trackStock: true,
 };
 
 export function Inventory() {
@@ -38,7 +38,7 @@ export function Inventory() {
     .filter((p) => matches(q, p.sku, p.name, p.brand, p.model))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const value = products.filter((p) => p.type !== 'SERVICIO').reduce((a, p) => a + p.stock * p.cost, 0);
+  const value = products.filter(tracksStock).reduce((a, p) => a + p.stock * p.cost, 0);
   const kardex = movements
     .filter((m) => !kardexFor || m.productId === kardexFor)
     .filter((m) => matches(q, m.productName, m.note, m.refNumber))
@@ -84,17 +84,17 @@ export function Inventory() {
                           <td className="mono">{p.sku || '—'}</td>
                           <td><span className="strong">{p.name}</span><small>{[p.brand, p.model, p.color].filter(Boolean).join(' · ')}</small></td>
                           <td><Badge tone="" >{p.type}</Badge></td>
-                          <td className="num">{p.type === 'SERVICIO' ? <span className="faint">—</span> : (
+                          <td className="num">{p.type === 'SERVICIO' ? <span className="faint">—</span> : !tracksStock(p) ? <Badge tone="info">Sin inventario</Badge> : (
                             <Badge tone={p.stock <= 0 ? 'red' : isLowStock(p) ? 'warn' : 'ok'}>{p.stock}</Badge>
                           )}</td>
                           <td className="num">{money(p.cost)}</td>
                           <td className="num">{p.price ? money(p.price) : <span className="faint">según OT</span>}</td>
                           <td className="num">{margin === null ? '—' : `${margin}%`}</td>
                           <td className="right nowrap">
-                            {p.type !== 'SERVICIO' && can('inventory.receive') && (
+                            {tracksStock(p) && can('inventory.receive') && (
                               <button className="btn sm ghost" title="Entrada (compra)" onClick={() => setStockOp({ p, kind: 'entrada' })}><ArrowDownToLine size={15} /></button>
                             )}
-                            {p.type !== 'SERVICIO' && can('inventory.edit') && (
+                            {tracksStock(p) && can('inventory.edit') && (
                               <button className="btn sm ghost" title="Ajuste por conteo" onClick={() => setStockOp({ p, kind: 'ajuste' })}><SlidersHorizontal size={15} /></button>
                             )}
                             {can('inventory.edit') && <button className="btn sm ghost" title="Editar" onClick={() => setEdit({ id: p.id, data: { ...EMPTY_PRODUCT, ...p } })}><Pencil size={15} /></button>}
@@ -175,6 +175,15 @@ export function ProductModal({ edit, onClose, onSaved }: { edit: { id?: string; 
         <Field label="Costo unitario"><MoneyInput value={d.cost} onChange={(v) => set('cost', v)} /></Field>
         <Field label={d.type === 'REPUESTO' ? 'Precio de venta (opcional)' : 'Precio de venta'}><MoneyInput value={d.price} onChange={(v) => set('price', v)} /></Field>
         {d.type !== 'SERVICIO' && (
+          <label className="checkbox full">
+            <input type="checkbox" checked={d.trackStock !== false} onChange={(e) => set('trackStock', e.target.checked)} />
+            Controlar inventario (descontar stock al vender o usar en reparación)
+          </label>
+        )}
+        {d.type !== 'SERVICIO' && d.trackStock === false && (
+          <div className="alert info full">Sin inventario: se puede vender y usar en reparaciones sin límite de cantidad. No lleva stock ni alertas de reposición; las ventas y la utilidad sí quedan registradas.</div>
+        )}
+        {tracksStock(d) && (
           <>
             {!edit.id && <Field label="Stock inicial"><input className="input num" type="number" min={0} value={d.stock} onChange={(e) => set('stock', Number(e.target.value))} /></Field>}
             <Field label="Stock mínimo (alerta)"><input className="input num" type="number" min={0} value={d.minStock} onChange={(e) => set('minStock', Number(e.target.value))} /></Field>

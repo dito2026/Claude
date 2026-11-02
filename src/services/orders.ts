@@ -175,6 +175,34 @@ export async function addPart(actor: Actor, orderId: string, productId: string, 
   });
 }
 
+/** Repuesto o accesorio libre (no está en el catálogo): no toca inventario. */
+export async function addFreePart(
+  actor: Actor,
+  orderId: string,
+  item: { name: string; qty: number; unitCost: number; unitPrice: number },
+) {
+  if (!item.name.trim()) throw new BusinessError('Escriba la descripción del repuesto.');
+  if (!(item.qty > 0) || !Number.isInteger(item.qty)) throw new BusinessError('Cantidad inválida.');
+  return backend.transaction(async (tx) => {
+    const o = await tx.get<RepairOrder>('repairOrders', orderId);
+    if (!o) throw new BusinessError('Orden no encontrada.');
+    if (o.status === 'Entregado' || o.status === 'No reparado') throw new BusinessError('La orden está cerrada.');
+    const part = {
+      lineId: uid('pt'),
+      productId: '',
+      name: item.name.trim(),
+      qty: item.qty,
+      unitCost: Math.max(0, item.unitCost || 0),
+      unitPrice: Math.max(0, item.unitPrice || 0),
+    };
+    const timeline = [
+      ...o.timeline,
+      { at: new Date().toISOString(), by: actor.name, note: `Repuesto sin inventario: ${item.qty} × ${part.name}` },
+    ];
+    tx.update('repairOrders', o.id, { parts: [...o.parts, part], timeline, ...touched() });
+  });
+}
+
 /** Quita un repuesto de la OT y lo devuelve al inventario. */
 export async function removePart(actor: Actor, orderId: string, lineId: string) {
   return backend.transaction(async (tx) => {
@@ -183,7 +211,7 @@ export async function removePart(actor: Actor, orderId: string, lineId: string) 
     const part = o.parts.find((x) => x.lineId === lineId);
     if (!part) throw new BusinessError('Repuesto no encontrado en la orden.');
     if (o.status === 'Entregado') throw new BusinessError('La orden ya fue facturada.');
-    const p = await tx.get<Product>('products', part.productId);
+    const p = part.productId ? await tx.get<Product>('products', part.productId) : null;
     // ---- escrituras ----
     if (p) {
       moveStock(tx, actor, p, part.qty, 'devolucion_reparacion', {

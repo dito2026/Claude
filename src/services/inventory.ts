@@ -15,6 +15,9 @@ export interface StockRef {
  * Mueve stock de un producto YA LEÍDO en la transacción y registra el kardex.
  * qty > 0 entra, qty < 0 sale. No permite stock negativo.
  */
+/** ¿Este producto lleva control de stock? (servicios y productos marcados «sin inventario» no) */
+export const tracksStock = (p: Pick<Product, 'type' | 'trackStock'>) => p.type !== 'SERVICIO' && p.trackStock !== false;
+
 export function moveStock(
   tx: Tx,
   actor: Actor,
@@ -23,6 +26,7 @@ export function moveStock(
   reason: StockReason,
   ref: StockRef = {},
 ): number {
+  if (!tracksStock(product)) return Number(product.stock) || 0; // sin control de inventario
   const stockAfter = (Number(product.stock) || 0) + qty;
   if (stockAfter < 0) {
     throw new BusinessError(
@@ -57,7 +61,7 @@ export async function saveProduct(actor: Actor, input: ProductInput, id?: string
     return id;
   }
   return backend.transaction(async (tx) => {
-    const initial = data.type === 'SERVICIO' ? 0 : Math.max(0, Number(data.stock) || 0);
+    const initial = tracksStock(data) ? Math.max(0, Number(data.stock) || 0) : 0;
     const newId = tx.create('products', { ...data, stock: 0, ...created(actor) });
     if (initial > 0) {
       moveStock(tx, actor, { ...(data as Product), id: newId, stock: 0 }, initial, 'inicial', {
@@ -75,6 +79,7 @@ export async function receiveStock(actor: Actor, productId: string, qty: number,
   return backend.transaction(async (tx) => {
     const p = await tx.get<Product>('products', productId);
     if (!p) throw new BusinessError('Producto no encontrado.');
+    if (!tracksStock(p)) throw new BusinessError('Este producto no controla inventario.');
     if (unitCost !== undefined && unitCost > 0) {
       p.cost = unitCost;
       tx.update('products', p.id, { cost: unitCost });
@@ -90,10 +95,11 @@ export async function adjustStock(actor: Actor, productId: string, newStock: num
   return backend.transaction(async (tx) => {
     const p = await tx.get<Product>('products', productId);
     if (!p) throw new BusinessError('Producto no encontrado.');
+    if (!tracksStock(p)) throw new BusinessError('Este producto no controla inventario.');
     const delta = newStock - (Number(p.stock) || 0);
     if (delta === 0) return p.stock;
     return moveStock(tx, actor, p, delta, 'ajuste', { refType: 'manual', note });
   });
 }
 
-export const isLowStock = (p: Product) => p.type !== 'SERVICIO' && p.active && p.stock <= p.minStock;
+export const isLowStock = (p: Product) => tracksStock(p) && p.active && p.stock <= p.minStock;

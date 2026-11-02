@@ -329,3 +329,44 @@ describe('compras y proveedores', () => {
     expect(supplierSummary(s, ps).owed).toBe(2370000);
   });
 });
+
+describe('venta sin inventario', () => {
+  it('producto sin control de stock se vende y se usa en reparaciones sin límite ni kardex', async () => {
+    const { addFreePart } = await import('./orders');
+    const pid = await saveProduct(actor, product({ type: 'ACCESORIO', name: 'Forro', stock: 5, price: 15000, cost: 6000, trackStock: false }));
+    expect(await stockOf(pid)).toBe(0);
+    expect(await kardex(pid)).toHaveLength(0);
+    await openSession(actor, 0);
+    await createInvoice(actor, {
+      customer: { name: 'CF', phone: '', document: '' },
+      items: [{ productId: pid, description: 'Forro', kind: 'producto', qty: 7, unitPrice: 15000, unitCost: 6000 }],
+      discount: 0, taxRate: 0, payments: [{ method: 'Efectivo', amount: 105000 }], cashierName: 'T',
+    });
+    expect(await stockOf(pid)).toBe(0);
+    expect(await kardex(pid)).toHaveLength(0);
+    await expect(adjustStock(actor, pid, 3, 'x')).rejects.toThrow(/no controla inventario/);
+
+    const c = await newCustomer();
+    const o = await newOrder(c);
+    await addPart(actor, o.id, pid, 4);
+    await addFreePart(actor, o.id, { name: 'Flex de carga', qty: 1, unitCost: 20000, unitPrice: 45000 });
+    let order = (await backend.get<RepairOrder>('repairOrders', o.id))!;
+    expect(order.parts.map((p) => p.productId)).toEqual([pid, '']);
+    expect(orderTotal(order)).toBe(40000 + 4 * 15000 + 45000);
+    await removePart(actor, o.id, order.parts[1].lineId);
+    order = (await backend.get<RepairOrder>('repairOrders', o.id))!;
+    expect(order.parts).toHaveLength(1);
+    expect(await stockOf(pid)).toBe(0);
+  });
+
+  it('artículo libre en una factura no toca inventario', async () => {
+    await openSession(actor, 0);
+    const r = await createInvoice(actor, {
+      customer: { name: 'CF', phone: '', document: '' },
+      items: [{ description: 'Audífonos genéricos', kind: 'producto', qty: 2, unitPrice: 25000, unitCost: 9000 }],
+      discount: 0, taxRate: 0, payments: [{ method: 'Nequi', amount: 50000 }], cashierName: 'T',
+    });
+    expect(r.number).toBe(1);
+    expect(await backend.list('stockMovements')).toHaveLength(0);
+  });
+});

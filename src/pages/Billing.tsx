@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Ban, Minus, Plus, Trash2, Wrench, X } from 'lucide-react';
+import { Ban, Minus, PenLine, Plus, Trash2, Wrench, X } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
-import type { Customer, Invoice, InvoiceItem, Payment, Product, RepairOrder } from '../lib/types';
+import type { Customer, Invoice, InvoiceItem, InvoiceItemKind, Payment, Product, RepairOrder } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
@@ -13,6 +13,7 @@ import { computeTotals, createInvoice, itemsFromOrder, voidInvoice } from '../se
 import { depositsTotal } from '../services/orders';
 import { customerRef } from '../services/orders';
 import { useSettings } from '../services/settings';
+import { tracksStock } from '../services/inventory';
 import type { CashState } from '../services/cash';
 
 export function Billing() {
@@ -44,6 +45,7 @@ function Pos() {
   const [payments, setPayments] = useState<Payment[]>([{ method: 'Efectivo', amount: 0 }]);
   const [received, setReceived] = useState(0);
   const [done, setDone] = useState<Invoice | null>(null);
+  const [freeItem, setFreeItem] = useState(false);
 
   // Cargar la OT a facturar
   useEffect(() => {
@@ -134,15 +136,18 @@ function Pos() {
             <button className="btn sm ghost" onClick={reset}><X size={15} />Quitar</button>
           </div>
         ) : null}
-        <SearchBox value={q} onChange={setQ} placeholder="Buscar producto o servicio por nombre o SKU…" />
+        <div className="row gap-sm" style={{ flexWrap: 'nowrap' }}>
+          <div className="grow"><SearchBox value={q} onChange={setQ} placeholder="Buscar producto o servicio por nombre o SKU…" /></div>
+          <button className="btn" onClick={() => setFreeItem(true)} title="Vender algo que no está en el inventario"><PenLine size={16} />Artículo libre</button>
+        </div>
         <div className="product-grid">
           {catalog.map((p) => {
-            const out = p.type !== 'SERVICIO' && p.stock <= 0;
+            const out = tracksStock(p) && p.stock <= 0;
             return (
               <button key={p.id} className="product-tile" disabled={out || !p.price} onClick={() => add(p)}>
                 <small className="faint mono">{p.sku} · {p.type}</small>
                 <span style={{ fontWeight: 500 }}>{p.name}</span>
-                <span className="faint" style={{ fontSize: 12 }}>{p.type === 'SERVICIO' ? 'Servicio' : `Stock ${p.stock}`}</span>
+                <span className="faint" style={{ fontSize: 12 }}>{p.type === 'SERVICIO' ? 'Servicio' : tracksStock(p) ? `Stock ${p.stock}` : 'Sin inventario'}</span>
                 <span className="price">{p.price ? money(p.price) : 'Sin precio'}</span>
               </button>
             );
@@ -159,7 +164,7 @@ function Pos() {
             <div>
               {items.map((it, i) => {
                 const p = stockOf(it.productId);
-                const over = !it.stockAlreadyMoved && p && p.type !== 'SERVICIO' && it.qty > p.stock;
+                const over = !it.stockAlreadyMoved && p && tracksStock(p) && it.qty > p.stock;
                 return (
                   <div key={i} className="list-row" style={{ padding: '10px 0', alignItems: 'flex-start' }}>
                     <div className="grow">
@@ -177,7 +182,7 @@ function Pos() {
                       </div>
                     )}
                     <div style={{ width: 110 }}><MoneyInput value={it.unitPrice} onChange={(v) => setPrice(i, v)} /></div>
-                    {!order && <button className="btn sm ghost" onClick={() => removeAt(i)}><Trash2 size={14} /></button>}
+                    {(!order || (!it.stockAlreadyMoved && it.kind !== 'mano_obra')) && <button className="btn sm ghost" onClick={() => removeAt(i)}><Trash2 size={14} /></button>}
                   </div>
                 );
               })}
@@ -225,6 +230,7 @@ function Pos() {
       </div>
 
       {done && <InvoiceModal inv={done} s={settings} onClose={() => setDone(null)} />}
+      {freeItem && <FreeItemModal onClose={() => setFreeItem(false)} onAdd={(it) => setItems((xs) => [...xs, it])} />}
     </div>
   );
 }
@@ -285,5 +291,39 @@ function History() {
         </Modal>
       )}
     </>
+  );
+}
+
+const FREE_KINDS: { value: InvoiceItemKind; label: string }[] = [
+  { value: 'producto', label: 'Accesorio / producto' },
+  { value: 'repuesto', label: 'Repuesto' },
+  { value: 'servicio', label: 'Servicio' },
+];
+
+/** Línea de venta que no está en el catálogo: no toca inventario. */
+function FreeItemModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it: InvoiceItem) => void }) {
+  const [description, setDescription] = useState('');
+  const [kind, setKind] = useState<InvoiceItemKind>('producto');
+  const [qty, setQty] = useState(1);
+  const [price, setPrice] = useState(0);
+  const [cost, setCost] = useState(0);
+  const ok = description.trim() && qty > 0 && price > 0;
+  return (
+    <Modal title="Artículo libre (sin inventario)" onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={!ok} onClick={() => { onAdd({ description: description.trim(), kind, qty, unitPrice: price, unitCost: cost }); onClose(); }}>Agregar a la venta</button></>}>
+      <div className="form-grid">
+        <Field label="Descripción" required className="full"><input className="input" autoFocus value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ej.: Forro iPhone 13 transparente" /></Field>
+        <Field label="Tipo">
+          <select className="input" value={kind} onChange={(e) => setKind(e.target.value as InvoiceItemKind)}>
+            {FREE_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Cantidad"><input className="input num" type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))} /></Field>
+        <Field label="Precio de venta (unitario)" required><MoneyInput value={price} onChange={setPrice} /></Field>
+        <Field label="Costo (unitario, para la utilidad)"><MoneyInput value={cost} onChange={setCost} /></Field>
+      </div>
+      <div className="faint mt" style={{ fontSize: 12 }}>No descuenta inventario. La venta, el costo y la utilidad sí quedan registrados en la factura y en la caja.</div>
+    </Modal>
   );
 }

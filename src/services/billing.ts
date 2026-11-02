@@ -42,7 +42,7 @@ export function itemsFromOrder(o: RepairOrder): InvoiceItem[] {
   }
   for (const p of o.parts) {
     items.push({
-      productId: p.productId,
+      productId: p.productId || undefined,
       description: p.name,
       kind: 'repuesto',
       qty: p.qty,
