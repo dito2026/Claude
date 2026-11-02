@@ -10,15 +10,16 @@ export type Permission =
   | 'billing'
   | 'billing.void'
   | 'cash'
+  | 'purchases'
   | 'staff.manage'
   | 'settings';
 
 const MATRIX: Record<Role, Permission[]> = {
   admin: [
     'dashboard.finance', 'customers.edit', 'orders.create', 'orders.billing', 'inventory.edit',
-    'inventory.receive', 'billing', 'billing.void', 'cash', 'staff.manage', 'settings',
+    'inventory.receive', 'billing', 'billing.void', 'cash', 'purchases', 'staff.manage', 'settings',
   ],
-  cajero: ['dashboard.finance', 'customers.edit', 'orders.create', 'orders.billing', 'inventory.receive', 'billing', 'cash'],
+  cajero: ['dashboard.finance', 'customers.edit', 'orders.create', 'orders.billing', 'inventory.receive', 'billing', 'cash', 'purchases'],
   tecnico: [],
 };
 

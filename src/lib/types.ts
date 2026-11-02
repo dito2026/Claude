@@ -90,7 +90,7 @@ export interface StockMovement extends BaseDoc {
   kind: 'entrada' | 'salida' | 'ajuste';
   qty: number; // con signo
   reason: StockReason;
-  refType?: 'repairOrder' | 'invoice' | 'manual';
+  refType?: 'repairOrder' | 'invoice' | 'purchase' | 'manual';
   refId?: string;
   refNumber?: number;
   unitCost: number;
@@ -270,8 +270,48 @@ export interface CashMovement extends BaseDoc {
   method: string;
   amount: number;
   description: string;
-  refType?: 'invoice' | 'repairOrder' | 'technician' | 'manual';
+  refType?: 'invoice' | 'repairOrder' | 'technician' | 'purchase' | 'manual';
   refId?: string;
 }
 
 export const CREDIT_METHOD = 'Crédito tienda';
+
+// ---------------- Compras y proveedores ----------------
+export interface Supplier extends BaseDoc {
+  name: string;
+  nit: string;
+  phone: string;
+  termDays: number; // plazo de pago por defecto
+  notes: string;
+  active: boolean;
+}
+
+export interface PurchaseItem {
+  productId: string;
+  name: string;
+  qty: number;
+  unitCost: number;
+}
+
+export interface SupplierPayment {
+  at: string;
+  amount: number;
+  method: string;
+  by: string;
+}
+
+export interface Purchase extends BaseDoc {
+  number: number;
+  kind: 'compra' | 'saldo_inicial';
+  supplierId: string;
+  supplierName: string;
+  items: PurchaseItem[];
+  total: number;
+  paymentType: 'contado' | 'credito';
+  invoiceRef: string;
+  dueDate?: string;
+  paid: number;
+  payments: SupplierPayment[];
+  status: 'pagada' | 'pendiente' | 'parcial';
+  note: string;
+}

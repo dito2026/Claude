@@ -263,3 +263,69 @@ describe('importación de datos anteriores', () => {
     expect(again.technicians).toEqual({ added: 0, skipped: 2 });
   });
 });
+
+describe('compras y proveedores', () => {
+  const supplierBase = { nit: '', phone: '', termDays: 30, notes: '', active: true };
+
+  it('compra a crédito: suma stock, no toca caja y queda por pagar; abono parcial y total', async () => {
+    const { saveSupplier, createPurchase, paySupplier, purchaseBalance, supplierSummary } = await import('./purchases');
+    const pid = await saveProduct(actor, product({ stock: 2, cost: 50000 }));
+    const sid = await saveSupplier(actor, { ...supplierBase, name: 'Maxel' });
+    const supplier = (await backend.get<import('../lib/types').Supplier>('suppliers', sid))!;
+    const r = await createPurchase(actor, {
+      supplier, items: [{ productId: pid, name: 'Pantalla X', qty: 3, unitCost: 45000 }],
+      paymentType: 'credito', method: 'Efectivo', invoiceRef: 'F-12', note: '', updateCost: true,
+    });
+    expect(r.total).toBe(135000);
+    expect(await stockOf(pid)).toBe(5);
+    expect((await backend.get<Product>('products', pid))!.cost).toBe(45000);
+    const k = (await kardex(pid)).find((m) => m.reason === 'compra')!;
+    expect(k).toMatchObject({ qty: 3, refType: 'purchase', refNumber: 1 });
+    expect(await backend.list('cashMovements')).toHaveLength(0);
+
+    type P = import('../lib/types').Purchase;
+    let purchases = await backend.list<P>('purchases');
+    expect(supplierSummary(supplier, purchases).owed).toBe(135000);
+
+    await expect(paySupplier(actor, supplier, purchases.map((p) => p.id), 10000, 'Efectivo')).rejects.toThrow(/caja abierta/);
+    await openSession(actor, 200000);
+    await expect(paySupplier(actor, supplier, purchases.map((p) => p.id), 999999, 'Efectivo')).rejects.toThrow(/supera la deuda/);
+    await paySupplier(actor, supplier, purchases.map((p) => p.id), 35000, 'Efectivo');
+    purchases = await backend.list<P>('purchases');
+    expect(purchases[0]).toMatchObject({ paid: 35000, status: 'parcial' });
+    expect(purchaseBalance(purchases[0])).toBe(100000);
+    await paySupplier(actor, supplier, purchases.map((p) => p.id), 100000, 'Nequi');
+    purchases = await backend.list<P>('purchases');
+    expect(purchases[0].status).toBe('pagada');
+    const exp = expectedByMethod({ openingCash: 200000 }, await backend.list<CashMovement>('cashMovements'), ['Efectivo', 'Nequi']);
+    expect(exp).toMatchObject({ Efectivo: 165000, Nequi: -100000 });
+  });
+
+  it('compra de contado exige caja abierta y sale de caja', async () => {
+    const { saveSupplier, createPurchase } = await import('./purchases');
+    const pid = await saveProduct(actor, product({ type: 'ACCESORIO', stock: 0, cost: 2000 }));
+    const sid = await saveSupplier(actor, { ...supplierBase, name: 'Claro' });
+    const supplier = (await backend.get<import('../lib/types').Supplier>('suppliers', sid))!;
+    const draft = {
+      supplier, items: [{ productId: pid, name: 'Sim card', qty: 10, unitCost: 1000 }],
+      paymentType: 'contado' as const, method: 'Efectivo', invoiceRef: '', note: '', updateCost: false,
+    };
+    await expect(createPurchase(actor, draft)).rejects.toThrow(/caja abierta/);
+    expect(await stockOf(pid)).toBe(0);
+    await openSession(actor, 50000);
+    await createPurchase(actor, draft);
+    expect(await stockOf(pid)).toBe(10);
+    expect((await backend.get<Product>('products', pid))!.cost).toBe(2000);
+    const exp = expectedByMethod({ openingCash: 50000 }, await backend.list<CashMovement>('cashMovements'), ['Efectivo']);
+    expect(exp.Efectivo).toBe(40000);
+  });
+
+  it('proveedor con saldo anterior queda debiendo', async () => {
+    const { saveSupplier, supplierSummary } = await import('./purchases');
+    const sid = await saveSupplier(actor, { ...supplierBase, name: 'Nano' }, undefined, 2370000);
+    const s = (await backend.get<import('../lib/types').Supplier>('suppliers', sid))!;
+    const ps = await backend.list<import('../lib/types').Purchase>('purchases');
+    expect(ps[0]).toMatchObject({ kind: 'saldo_inicial', total: 2370000, paymentType: 'credito' });
+    expect(supplierSummary(s, ps).owed).toBe(2370000);
+  });
+});

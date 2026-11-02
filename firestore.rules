@@ -115,6 +115,20 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---- Compras y proveedores ----
+    match /suppliers/{id} {
+      allow read, create, update: if isCashier();
+      allow delete: if false; // se desactivan, no se borran
+    }
+
+    // Compras: no se borran; solo se actualizan los abonos
+    match /purchases/{id} {
+      allow read, create: if isCashier();
+      allow update: if isCashier()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paid', 'payments', 'status', 'updatedAt']);
+      allow delete: if false;
+    }
+
     // Libro de caja: solo se agregan registros
     match /cashMovements/{id} {
       allow read, create: if isCashier();

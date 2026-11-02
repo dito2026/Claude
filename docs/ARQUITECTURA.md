@@ -206,9 +206,8 @@ La regla usa el documento `meta/bootstrap`, que solo se puede crear una vez.
   quedan en las hojas de cálculo; la app solo recibe los datos base (ver §10).
 
 1. Equipos por IMEI: compra, venta, garantía y el *historial clínico por IMEI*.
-2. Proveedores, compras a crédito y cuentas por pagar.
-3. Métricas avanzadas y libro fiscal de operaciones diarias (DIAN).
-4. Portal del cliente para consultar el estado de su OT con el número y el teléfono.
+2. Métricas avanzadas y libro fiscal de operaciones diarias (DIAN).
+3. Portal del cliente para consultar el estado de su OT con el número y el teléfono.
 
 ## 10. Importación de datos base
 
@@ -231,3 +230,17 @@ La regla usa el documento `meta/bootstrap`, que solo se puede crear una vez.
 - En la configuración solo se reemplazan los campos que vienen con valor.
 - El archivo con los datos reales **no se guarda en el repositorio**, porque contiene datos personales
   de clientes.
+
+## 11. Compras y proveedores
+
+Colecciones `suppliers` (nombre, NIT, celular, plazo en días) y `purchases` (consecutivo C-0001,
+proveedor, ítems, total, `paymentType` contado/crédito, vencimiento, `paid`, `payments[]`, estado).
+
+- **Compra a crédito:** el stock entra de inmediato (kardex `compra` con referencia a la compra), el
+  dinero no sale de caja y queda en *Por pagar* con fecha de vencimiento según el plazo del proveedor.
+- **Compra de contado:** exige caja abierta y registra un egreso `pago_proveedor` por el total.
+- **Abono:** sale de la caja abierta y se aplica a las compras pendientes, de la más antigua a la más
+  reciente (pendiente → parcial → pagada).
+- **Saldo anterior:** al crear un proveedor se puede registrar lo que ya se le debía; queda como una
+  compra a crédito de tipo `saldo_inicial`, sin movimiento de inventario.
+- Las compras no se borran; en Firestore solo se pueden actualizar sus campos de pago.

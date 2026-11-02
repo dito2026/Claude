@@ -17,7 +17,7 @@ const REASON: Record<StockMovement['reason'], string> = {
   ajuste: 'Ajuste de conteo', anulacion: 'Anulación de venta', inicial: 'Stock inicial',
 };
 
-const EMPTY: ProductInput = {
+export const EMPTY_PRODUCT: ProductInput = {
   sku: '', type: 'REPUESTO', name: '', brand: '', model: '', color: '', cost: 0, price: 0, stock: 0,
   minStock: 1, warrantyMonths: 0, line: 'Servicio técnico', active: true,
 };
@@ -54,7 +54,7 @@ export function Inventory() {
         actions={
           <>
             <SearchBox value={q} onChange={setQ} placeholder="SKU, nombre, marca o modelo" />
-            {can('inventory.edit') && <button className="btn primary" onClick={() => setEdit({ data: { ...EMPTY } })}><Plus size={16} />Nuevo producto</button>}
+            {can('inventory.edit') && <button className="btn primary" onClick={() => setEdit({ data: { ...EMPTY_PRODUCT } })}><Plus size={16} />Nuevo producto</button>}
           </>
         }
       />
@@ -97,7 +97,7 @@ export function Inventory() {
                             {p.type !== 'SERVICIO' && can('inventory.edit') && (
                               <button className="btn sm ghost" title="Ajuste por conteo" onClick={() => setStockOp({ p, kind: 'ajuste' })}><SlidersHorizontal size={15} /></button>
                             )}
-                            {can('inventory.edit') && <button className="btn sm ghost" title="Editar" onClick={() => setEdit({ id: p.id, data: { ...EMPTY, ...p } })}><Pencil size={15} /></button>}
+                            {can('inventory.edit') && <button className="btn sm ghost" title="Editar" onClick={() => setEdit({ id: p.id, data: { ...EMPTY_PRODUCT, ...p } })}><Pencil size={15} /></button>}
                             <button className="btn sm ghost" onClick={() => { setKardexFor(p.id); setTab('kardex'); }}>Kardex</button>
                           </td>
                         </tr>
@@ -132,7 +132,8 @@ export function Inventory() {
                         <td>{REASON[m.reason]}{m.note && <small>{m.note}</small>}</td>
                         <td className="mono">
                           {m.refType === 'repairOrder' && m.refId ? <Link className="red" to={`/taller/${m.refId}`}>OT {pad(m.refNumber)}</Link>
-                            : m.refType === 'invoice' ? `Factura ${pad(m.refNumber, 6)}` : '—'}
+                            : m.refType === 'invoice' ? `Factura ${pad(m.refNumber, 6)}`
+                            : m.refType === 'purchase' ? <Link className="red" to="/compras">Compra C-{pad(m.refNumber, 4)}</Link> : '—'}
                         </td>
                         <td className={`num ${m.qty < 0 ? 'red' : ''}`}>{m.qty > 0 ? `+${m.qty}` : m.qty}</td>
                         <td className="num">{m.stockAfter}</td>
@@ -152,7 +153,7 @@ export function Inventory() {
   );
 }
 
-function ProductModal({ edit, onClose }: { edit: { id?: string; data: ProductInput }; onClose: () => void }) {
+export function ProductModal({ edit, onClose, onSaved }: { edit: { id?: string; data: ProductInput }; onClose: () => void; onSaved?: (id: string) => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
   const [d, setD] = useState(edit.data);
@@ -160,7 +161,7 @@ function ProductModal({ edit, onClose }: { edit: { id?: string; data: ProductInp
   return (
     <Modal title={edit.id ? 'Editar producto' : 'Nuevo producto'} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy} onClick={() => run(() => saveProduct(actor, d, edit.id), 'Producto guardado').then((ok) => ok && onClose())}>Guardar</button></>}>
+        <button className="btn primary" disabled={busy} onClick={() => run(async () => { const id = await saveProduct(actor, d, edit.id); onSaved?.(String(id)); }, 'Producto guardado').then((ok) => ok && onClose())}>Guardar</button></>}>
       <div className="form-grid">
         <Field label="Tipo">
           <select className="input" value={d.type} onChange={(e) => { const t = e.target.value as ProductType; setD({ ...d, type: t, line: LINE_BY_TYPE[t] }); }}>

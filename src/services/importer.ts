@@ -1,13 +1,14 @@
 // Importación de datos base (clientes, inventario, técnicos y configuración) desde un archivo JSON.
 // Es segura de repetir: lo que ya existe (mismo documento, SKU o nombre) se omite.
 import { backend } from '../data';
-import type { BusinessSettings, Customer, Product, Technician } from '../lib/types';
+import type { BusinessSettings, Customer, Product, Supplier, Technician } from '../lib/types';
 import { normalize } from '../lib/format';
 import { BusinessError, type Actor } from './common';
 import type { CustomerInput } from './customers';
 import { saveProduct, type ProductInput } from './inventory';
 import { saveTechnician, type TechnicianInput } from './staff';
 import { DEFAULT_SETTINGS, saveSettings } from './settings';
+import { saveSupplier } from './purchases';
 
 export interface ImportFile {
   version: 1;
@@ -16,6 +17,8 @@ export interface ImportFile {
   customers?: Partial<CustomerInput>[];
   products?: Partial<ProductInput>[];
   technicians?: Partial<TechnicianInput>[];
+  /** openingBalance: saldo anterior que se le debe (queda como compra a crédito «Saldo anterior») */
+  suppliers?: { name?: string; nit?: string; phone?: string; termDays?: number; notes?: string; openingBalance?: number }[];
 }
 
 export interface ImportResult {
@@ -23,6 +26,7 @@ export interface ImportResult {
   customers: { added: number; skipped: number };
   products: { added: number; skipped: number };
   technicians: { added: number; skipped: number };
+  suppliers: { added: number; skipped: number };
 }
 
 const key = (s: string | undefined) => normalize((s ?? '').trim());
@@ -43,13 +47,14 @@ export function parseImportFile(text: string): ImportFile {
 export async function importData(
   actor: Actor,
   file: ImportFile,
-  existing: { customers: Customer[]; products: Product[]; technicians: Technician[]; settings: BusinessSettings },
+  existing: { customers: Customer[]; products: Product[]; technicians: Technician[]; settings: BusinessSettings; suppliers?: Supplier[] },
 ): Promise<ImportResult> {
   const result: ImportResult = {
     settings: false,
     customers: { added: 0, skipped: 0 },
     products: { added: 0, skipped: 0 },
     technicians: { added: 0, skipped: 0 },
+    suppliers: { added: 0, skipped: 0 },
   };
 
   // Configuración: solo se completan los campos que vienen con valor.
@@ -138,6 +143,24 @@ export async function importData(
     if (sku) skus.add(key(sku));
     pnames.add(key(name));
     result.products.added++;
+  }
+
+  // Proveedores (por nombre), con su saldo anterior por pagar
+  const supNames = new Set((existing.suppliers ?? []).map((x) => key(x.name)));
+  for (const sp of file.suppliers ?? []) {
+    const name = (sp.name ?? '').trim();
+    if (!name || supNames.has(key(name))) {
+      result.suppliers.skipped++;
+      continue;
+    }
+    await saveSupplier(
+      actor,
+      { name, nit: sp.nit ?? '', phone: sp.phone ?? '', termDays: num(sp.termDays) || 30, notes: sp.notes ?? '', active: true },
+      undefined,
+      Math.max(0, num(sp.openingBalance)),
+    );
+    supNames.add(key(name));
+    result.suppliers.added++;
   }
 
   return result;
