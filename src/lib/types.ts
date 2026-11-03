@@ -125,6 +125,9 @@ export interface OrderPart {
   qty: number;
   unitCost: number;
   unitPrice: number;
+  /** compra al proveedor de este repuesto libre (si se registró) */
+  purchaseNumber?: number;
+  supplierName?: string;
 }
 
 export interface Deposit {
@@ -292,6 +295,7 @@ export interface Supplier extends BaseDoc {
 }
 
 export interface PurchaseItem {
+  /** vacío = artículo libre (no está en el inventario; no mueve stock) */
   productId: string;
   name: string;
   qty: number;

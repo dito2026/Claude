@@ -92,6 +92,7 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
   cleanUnits(allUnits); // IMEI repetidos entre líneas
   if (!d.supplier?.id) throw new BusinessError('Seleccione el proveedor.');
   if (items.length === 0) throw new BusinessError('Agregue al menos un producto a la compra.');
+  if (items.some((i) => !i.productId && !i.name.trim())) throw new BusinessError('Escriba la descripción del artículo libre.');
   if (items.some((i) => !Number.isInteger(i.qty) || i.unitCost < 0)) throw new BusinessError('Revise cantidades y costos.');
   if (d.paymentType === 'contado' && d.method === CREDIT_METHOD) throw new BusinessError('Elija con qué medio paga de contado.');
   const total = sum(items.map((i) => i.qty * i.unitCost));
@@ -102,6 +103,7 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
     const sessionId = d.paymentType === 'contado' && total > 0 ? await requireOpenSession(tx) : null;
     const products = new Map<string, Product>();
     for (const it of items) {
+      if (!it.productId) continue; // artículo libre: no está en el inventario
       if (!products.has(it.productId)) {
         const p = await tx.get<Product>('products', it.productId);
         if (!p) throw new BusinessError(`Producto no encontrado: ${it.name}`);
@@ -138,7 +140,8 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
     const pid = tx.create('purchases', purchase as unknown as Record<string, unknown>);
 
     for (const it of items) {
-      const p = products.get(it.productId)!;
+      const p = it.productId ? products.get(it.productId) : undefined;
+      if (!p) continue; // artículo libre: solo queda la deuda/pago, sin inventario
       if (d.updateCost && it.unitCost > 0 && it.unitCost !== p.cost) {
         p.cost = it.unitCost;
         tx.update('products', p.id, { cost: it.unitCost });
@@ -215,5 +218,24 @@ export async function paySupplier(actor: Actor, supplier: Supplier, purchaseIds:
       refId: supplier.id,
     });
     return { applied };
+  });
+}
+
+/** Compra rápida de un artículo libre (sin inventario) a un proveedor, desde una OT o una venta. */
+export async function buyFreeItem(
+  actor: Actor,
+  supplier: Supplier,
+  item: { name: string; qty: number; unitCost: number },
+  pay: { paymentType: 'contado' | 'credito'; method: string; note: string },
+) {
+  if (!(item.unitCost > 0)) throw new BusinessError('Escriba el costo que le cobró el proveedor.');
+  return createPurchase(actor, {
+    supplier,
+    items: [{ productId: '', name: item.name.trim(), qty: item.qty, unitCost: item.unitCost }],
+    paymentType: pay.paymentType,
+    method: pay.method,
+    invoiceRef: '',
+    note: pay.note,
+    updateCost: false,
   });
 }

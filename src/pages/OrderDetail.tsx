@@ -8,6 +8,8 @@ import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, CommitMoney, Empty, Field, Modal, MoneyInput, Seg, useAction } from '../components/ui';
 import { tracksStock } from '../services/inventory';
+import { buyFreeItem } from '../services/purchases';
+import { BuyFromSupplierFields, EMPTY_BUY, useSuppliers, type BuyFromSupplierValue } from '../components/BuyFromSupplier';
 import { orderTone, priorityTone } from '../components/status';
 import { OrderReceiptModal } from '../components/Receipts';
 import {
@@ -108,7 +110,7 @@ export function OrderDetail() {
                 <tbody>
                   {o.parts.map((p) => (
                     <tr key={p.lineId}>
-                      <td><span className="strong">{p.name}</span>{!p.productId && <small>Repuesto libre · sin inventario</small>}</td>
+                      <td><span className="strong">{p.name}</span>{!p.productId && <small>Repuesto libre · sin inventario{p.purchaseNumber ? ` · Compra C-${pad(p.purchaseNumber, 4)} a ${p.supplierName}` : ''}</small>}</td>
                       <td className="num">{p.qty}</td>
                       <td className="num faint">{money(p.unitCost)}</td>
                       <td className="num">{money(p.unitPrice)}</td>
@@ -216,6 +218,8 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
   const [price, setPrice] = useState(0);
   const [freeName, setFreeName] = useState('');
   const [freeCost, setFreeCost] = useState(0);
+  const [buy, setBuy] = useState<BuyFromSupplierValue>(EMPTY_BUY);
+  const suppliers = useSuppliers();
 
   const list = useMemo(
     () => products
@@ -230,7 +234,17 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
 
   const submit = () =>
     mode === 'libre'
-      ? run(() => addFreePart(actor, order.id, { name: freeName, qty, unitCost: freeCost, unitPrice: price }), 'Repuesto agregado (sin inventario)')
+      ? run(async () => {
+          let purchase: { number: number; supplierName: string } | undefined;
+          if (buy.enabled) {
+            const s = suppliers.find((x) => x.id === buy.supplierId);
+            if (!s) throw new Error('Seleccione el proveedor al que le compró el repuesto.');
+            const r = await buyFreeItem(actor, s, { name: freeName, qty, unitCost: freeCost },
+              { paymentType: buy.paymentType, method: buy.method, note: `Repuesto para OT ${order.number}` });
+            purchase = { number: r.number, supplierName: s.name };
+          }
+          await addFreePart(actor, order.id, { name: freeName, qty, unitCost: freeCost, unitPrice: price, purchaseNumber: purchase?.number, supplierName: purchase?.supplierName });
+        }, buy.enabled ? (buy.paymentType === 'credito' ? 'Repuesto agregado y deuda registrada al proveedor' : 'Repuesto agregado y compra registrada') : 'Repuesto agregado (sin inventario)')
       : run(() => addPart(actor, order.id, sel!.id, qty, price), selTracks ? 'Repuesto agregado y descontado del inventario' : 'Repuesto agregado (sin inventario)');
 
   return (
@@ -261,6 +275,7 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
               <Field label="Costo (lo que le costó)"><MoneyInput value={freeCost} onChange={setFreeCost} /></Field>
               <Field label="Precio al cliente (unitario)" required><MoneyInput value={price} onChange={setPrice} /></Field>
             </div>
+            <BuyFromSupplierFields value={buy} onChange={setBuy} />
             <div className="faint" style={{ fontSize: 12 }}>Para repuestos que no maneja en inventario: no descuenta stock, pero el costo y el precio quedan en la orden y en la factura.</div>
           </>
         ) : !sel ? (

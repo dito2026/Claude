@@ -180,7 +180,7 @@ export async function addPart(actor: Actor, orderId: string, productId: string, 
 export async function addFreePart(
   actor: Actor,
   orderId: string,
-  item: { name: string; qty: number; unitCost: number; unitPrice: number },
+  item: { name: string; qty: number; unitCost: number; unitPrice: number; purchaseNumber?: number; supplierName?: string },
 ) {
   if (!item.name.trim()) throw new BusinessError('Escriba la descripción del repuesto.');
   if (!(item.qty > 0) || !Number.isInteger(item.qty)) throw new BusinessError('Cantidad inválida.');
@@ -195,6 +195,8 @@ export async function addFreePart(
       qty: item.qty,
       unitCost: Math.max(0, item.unitCost || 0),
       unitPrice: Math.max(0, item.unitPrice || 0),
+      purchaseNumber: item.purchaseNumber,
+      supplierName: item.supplierName,
     };
     const timeline = [
       ...o.timeline,

@@ -282,3 +282,13 @@ Los productos tipo `EQUIPO` siempre controlan inventario y se manejan **unidad p
   intentan sin internet se muestra un mensaje claro y aparece el aviso «Sin conexión · solo consulta».
 - `firebase.json` marca `sw.js`, `index.html` y el manifiesto como `no-cache` para que cada
   publicación llegue de inmediato.
+
+## 15. Compras a crédito sin inventario
+
+- Una compra puede tener **líneas libres** (`items[].productId` vacío): registran el costo y la deuda
+  con el proveedor, sin mover stock ni kardex.
+- Los productos marcados «sin inventario» también se compran a crédito: actualizan el costo y crean
+  la deuda, pero no suman stock.
+- Atajo «Lo compré a un proveedor» al agregar un **repuesto libre a una OT** o un **artículo libre
+  en el POS**: crea en el mismo paso la compra (crédito = deuda; contado = egreso de caja). El
+  repuesto de la OT queda con el número de compra y el proveedor.

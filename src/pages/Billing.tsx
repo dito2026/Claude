@@ -16,6 +16,8 @@ import { useSettings } from '../services/settings';
 import { tracksStock } from '../services/inventory';
 import { isPhone, normalizeImei } from '../services/phones';
 import { UnitPickerModal } from '../components/PhoneUnits';
+import { BuyFromSupplierFields, EMPTY_BUY, useSuppliers, type BuyFromSupplierValue } from '../components/BuyFromSupplier';
+import { buyFreeItem } from '../services/purchases';
 import type { CashState } from '../services/cash';
 
 export function Billing() {
@@ -333,6 +335,10 @@ const FREE_KINDS: { value: InvoiceItemKind; label: string }[] = [
 
 /** Línea de venta que no está en el catálogo: no toca inventario. */
 function FreeItemModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it: InvoiceItem) => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const suppliers = useSuppliers();
+  const [buy, setBuy] = useState<BuyFromSupplierValue>(EMPTY_BUY);
   const [description, setDescription] = useState('');
   const [kind, setKind] = useState<InvoiceItemKind>('producto');
   const [qty, setQty] = useState(1);
@@ -342,7 +348,14 @@ function FreeItemModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it: In
   return (
     <Modal title="Artículo libre (sin inventario)" onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={!ok} onClick={() => { onAdd({ description: description.trim(), kind, qty, unitPrice: price, unitCost: cost }); onClose(); }}>Agregar a la venta</button></>}>
+        <button className="btn primary" disabled={!ok || busy} onClick={() => run(async () => {
+          if (buy.enabled) {
+            const sp = suppliers.find((x) => x.id === buy.supplierId);
+            if (!sp) throw new Error('Seleccione el proveedor al que le compró el artículo.');
+            await buyFreeItem(actor, sp, { name: description, qty, unitCost: cost }, { paymentType: buy.paymentType, method: buy.method, note: 'Artículo libre vendido en el POS' });
+          }
+          onAdd({ description: description.trim(), kind, qty, unitPrice: price, unitCost: cost });
+        }, buy.enabled ? (buy.paymentType === 'credito' ? 'Agregado · deuda registrada al proveedor' : 'Agregado · compra registrada') : undefined).then((ok2) => ok2 && onClose())}>Agregar a la venta</button></>}>
       <div className="form-grid">
         <Field label="Descripción" required className="full"><input className="input" autoFocus value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ej.: Forro iPhone 13 transparente" /></Field>
         <Field label="Tipo">
@@ -354,6 +367,7 @@ function FreeItemModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it: In
         <Field label="Precio de venta (unitario)" required><MoneyInput value={price} onChange={setPrice} /></Field>
         <Field label="Costo (unitario, para la utilidad)"><MoneyInput value={cost} onChange={setCost} /></Field>
       </div>
+      <div className="mt"><BuyFromSupplierFields value={buy} onChange={setBuy} /></div>
       <div className="faint mt" style={{ fontSize: 12 }}>No descuenta inventario. La venta, el costo y la utilidad sí quedan registrados en la factura y en la caja.</div>
     </Modal>
   );

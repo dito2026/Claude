@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { HandCoins, PackagePlus, Pencil, Plus, Trash2, Truck } from 'lucide-react';
+import { HandCoins, PackagePlus, PenLine, Pencil, Plus, Trash2, Truck } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { PhoneCondition, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
@@ -119,7 +119,7 @@ function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
             <thead><tr><th>Producto</th><th className="num">Cant.</th><th className="num">Costo unit.</th><th className="num">Subtotal</th></tr></thead>
             <tbody>
               {p.items.map((i, k) => (
-                <tr key={k}><td className="strong">{i.name}</td><td className="num">{i.qty}</td><td className="num">{money(i.unitCost)}</td><td className="num">{money(i.qty * i.unitCost)}</td></tr>
+                <tr key={k}><td><span className="strong">{i.name}</span>{!i.productId && <small>Artículo libre · sin inventario</small>}</td><td className="num">{i.qty}</td><td className="num">{money(i.unitCost)}</td><td className="num">{money(i.qty * i.unitCost)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -348,6 +348,7 @@ function NewPurchaseModal({ suppliers, onClose }: { suppliers: Supplier[]; onClo
 
         <div className="row gap-sm">
           <input className="input grow" placeholder="Buscar repuesto o accesorio por nombre, SKU o modelo…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <button type="button" className="btn" title="Algo que no está en el inventario" onClick={() => setItems((xs) => [...xs, { productId: '', name: q.trim(), qty: 1, unitCost: 0 }])}><PenLine size={15} />Artículo libre</button>
           {can('inventory.edit') && <button type="button" className="btn" onClick={() => setNewProduct(true)}><PackagePlus size={15} />Producto nuevo</button>}
         </div>
         <div className="product-grid">
@@ -367,9 +368,14 @@ function NewPurchaseModal({ suppliers, onClose }: { suppliers: Supplier[]; onClo
               <thead><tr><th>Producto</th><th className="num" style={{ width: 110 }}>Cantidad</th><th className="num" style={{ width: 160 }}>Costo unitario</th><th className="num">Subtotal</th><th /></tr></thead>
               <tbody>
                 {items.map((it, k) => (
-                  <tr key={it.productId}>
+                  <tr key={it.productId || `libre-${k}`}>
                     <td>
-                      <span className="strong">{it.name}</span>
+                      {it.productId ? <span className="strong">{it.name}</span> : (
+                        <>
+                          <input className="input" placeholder="Descripción del artículo libre" value={it.name} onChange={(e) => setItem(k, { name: e.target.value })} />
+                          <small className="faint">Sin inventario: solo registra la compra y la deuda</small>
+                        </>
+                      )}
                       {isPhoneLine(it) && (
                         <div className="stack" style={{ gap: 6, marginTop: 6 }}>
                           <ImeiTextarea value={imeiText[it.productId] ?? ''} onChange={(v) => setImeiText({ ...imeiText, [it.productId]: v })} />

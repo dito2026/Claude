@@ -451,3 +451,56 @@ describe('celulares por IMEI', () => {
     await expect(addPart(actor, o.id, pid, 1)).rejects.toThrow(/IMEI en Facturación/);
   });
 });
+
+describe('compras a crédito sin inventario', () => {
+  const supplierBase = { nit: '', phone: '', termDays: 30, notes: '', active: true };
+  type Sup = import('../lib/types').Supplier;
+  type P = import('../lib/types').Purchase;
+
+  it('artículo libre a crédito: deuda al proveedor sin movimiento de inventario', async () => {
+    const { saveSupplier, createPurchase, supplierSummary } = await import('./purchases');
+    const sid = await saveSupplier(actor, { ...supplierBase, name: 'Pepe' });
+    const s = (await backend.get<Sup>('suppliers', sid))!;
+    await createPurchase(actor, {
+      supplier: s, items: [{ productId: '', name: 'Display Redmi Note 9', qty: 1, unitCost: 40000 }],
+      paymentType: 'credito', method: 'Efectivo', invoiceRef: '', note: '', updateCost: true,
+    });
+    expect(await backend.list('stockMovements')).toHaveLength(0);
+    expect(await backend.list('cashMovements')).toHaveLength(0);
+    expect(supplierSummary(s, await backend.list<P>('purchases')).owed).toBe(40000);
+    await expect(createPurchase(actor, {
+      supplier: s, items: [{ productId: '', name: '  ', qty: 1, unitCost: 1000 }],
+      paymentType: 'credito', method: 'Efectivo', invoiceRef: '', note: '', updateCost: false,
+    })).rejects.toThrow(/descripción/);
+  });
+
+  it('producto marcado «sin inventario» comprado a crédito: deuda y no toca stock', async () => {
+    const { saveSupplier, createPurchase, supplierSummary } = await import('./purchases');
+    const pid = await saveProduct(actor, product({ type: 'ACCESORIO', name: 'Forro', cost: 5000, trackStock: false }));
+    const sid = await saveSupplier(actor, { ...supplierBase, name: 'Maxel' });
+    const s = (await backend.get<Sup>('suppliers', sid))!;
+    await createPurchase(actor, {
+      supplier: s, items: [{ productId: pid, name: 'Forro', qty: 20, unitCost: 4500 }],
+      paymentType: 'credito', method: 'Efectivo', invoiceRef: '', note: '', updateCost: true,
+    });
+    expect(await stockOf(pid)).toBe(0);
+    expect(await kardex(pid)).toHaveLength(0);
+    expect((await backend.get<Product>('products', pid))!.cost).toBe(4500);
+    expect(supplierSummary(s, await backend.list<P>('purchases')).owed).toBe(90000);
+  });
+
+  it('repuesto libre de una OT comprado a crédito queda ligado a la compra', async () => {
+    const { saveSupplier, buyFreeItem } = await import('./purchases');
+    const { addFreePart } = await import('./orders');
+    const sid = await saveSupplier(actor, { ...supplierBase, name: 'Conco' });
+    const s = (await backend.get<Sup>('suppliers', sid))!;
+    const c = await newCustomer();
+    const o = await newOrder(c);
+    const r = await buyFreeItem(actor, s, { name: 'Display Note 9', qty: 1, unitCost: 40000 }, { paymentType: 'credito', method: 'Efectivo', note: 'OT' });
+    await addFreePart(actor, o.id, { name: 'Display Note 9', qty: 1, unitCost: 40000, unitPrice: 90000, purchaseNumber: r.number, supplierName: s.name });
+    const order = (await backend.get<RepairOrder>('repairOrders', o.id))!;
+    expect(order.parts[0]).toMatchObject({ productId: '', purchaseNumber: 1, supplierName: 'Conco', unitPrice: 90000 });
+    const ps = await backend.list<P>('purchases');
+    expect(ps[0]).toMatchObject({ paymentType: 'credito', total: 40000, status: 'pendiente' });
+  });
+});
