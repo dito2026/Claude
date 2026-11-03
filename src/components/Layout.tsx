@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext';
 import type { Permission } from '../auth/permissions';
 import { backend } from '../data';
 import { ROLE_LABEL } from '../services/staff';
+import { useOnline } from './ui';
 
 interface NavItem { to: string; label: string; icon: ReactNode; perm?: Permission }
 
@@ -55,6 +56,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { profile, can, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const [theme, toggleTheme] = useTheme();
+  const online = useOnline();
   const loc = useLocation();
   useEffect(() => setOpen(false), [loc.pathname]);
 
@@ -96,7 +98,11 @@ export function Layout({ children }: { children: ReactNode }) {
         <header className="topbar no-print">
           <button className="icon-btn menu-btn" onClick={() => setOpen(true)} aria-label="Menú"><Menu size={20} /></button>
           <div className="grow" />
-          {backend.mode === 'local' ? (
+          {!online ? (
+            <span className="pill offline" title="Puede consultar la información ya cargada. Para facturar, crear órdenes o mover caja e inventario se necesita internet.">
+              <span className="dot" />Sin conexión · solo consulta
+            </span>
+          ) : backend.mode === 'local' ? (
             <span className="pill demo" title="Los datos se guardan solo en este navegador. Configure Firebase para usar la nube.">
               <span className="dot" />Modo demo · datos locales
             </span>

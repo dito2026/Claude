@@ -146,6 +146,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .pill.demo { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
 .pill.cloud { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.pill.offline { color: #fff; background: var(--red); border-color: transparent; }
 
 /* ---------------- Cards & stats ---------------- */
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }

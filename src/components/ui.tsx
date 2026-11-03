@@ -49,7 +49,14 @@ export function useAction() {
         if (ok) toast(ok);
         return true;
       } catch (e) {
-        toast(e instanceof Error ? e.message : String(e), 'error');
+        const msg = e instanceof Error ? e.message : String(e);
+        const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+        toast(
+          offline || /offline|unavailable|network/i.test(msg)
+            ? 'Sin internet: esta operación necesita conexión para guardarse en la nube. Intente de nuevo cuando vuelva el internet.'
+            : msg,
+          'error',
+        );
         return false;
       } finally {
         setBusy(false);
@@ -185,4 +192,20 @@ export function CommitMoney({ value, onCommit, disabled }: { value: number; onCo
       onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
     />
   );
+}
+
+/** true mientras el equipo tenga conexión a internet. */
+export function useOnline() {
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+  return online;
 }

@@ -269,3 +269,16 @@ Los productos tipo `EQUIPO` siempre controlan inventario y se manejan **unidad p
   rechaza celulares sin IMEI, IMEI vendidos o de otro modelo. Al vender se calcula la garantía con
   los meses del producto. Anular la factura devuelve el equipo a *disponible*.
 - Los celulares no se pueden usar como repuesto de una orden de reparación.
+
+## 14. App instalable y apertura sin internet (PWA)
+
+- `public/manifest.webmanifest` e íconos: la app se instala en Windows, Android e iPhone como
+  aplicación independiente («Instalar Digital Cell» en Chrome / «Agregar a pantalla de inicio»).
+- `public/sw.js` (service worker): al instalarse guarda `index.html` y los archivos JS/CSS que usa.
+  Navegación: red primero y, sin internet, la copia guardada. Archivos con hash: caché primero.
+  Firestore no pasa por el service worker: usa su propia caché persistente.
+- Sin internet se puede **abrir la app y consultar** lo ya sincronizado. Las operaciones con
+  transacción (facturar, órdenes, caja, inventario, compras, IMEI) necesitan conexión; si se
+  intentan sin internet se muestra un mensaje claro y aparece el aviso «Sin conexión · solo consulta».
+- `firebase.json` marca `sw.js`, `index.html` y el manifiesto como `no-cache` para que cada
+  publicación llegue de inmediato.
