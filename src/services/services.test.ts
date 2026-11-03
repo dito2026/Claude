@@ -504,3 +504,83 @@ describe('compras a crédito sin inventario', () => {
     expect(ps[0]).toMatchObject({ paymentType: 'credito', total: 40000, status: 'pendiente' });
   });
 });
+
+describe('contabilidad', () => {
+  it('estado de resultados, libro fiscal y resumen del negocio cuadran', async () => {
+    const acc = await import('./accounting');
+    const { saveSupplier, createPurchase } = await import('./purchases');
+    const acc_pid = await saveProduct(actor, product({ type: 'ACCESORIO', name: 'Cargador', price: 20000, cost: 10000, stock: 10 }));
+    await openSession(actor, 100000);
+    // venta de accesorios: 2 × 20.000 con descuento de 4.000
+    await createInvoice(actor, {
+      customer: { name: 'CF', phone: '', document: '' },
+      items: [{ productId: acc_pid, description: 'Cargador', kind: 'producto', qty: 2, unitPrice: 20000, unitCost: 10000 }],
+      discount: 4000, taxRate: 0, payments: [{ method: 'Efectivo', amount: 36000 }], cashierName: 'T',
+    });
+    // reparación: mano de obra 60.000 (pago técnico 10.000) + repuesto libre 40.000
+    const c = await newCustomer();
+    const o = await newOrder(c);
+    await backend.update('repairOrders', o.id, { laborPrice: 60000, technicianPay: 10000 });
+    const { addFreePart } = await import('./orders');
+    await addFreePart(actor, o.id, { name: 'Pantalla', qty: 1, unitCost: 40000, unitPrice: 40000 });
+    const ord = (await backend.get<RepairOrder>('repairOrders', o.id))!;
+    await createInvoice(actor, {
+      customerId: c.id, customer: { name: c.name, phone: '', document: '' }, items: itemsFromOrder(ord),
+      discount: 0, taxRate: 0, payments: [{ method: 'Nequi', amount: 100000 }], repairOrderId: o.id, cashierName: 'T',
+    });
+    // gasto, pago a técnico, retiro y compra de contado
+    await addMovement(actor, { direction: 'egreso', category: 'gasto', expenseCategory: 'Arriendo', method: 'Efectivo', amount: 30000, description: 'Arriendo' });
+    await addMovement(actor, { direction: 'egreso', category: 'pago_tecnico', method: 'Efectivo', amount: 10000, description: 'Técnico', refId: 't1' });
+    await addMovement(actor, { direction: 'egreso', category: 'retiro', method: 'Efectivo', amount: 5000, description: 'Retiro' });
+    const sid = await saveSupplier(actor, { name: 'Maxel', nit: '', phone: '', termDays: 30, notes: '', active: true });
+    const s = (await backend.get<import('../lib/types').Supplier>('suppliers', sid))!;
+    await createPurchase(actor, { supplier: s, items: [{ productId: acc_pid, name: 'Cargador', qty: 5, unitCost: 10000 }], paymentType: 'credito', method: 'Efectivo', invoiceRef: '', note: '', updateCost: false });
+
+    const data = {
+      invoices: await backend.list<Invoice>('invoices'),
+      movements: await backend.list<CashMovement>('cashMovements'),
+      products: await backend.list<Product>('products'),
+    };
+    const p = acc.periodRange('hoy');
+    const r = acc.buildReport(p, data);
+    expect(r.income).toBe(136000);
+    expect(r.discounts).toBe(4000);
+    expect(r.byLine.find((l) => l.line === 'Accesorios')).toMatchObject({ sales: 36000, cost: 20000 });
+    expect(r.byLine.find((l) => l.line === 'Servicio técnico')).toMatchObject({ sales: 100000, cost: 50000 });
+    expect(r.cost).toBe(70000);
+    expect(r.grossProfit).toBe(66000);
+    expect(r.expenses).toBe(30000); // el pago al técnico ya está en el costo
+    expect(r.netProfit).toBe(36000);
+    expect(r.expensesByCategory).toEqual([{ category: 'Arriendo', amount: 30000 }]);
+
+    const f = acc.fiscalBook(p, data.movements);
+    expect(f.income).toBe(136000);
+    expect(f.outflow).toBe(40000); // gasto + técnico; el retiro no cuenta
+    expect(f.days).toHaveLength(1);
+
+    const b = acc.balanceToday({
+      products: data.products, units: [], invoices: data.invoices,
+      purchases: await backend.list<import('../lib/types').Purchase>('purchases'),
+    });
+    expect(b.stock).toBe(13 * 10000); // 10 − 2 vendidos + 5 comprados
+    expect(b.payables).toBe(50000);
+
+    expect(acc.toCsv([['a;b', 1.6], ['x"y', '']])).toBe('﻿"a;b";2\r\n"x""y";');
+  });
+});
+
+describe('contabilidad: línea de negocio', () => {
+  it('clasifica por tipo de producto y línea de los servicios', async () => {
+    const { lineOf } = await import('./accounting');
+    const mk = (type: Product['type'], line: string) => ({ ...product({ type, line }), id: type + line }) as Product;
+    const ps = new Map([mk('SERVICIO', 'Accesorios'), mk('SERVICIO', 'Servicio técnico'), mk('ACCESORIO', 'Servicio técnico'), mk('EQUIPO', '')].map((p) => [p.id, p]));
+    const it = (productId: string | undefined, kind: InvoiceItem['kind']) => ({ productId, kind, description: '', qty: 1, unitPrice: 1, unitCost: 0 });
+    expect(lineOf(it('SERVICIOAccesorios', 'servicio'), ps)).toBe('Accesorios');
+    expect(lineOf(it('SERVICIOServicio técnico', 'servicio'), ps)).toBe('Servicio técnico');
+    expect(lineOf(it('ACCESORIOServicio técnico', 'producto'), ps)).toBe('Accesorios');
+    expect(lineOf(it('EQUIPO', 'producto'), ps)).toBe('Equipos');
+    expect(lineOf(it(undefined, 'servicio'), ps)).toBe('Servicio técnico');
+    expect(lineOf(it(undefined, 'producto'), ps)).toBe('Accesorios');
+    expect(lineOf(it(undefined, 'mano_obra'), ps)).toBe('Servicio técnico');
+  });
+});

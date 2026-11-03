@@ -292,3 +292,22 @@ Los productos tipo `EQUIPO` siempre controlan inventario y se manejan **unidad p
 - Atajo «Lo compré a un proveedor» al agregar un **repuesto libre a una OT** o un **artículo libre
   en el POS**: crea en el mismo paso la compra (crédito = deuda; contado = egreso de caja). El
   repuesto de la OT queda con el número de compra y el proveedor.
+
+## 16. Contabilidad
+
+Módulo `/contabilidad` (admin y cajero). Todo se calcula en vivo a partir de facturas, caja, compras
+e inventario (`src/services/accounting.ts`); no hay datos contables que digitar aparte.
+
+- **Período:** hoy, 7 días, este mes, mes anterior, este año o rango de fechas.
+- **Estado de resultados (P&G):** ingresos por línea (Equipos, Accesorios, Servicio técnico; el tipo
+  del producto decide la línea), descuentos, costo de lo vendido, utilidad bruta, gastos (caja,
+  categoría «gasto») y utilidad neta. El costo de la mano de obra es el pago al técnico de la OT;
+  por eso los pagos a técnicos en caja no se restan de nuevo como gasto.
+- **Libro fiscal de operaciones diarias** (no responsables de IVA): ingresos de dinero (ventas,
+  abonos, otros ingresos; las anulaciones restan) y egresos (gastos, proveedores, técnicos) por día.
+  Los retiros del dueño no cuentan.
+- **Libro de caja:** todos los movimientos del período.
+- **Resumen del negocio hoy:** inventario a costo (celulares y productos controlados), cuentas por
+  cobrar (crédito tienda), cuentas por pagar y valor neto aproximado.
+- **Tope de no responsable de IVA:** ventas del año contra `uvtValue × ivaCapUvt` (Configuración).
+- **Exportar a Excel:** CSV con BOM y punto y coma, para que Excel en español lo abra bien.

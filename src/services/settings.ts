@@ -28,6 +28,8 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
   ],
   defaultWarrantyDays: 30,
   taxRate: 0,
+  uvtValue: 52374,
+  ivaCapUvt: 3500,
 };
 
 export function useSettings(): BusinessSettings {

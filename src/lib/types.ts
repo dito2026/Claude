@@ -30,6 +30,10 @@ export interface BusinessSettings {
   expenseCategories: string[];
   defaultWarrantyDays: number;
   taxRate: number; // 0 = no responsable de IVA
+  /** valor de la UVT del año (DIAN) */
+  uvtValue?: number;
+  /** tope de ingresos para no responsable de IVA, en UVT */
+  ivaCapUvt?: number;
 }
 
 export interface Technician extends BaseDoc {
