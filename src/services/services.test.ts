@@ -584,3 +584,58 @@ describe('contabilidad: línea de negocio', () => {
     expect(lineOf(it(undefined, 'mano_obra'), ps)).toBe('Servicio técnico');
   });
 });
+
+describe('vendedores y comisiones', () => {
+  type Sel = import('../lib/types').Seller;
+  it('calcula la comisión al vender (venta o ganancia), se anula con la factura y se paga en caja', async () => {
+    const { saveSeller, sellerBalance } = await import('./sellers');
+    const acc = await import('./accounting');
+    const pid = await saveProduct(actor, product({ type: 'ACCESORIO', name: 'Audífonos', price: 100000, cost: 60000, stock: 10 }));
+    const s1 = await saveSeller(actor, { name: 'Ana', phone: '', active: true, commissionPct: 5, commissionBase: 'venta', lines: [] });
+    const s2 = await saveSeller(actor, { name: 'Luis', phone: '', active: true, commissionPct: 10, commissionBase: 'utilidad', lines: [] });
+    await openSession(actor, 0);
+    const sale = (sellerId: string) => createInvoice(actor, {
+      customer: { name: 'CF', phone: '', document: '' },
+      items: [{ productId: pid, description: 'Audífonos', kind: 'producto', qty: 2, unitPrice: 100000, unitCost: 60000 }],
+      discount: 20000, taxRate: 0, payments: [{ method: 'Efectivo', amount: 180000 }], cashierName: 'T', sellerId,
+    });
+    const a = await sale(String(s1));
+    await sale(String(s2));
+    const invs = await backend.list<Invoice>('invoices');
+    expect(invs.find((i) => i.id === a.id)).toMatchObject({ sellerName: 'Ana', commission: 9000 }); // 5% de 180.000
+    expect(invs.find((i) => i.sellerName === 'Luis')!.commission).toBe(6000); // 10% de (180.000 − 120.000)
+
+    const ana = (await backend.get<Sel>('sellers', String(s1)))!;
+    await addMovement(actor, { direction: 'egreso', category: 'pago_vendedor', method: 'Efectivo', amount: 4000, description: 'Comisión Ana', refType: 'seller', refId: ana.id });
+    let b = sellerBalance(ana, await backend.list<Invoice>('invoices'), await backend.list<CashMovement>('cashMovements'));
+    expect(b).toMatchObject({ earned: 9000, paid: 4000, owed: 5000, count: 1 });
+
+    const r = acc.buildReport(acc.periodRange('hoy'), {
+      invoices: await backend.list<Invoice>('invoices'), movements: await backend.list<CashMovement>('cashMovements'), products: await backend.list<Product>('products'),
+    });
+    expect(r.commissions).toBe(15000);
+    expect(r.netProfit).toBe(360000 - 240000 - 15000);
+    expect(acc.fiscalBook(acc.periodRange('hoy'), await backend.list<CashMovement>('cashMovements')).outflow).toBe(4000);
+
+    await voidInvoice(actor, a.id, 'Devolución');
+    b = sellerBalance(ana, await backend.list<Invoice>('invoices'), await backend.list<CashMovement>('cashMovements'));
+    expect(b.earned).toBe(0);
+    expect(b.owed).toBe(-4000); // se le pagó de más: queda a favor del negocio
+  });
+
+  it('solo gana comisión en las líneas elegidas y no acepta vendedores inactivos', async () => {
+    const { saveSeller, computeCommission } = await import('./sellers');
+    const items: InvoiceItem[] = [
+      { description: 'Mano de obra', kind: 'mano_obra', qty: 1, unitPrice: 50000, unitCost: 10000 },
+      { description: 'Forro', kind: 'producto', qty: 1, unitPrice: 50000, unitCost: 20000 },
+    ];
+    expect(computeCommission({ commissionPct: 10, commissionBase: 'venta', lines: ['Accesorios'] }, items, 0, new Map())).toBe(5000);
+    expect(computeCommission({ commissionPct: 10, commissionBase: 'venta', lines: [] }, items, 0, new Map())).toBe(10000);
+    const off = await saveSeller(actor, { name: 'X', phone: '', active: false, commissionPct: 5, commissionBase: 'venta', lines: [] });
+    await openSession(actor, 0);
+    await expect(createInvoice(actor, {
+      customer: { name: 'CF', phone: '', document: '' }, items: [items[1]], discount: 0, taxRate: 0,
+      payments: [{ method: 'Efectivo', amount: 50000 }], cashierName: 'T', sellerId: String(off),
+    })).rejects.toThrow(/inactivo/);
+  });
+});

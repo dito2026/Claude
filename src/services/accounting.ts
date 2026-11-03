@@ -87,6 +87,8 @@ export interface Report {
   grossProfit: number;
   expenses: number;
   expenseCount: number;
+  /** comisiones de vendedores causadas en el período (de las facturas) */
+  commissions: number;
   netProfit: number;
   byLine: LineResult[];
   expensesByCategory: { category: string; amount: number }[];
@@ -137,8 +139,10 @@ export function buildReport(
     .filter((m) => m.category === 'pago_tecnico' && inPeriod(m.createdAt, p))
     .reduce((a, m) => a + (m.direction === 'egreso' ? m.amount : -m.amount), 0);
 
+  const commissions = invs.reduce((a, i) => a + (i.commission || 0), 0);
   return {
     invoices: invs.length,
+    commissions,
     grossSales,
     discounts,
     income,
@@ -147,7 +151,7 @@ export function buildReport(
     grossProfit: income - cost,
     expenses,
     expenseCount: exp.length,
-    netProfit: income - cost - expenses,
+    netProfit: income - cost - expenses - commissions,
     byLine,
     expensesByCategory: [...cats].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
     technicianPayments,
@@ -156,7 +160,7 @@ export function buildReport(
 
 // ---------------- Libro fiscal y libro de caja ----------------
 const INCOME = new Set(['venta', 'abono_cliente', 'ingreso_otro']);
-const OUTFLOW = new Set(['gasto', 'pago_proveedor', 'pago_tecnico']);
+const OUTFLOW = new Set(['gasto', 'pago_proveedor', 'pago_tecnico', 'pago_vendedor']);
 
 /** Tipo de operación para el libro fiscal. Retiros del dueño no son ingreso ni egreso. */
 export function fiscalSign(m: CashMovement): { income: number; outflow: number } {

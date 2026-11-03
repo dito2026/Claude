@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useCollection } from '../data/hooks';
-import type { Role, Technician, UserProfile } from '../lib/types';
+import type { Role, Technician, UserProfile, Seller } from '../lib/types';
 import { dateOnly } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, PageHead, useAction } from '../components/ui';
-import { createStaffUser, ROLE_LABEL, updateUser, type NewUser } from '../services/staff';
+import { createStaffUser, linkSeller, ROLE_LABEL, updateUser, type NewUser } from '../services/staff';
 
 export function Users() {
   const { rows } = useCollection<UserProfile>('users');
   const techs = useCollection<Technician>('technicians').rows;
+  const sellers = useCollection<Seller>('sellers').rows;
   const { user } = useAuth();
   const { run } = useAction();
   const [creating, setCreating] = useState(false);
@@ -35,7 +36,7 @@ export function Users() {
         {rows.length === 0 ? <Empty>Sin usuarios.</Empty> : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Técnico vinculado</th><th>Estado</th><th>Creado</th></tr></thead>
+              <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Técnico vinculado</th><th>Vendedor vinculado</th><th>Estado</th><th>Creado</th></tr></thead>
               <tbody>
                 {[...rows].sort((a, b) => a.name.localeCompare(b.name)).map((u) => {
                   const self = u.id === user?.uid;
@@ -57,6 +58,13 @@ export function Users() {
                         </select>
                       </td>
                       <td>
+                        <select className="input" style={{ height: 32 }} value={u.sellerId ?? ''}
+                          onChange={(e) => run(() => linkSeller(u.id, e.target.value, u.sellerId), 'Vendedor vinculado')}>
+                          <option value="">—</option>
+                          {sellers.filter((s) => s.active || s.id === u.sellerId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      </td>
+                      <td>
                         <button className="btn sm ghost" disabled={self} onClick={() => run(() => updateUser(u.id, { active: !u.active }), u.active ? 'Usuario desactivado' : 'Usuario activado')}>
                           <Badge tone={u.active ? 'ok' : 'red'}>{u.active ? 'Activo' : 'Inactivo'}</Badge>
                         </button>
@@ -70,15 +78,15 @@ export function Users() {
           </div>
         )}
       </div>
-      {creating && <NewUserModal techs={techs} onClose={() => setCreating(false)} />}
+      {creating && <NewUserModal techs={techs} sellers={sellers} onClose={() => setCreating(false)} />}
     </>
   );
 }
 
-function NewUserModal({ techs, onClose }: { techs: Technician[]; onClose: () => void }) {
+function NewUserModal({ techs, sellers, onClose }: { techs: Technician[]; sellers: Seller[]; onClose: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
-  const [d, setD] = useState<NewUser>({ name: '', email: '', password: '', role: 'cajero', technicianId: '' });
+  const [d, setD] = useState<NewUser>({ name: '', email: '', password: '', role: 'cajero', technicianId: '', sellerId: '' });
   return (
     <Modal title="Nuevo usuario" onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
@@ -96,6 +104,12 @@ function NewUserModal({ techs, onClose }: { techs: Technician[]; onClose: () => 
           <select className="input" value={d.technicianId} onChange={(e) => setD({ ...d, technicianId: e.target.value })}>
             <option value="">Ninguno</option>
             {techs.filter((t) => !t.userId).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Vendedor vinculado (comisiones)">
+          <select className="input" value={d.sellerId} onChange={(e) => setD({ ...d, sellerId: e.target.value })}>
+            <option value="">Ninguno</option>
+            {sellers.filter((s) => s.active && !s.userId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Field>
       </div>

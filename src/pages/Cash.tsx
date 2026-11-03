@@ -1,21 +1,22 @@
 import { useMemo, useState } from 'react';
 import { ArrowDownLeft, ArrowUpRight, Lock, Unlock } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
-import type { CashCategory, CashMovement, CashSession, RepairOrder, Technician } from '../lib/types';
+import type { CashCategory, CashMovement, CashSession, Invoice, RepairOrder, Seller, Technician } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { dateTime, money } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, Stat, useAction } from '../components/ui';
 import { addMovement, closeSession, expectedByMethod, openSession, type CashState } from '../services/cash';
 import { technicianBalance } from '../services/staff';
+import { sellerBalance } from '../services/sellers';
 import { useSettings } from '../services/settings';
 
 const CAT: Record<CashCategory, string> = {
   venta: 'Venta', abono_cliente: 'Abono de cliente', gasto: 'Gasto', pago_proveedor: 'Pago a proveedor',
-  pago_tecnico: 'Pago a técnico', retiro: 'Retiro / consignación', ingreso_otro: 'Otro ingreso', anulacion: 'Anulación',
+  pago_tecnico: 'Pago a técnico', pago_vendedor: 'Pago a vendedor', retiro: 'Retiro / consignación', ingreso_otro: 'Otro ingreso', anulacion: 'Anulación',
 };
 
-type MovKind = 'gasto' | 'pago_tecnico' | 'pago_proveedor' | 'retiro' | 'ingreso_otro';
+type MovKind = 'gasto' | 'pago_tecnico' | 'pago_vendedor' | 'pago_proveedor' | 'retiro' | 'ingreso_otro';
 
 export function Cash() {
   const settings = useSettings();
@@ -49,6 +50,7 @@ export function Cash() {
             <button className="btn" onClick={() => setMov('ingreso_otro')}><ArrowDownLeft size={16} />Ingreso</button>
             <button className="btn" onClick={() => setMov('gasto')}><ArrowUpRight size={16} />Gasto</button>
             <button className="btn" onClick={() => setMov('pago_tecnico')}>Pago a técnico</button>
+            <button className="btn" onClick={() => setMov('pago_vendedor')}>Pago a vendedor</button>
             <button className="btn" onClick={() => setMov('pago_proveedor')}>Pago a proveedor</button>
             <button className="btn" onClick={() => setMov('retiro')}>Retiro</button>
             <button className="btn primary" onClick={() => setClosing(true)}><Lock size={16} />Cerrar caja</button>
@@ -153,32 +155,41 @@ function MovementModal({ kind, methods, categories, onClose }: { kind: MovKind; 
   const [category, setCategory] = useState(categories[0] ?? 'Otros');
   const [techId, setTechId] = useState('');
   const tech = techs.find((t) => t.id === techId);
-  const owed = tech ? technicianBalance(tech, orders, movements).owed : 0;
+  const sellers = useCollection<Seller>('sellers').rows;
+  const invoices = useCollection<Invoice>('invoices').rows;
+  const seller = sellers.find((s) => s.id === techId);
+  const isPerson = kind === 'pago_tecnico' || kind === 'pago_vendedor';
+  const owed = kind === 'pago_vendedor'
+    ? (seller ? sellerBalance(seller, invoices, movements).owed : 0)
+    : (tech ? technicianBalance(tech, orders, movements).owed : 0);
+  const person = kind === 'pago_vendedor' ? seller : tech;
 
-  const title = { gasto: 'Registrar gasto', pago_tecnico: 'Pago a técnico', pago_proveedor: 'Pago a proveedor', retiro: 'Retiro de caja', ingreso_otro: 'Otro ingreso' }[kind];
+  const title = { gasto: 'Registrar gasto', pago_tecnico: 'Pago a técnico', pago_vendedor: 'Pago de comisión a vendedor', pago_proveedor: 'Pago a proveedor', retiro: 'Retiro de caja', ingreso_otro: 'Otro ingreso' }[kind];
   const submit = () => run(() => addMovement(actor, {
     direction: kind === 'ingreso_otro' ? 'ingreso' : 'egreso',
     category: kind,
-    expenseCategory: kind === 'gasto' ? category : kind === 'pago_tecnico' ? 'Pago a técnicos' : undefined,
+    expenseCategory: kind === 'gasto' ? category : kind === 'pago_tecnico' ? 'Pago a técnicos' : kind === 'pago_vendedor' ? 'Comisiones de vendedores' : undefined,
     method,
     amount,
-    description: kind === 'pago_tecnico' ? `Pago a ${tech?.name ?? ''}${desc ? ` · ${desc}` : ''}` : desc,
-    refType: kind === 'pago_tecnico' ? 'technician' : 'manual',
-    refId: kind === 'pago_tecnico' ? techId : undefined,
+    description: isPerson ? `${kind === 'pago_vendedor' ? 'Comisión a' : 'Pago a'} ${person?.name ?? ''}${desc ? ` · ${desc}` : ''}` : desc,
+    refType: kind === 'pago_tecnico' ? 'technician' : kind === 'pago_vendedor' ? 'seller' : 'manual',
+    refId: isPerson ? techId : undefined,
   }), 'Movimiento registrado').then((ok) => ok && onClose());
 
   return (
     <Modal title={title} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy || !amount || (kind === 'pago_tecnico' ? !techId : !desc.trim())} onClick={submit}>Registrar</button></>}>
+        <button className="btn primary" disabled={busy || !amount || (isPerson ? !techId : !desc.trim())} onClick={submit}>Registrar</button></>}>
       <div className="form-grid">
-        {kind === 'pago_tecnico' && (
-          <Field label="Técnico" required className="full">
-            <select className="input" value={techId} onChange={(e) => setTechId(e.target.value)}>
+        {isPerson && (
+          <Field label={kind === 'pago_vendedor' ? 'Vendedor' : 'Técnico'} required className="full">
+            <select className="input" value={techId} onChange={(e) => { setTechId(e.target.value); setAmount(0); }}>
               <option value="">Seleccione…</option>
-              {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {(kind === 'pago_vendedor' ? sellers : techs).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            {tech && <small className="muted">Por pagarle: <b>{money(owed)}</b></small>}
+            {person && (
+              <small className="muted">Por pagarle: <b>{money(owed)}</b>{owed > 0 && <> · <button type="button" className="btn sm ghost" onClick={() => setAmount(owed)}>Pagar todo</button></>}</small>
+            )}
           </Field>
         )}
         {kind === 'gasto' && (
@@ -194,7 +205,7 @@ function MovementModal({ kind, methods, categories, onClose }: { kind: MovKind; 
             {methods.map((m) => <option key={m}>{m}</option>)}
           </select>
         </Field>
-        <Field label={kind === 'pago_proveedor' ? 'Proveedor y concepto' : 'Descripción'} required={kind !== 'pago_tecnico'} className="full">
+        <Field label={kind === 'pago_proveedor' ? 'Proveedor y concepto' : 'Descripción'} required={!isPerson} className="full">
           <input className="input" value={desc} onChange={(e) => setDesc(e.target.value)} />
         </Field>
       </div>

@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Clock, LifeBuoy, Package, TrendingUp, Wallet, Wrench } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
-import type { CashMovement, CashSession, Invoice, Product, RepairOrder, Ticket } from '../lib/types';
+import type { CashMovement, CashSession, Invoice, Product, RepairOrder, Seller, Ticket } from '../lib/types';
+import { sellerBalance } from '../services/sellers';
 import { OPEN_STATUSES } from '../lib/types';
 import { daysAgo, money, pad, sameDay } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
@@ -20,6 +21,10 @@ export function Dashboard() {
   const products = useCollection<Product>('products').rows;
   const tickets = useCollection<Ticket>('tickets').rows;
   const movements = useCollection<CashMovement>('cashMovements').rows;
+  const sellers = useCollection<Seller>('sellers').rows;
+  const mySeller = sellers.find((s) => s.id === profile?.sellerId);
+  const myMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const myComm = mySeller ? sellerBalance(mySeller, invoices, movements, myMonth) : null;
   const cashState = useDocument<CashState & { id: string }>('meta', 'cash').doc;
   const session = useDocument<CashSession>('cashSessions', cashState?.openSessionId ?? undefined).doc;
   const finance = can('dashboard.finance');
@@ -83,6 +88,14 @@ export function Dashboard() {
           <Stat label="Ventas del mes" value={money(stats.salesMonth)} sub={`Utilidad bruta ${money(stats.profitMonth)} · ${stats.margin}%`} />
           <Stat label="Efectivo en caja" value={session ? money(cashNow) : '—'} sub={session ? `Caja abierta por ${session.openedBy}` : 'Caja cerrada'} icon={<Wallet size={14} />} />
           <Stat label="Stock bajo" value={low.length} sub="productos en o bajo el mínimo" icon={<Package size={14} />} />
+        </div>
+      )}
+
+      {myComm && (
+        <div className="grid g3 mt">
+          <Stat accent label="Mis ventas del mes" value={money(myComm.sales)} sub={`${myComm.count} ventas como ${mySeller!.name}`} />
+          <Stat label="Mi comisión del mes" value={money(myComm.periodCommission)} sub={`${mySeller!.commissionPct}% ${mySeller!.commissionBase === 'venta' ? 'sobre la venta' : 'sobre la ganancia'}`} />
+          <Stat label="Comisión por cobrar" value={money(myComm.owed)} sub={`Pagado: ${money(myComm.paid)}`} />
         </div>
       )}
 

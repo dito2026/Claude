@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Ban, Minus, PenLine, Plus, Trash2, Wrench, X } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
-import type { Customer, Invoice, InvoiceItem, InvoiceItemKind, Payment, PhoneUnit, Product, RepairOrder } from '../lib/types';
+import type { Customer, Invoice, InvoiceItem, InvoiceItemKind, Payment, PhoneUnit, Product, RepairOrder, Seller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
@@ -18,6 +18,7 @@ import { isPhone, normalizeImei } from '../services/phones';
 import { UnitPickerModal } from '../components/PhoneUnits';
 import { BuyFromSupplierFields, EMPTY_BUY, useSuppliers, type BuyFromSupplierValue } from '../components/BuyFromSupplier';
 import { buyFreeItem } from '../services/purchases';
+import { BASE_LABEL, computeCommission } from '../services/sellers';
 import type { CashState } from '../services/cash';
 
 export function Billing() {
@@ -46,6 +47,13 @@ function Pos() {
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [discount, setDiscount] = useState(0);
+  const sellers = useCollection<Seller>('sellers').rows.filter((s) => s.active).sort((a, b) => a.name.localeCompare(b.name));
+  const [sellerId, setSellerId] = useState<string>('');
+  // Por defecto, el vendedor vinculado al usuario que está facturando
+  useEffect(() => {
+    if (!sellerId && profile?.sellerId && sellers.some((s) => s.id === profile.sellerId)) setSellerId(profile.sellerId);
+  }, [profile?.sellerId, sellers.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const seller = sellers.find((s) => s.id === sellerId);
   const [payments, setPayments] = useState<Payment[]>([{ method: 'Efectivo', amount: 0 }]);
   const [received, setReceived] = useState(0);
   const [done, setDone] = useState<Invoice | null>(null);
@@ -120,12 +128,14 @@ function Pos() {
         payments,
         repairOrderId: order?.id,
         cashierName: profile?.name ?? actor.name,
+        sellerId: seller?.id,
       });
       const inv: Invoice = {
         id: r.id, number: r.number, customerId: customer?.id, customer: customer ? customerRef(customer) : { name: 'Consumidor final', phone: '', document: '' },
         items, ...totals, depositsApplied: deposits, payments: payments.filter((p) => p.amount > 0), repairOrderId: order?.id,
         repairOrderNumber: order?.number, status: payments.some((p) => p.method === CREDIT_METHOD && p.amount > 0) ? 'credito' : 'pagada',
         cashSessionId: '', cashierName: profile?.name ?? '', createdAt: new Date().toISOString(),
+        sellerName: seller?.name,
       };
       setDone(inv);
       reset();
@@ -191,6 +201,17 @@ function Pos() {
         <div className="card-head"><h3>Venta actual</h3>{items.length > 0 && <button className="btn sm ghost" onClick={reset}>Limpiar</button>}</div>
         <div className="card-pad stack">
           <Field label="Cliente (opcional)"><CustomerPicker value={customer} onChange={setCustomer} /></Field>
+          {sellers.length > 0 && (
+            <Field label="Vendedor (comisión)">
+              <select className="input" value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
+                <option value="">Sin vendedor</option>
+                {sellers.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.commissionPct}% {BASE_LABEL[s.commissionBase]}</option>)}
+              </select>
+              {seller && items.length > 0 && (
+                <small className="muted">Comisión estimada: <b>{money(computeCommission(seller, items, discount, new Map(products.map((p) => [p.id, p]))))}</b></small>
+              )}
+            </Field>
+          )}
           {items.length === 0 ? <Empty>Agregue productos desde el catálogo.</Empty> : (
             <div>
               {items.map((it, i) => {
@@ -289,7 +310,7 @@ function History() {
         {list.length === 0 ? <Empty>Sin comprobantes.</Empty> : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>N.º</th><th>Fecha</th><th>Cliente</th><th>Origen</th><th>Medios</th><th>Estado</th><th className="num">Total</th><th /></tr></thead>
+              <thead><tr><th>N.º</th><th>Fecha</th><th>Cliente</th><th>Origen</th><th>Medios</th><th>Vendedor</th><th>Estado</th><th className="num">Total</th><th /></tr></thead>
               <tbody>
                 {list.map((i) => (
                   <tr key={i.id} className="click" onClick={() => setView(i)}>
@@ -298,6 +319,7 @@ function History() {
                     <td>{i.customer.name || 'Consumidor final'}</td>
                     <td>{i.repairOrderNumber ? <span className="mono">OT {pad(i.repairOrderNumber)}</span> : 'Venta directa'}</td>
                     <td>{i.payments.map((p) => p.method).join(', ') || (i.depositsApplied ? 'Abonos' : '—')}</td>
+                    <td>{i.sellerName ? <>{i.sellerName}<small>Comisión {money(i.commission)}</small></> : <span className="faint">—</span>}</td>
                     <td><Badge tone={i.status === 'anulada' ? 'red' : i.status === 'credito' ? 'warn' : 'ok'}>{i.status}</Badge></td>
                     <td className="num">{money(i.total)}</td>
                     <td className="right" onClick={(e) => e.stopPropagation()}>

@@ -15,6 +15,8 @@ export interface UserProfile extends BaseDoc {
   role: Role;
   active: boolean;
   technicianId?: string;
+  /** vendedor vinculado: la venta se le asigna por defecto */
+  sellerId?: string;
 }
 
 export interface BusinessSettings {
@@ -246,6 +248,12 @@ export interface Invoice extends BaseDoc {
   status: 'pagada' | 'credito' | 'anulada';
   cashSessionId: string;
   cashierName: string;
+  /** vendedor que hizo la venta y su comisión (calculada al facturar) */
+  sellerId?: string;
+  sellerName?: string;
+  commission?: number;
+  commissionPct?: number;
+  commissionBase?: CommissionBase;
   voidReason?: string;
   voidedAt?: string;
   voidedBy?: string;
@@ -270,6 +278,7 @@ export type CashCategory =
   | 'gasto'
   | 'pago_proveedor'
   | 'pago_tecnico'
+  | 'pago_vendedor'
   | 'retiro'
   | 'ingreso_otro'
   | 'anulacion';
@@ -282,7 +291,7 @@ export interface CashMovement extends BaseDoc {
   method: string;
   amount: number;
   description: string;
-  refType?: 'invoice' | 'repairOrder' | 'technician' | 'purchase' | 'manual';
+  refType?: 'invoice' | 'repairOrder' | 'technician' | 'seller' | 'purchase' | 'manual';
   refId?: string;
 }
 
@@ -363,4 +372,19 @@ export interface PhoneUnit extends BaseDoc {
   warrantyMonths: number;
   warrantyUntil?: string;
   notes: string;
+}
+
+// ---------------- Vendedores y comisiones ----------------
+/** venta = % sobre lo vendido (sin IVA, con descuento); utilidad = % sobre la ganancia (venta − costo) */
+export type CommissionBase = 'venta' | 'utilidad';
+
+export interface Seller extends BaseDoc {
+  name: string;
+  phone: string;
+  active: boolean;
+  commissionPct: number;
+  commissionBase: CommissionBase;
+  /** líneas sobre las que gana comisión; vacío = todas */
+  lines?: string[];
+  userId?: string;
 }

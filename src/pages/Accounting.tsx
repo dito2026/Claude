@@ -20,7 +20,7 @@ const PERIODS: { value: PeriodKind; label: string }[] = [
 
 const CATEGORY_LABEL: Record<string, string> = {
   venta: 'Venta', abono_cliente: 'Abono de cliente', gasto: 'Gasto', pago_proveedor: 'Pago a proveedor',
-  pago_tecnico: 'Pago a técnico', retiro: 'Retiro', ingreso_otro: 'Otro ingreso', anulacion: 'Anulación',
+  pago_tecnico: 'Pago a técnico', pago_vendedor: 'Pago a vendedor', retiro: 'Retiro', ingreso_otro: 'Otro ingreso', anulacion: 'Anulación',
 };
 
 const pct = (v: number, total: number) => (total > 0 ? `${Math.round((v / total) * 1000) / 10}%` : '—');
@@ -69,6 +69,7 @@ export function Accounting() {
     ['(−) Costo de lo vendido', -report.cost, pct(report.cost, report.income)],
     ['Utilidad bruta', report.grossProfit, pct(report.grossProfit, report.income)],
     ['(−) Gastos del período', -report.expenses, pct(report.expenses, report.income)],
+    ['(−) Comisiones de vendedores', -report.commissions, pct(report.commissions, report.income)],
     ['Utilidad neta', report.netProfit, pct(report.netProfit, report.income)],
     [],
     ['Margen por línea', 'Ventas', 'Costo', 'Ganancia', 'Margen'],
@@ -138,13 +139,14 @@ export function Accounting() {
                 <tr><td>(−) Costo de lo vendido</td><td className="num red">−{money(report.cost)}</td><td className="num faint">{pct(report.cost, report.income)}</td></tr>
                 <tr><td className="strong">Utilidad bruta</td><td className="num strong">{money(report.grossProfit)}</td><td className="num">{pct(report.grossProfit, report.income)}</td></tr>
                 <tr><td>(−) Gastos del período</td><td className="num red">−{money(report.expenses)}</td><td className="num faint">{pct(report.expenses, report.income)}</td></tr>
+                {report.commissions > 0 && <tr><td>(−) Comisiones de vendedores</td><td className="num red">−{money(report.commissions)}</td><td className="num faint">{pct(report.commissions, report.income)}</td></tr>}
                 <tr style={{ fontSize: 16 }}><td className="strong">Utilidad neta</td><td className={`num strong ${report.netProfit < 0 ? 'red' : ''}`}>{money(report.netProfit)}</td><td className="num strong">{pct(report.netProfit, report.income)}</td></tr>
                 {report.tax > 0 && <tr><td className="faint">IVA cobrado (no es ingreso, se paga a la DIAN)</td><td className="num faint">{money(report.tax)}</td><td /></tr>}
               </tbody>
             </table>
             <div className="card-pad faint" style={{ fontSize: 12 }}>
-              El costo de la mano de obra es el «pago al técnico» de cada orden. Por eso los pagos a técnicos en caja
-              ({money(report.technicianPayments)} en el período) no se restan otra vez como gasto.
+              El costo de la mano de obra es el «pago al técnico» de cada orden; las comisiones se cuentan cuando se vende.
+              Por eso los pagos a técnicos ({money(report.technicianPayments)}) y a vendedores en caja no se restan otra vez como gasto.
             </div>
           </div>
 
@@ -192,7 +194,7 @@ export function Accounting() {
           </div>
           <div className="card-pad faint" style={{ fontSize: 13, paddingBottom: 0 }}>
             Lo exige la DIAN a los no responsables de IVA. <b>Ingresos</b>: dinero que entró (ventas, abonos de clientes, otros ingresos; las anulaciones restan).
-            <b> Egresos</b>: gastos, pagos a proveedores y a técnicos. Los retiros del dueño no cuentan. Las ventas a crédito tienda no son ingreso hasta que se cobran.
+            <b> Egresos</b>: gastos y pagos a proveedores, técnicos y vendedores. Los retiros del dueño no cuentan. Las ventas a crédito tienda no son ingreso hasta que se cobran.
           </div>
           {fiscal.days.length === 0 ? <Empty>Sin operaciones en el período.</Empty> : (
             <table className="table">

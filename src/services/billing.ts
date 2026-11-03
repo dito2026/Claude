@@ -1,5 +1,5 @@
 import { backend } from '../data';
-import type { CustomerRef, Invoice, InvoiceItem, Payment, PhoneUnit, Product, RepairOrder } from '../lib/types';
+import type { CustomerRef, Invoice, InvoiceItem, Payment, PhoneUnit, Product, RepairOrder, Seller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { addDays } from '../lib/format';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
@@ -7,6 +7,7 @@ import { requireOpenSession, writeMovement } from './cash';
 import { moveStock } from './inventory';
 import { depositsTotal } from './orders';
 import { isPhone, markAvailable, markSold } from './phones';
+import { computeCommission } from './sellers';
 
 export interface InvoiceDraft {
   customerId?: string;
@@ -17,6 +18,8 @@ export interface InvoiceDraft {
   payments: Payment[];
   repairOrderId?: string;
   cashierName: string;
+  /** vendedor que gana comisión por esta venta */
+  sellerId?: string;
 }
 
 export function computeTotals(items: InvoiceItem[], discount: number, taxRate: number) {
@@ -92,6 +95,18 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
         products.set(p.id, p);
       }
     }
+    let seller: Seller | null = null;
+    if (draft.sellerId) {
+      seller = await tx.get<Seller>('sellers', draft.sellerId);
+      if (!seller || !seller.active) throw new BusinessError('El vendedor seleccionado no existe o está inactivo.');
+      // para clasificar líneas de negocio se necesitan todos los productos de la venta
+      for (const it of items) {
+        if (it.productId && !products.has(it.productId)) {
+          const p = await tx.get<Product>('products', it.productId);
+          if (p) products.set(p.id, p);
+        }
+      }
+    }
     // Celulares: solo con IMEI de inventario, una unidad por línea, disponible y del mismo modelo
     const units = new Map<string, PhoneUnit>();
     for (const it of items) {
@@ -125,6 +140,15 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
       status: usesCredit ? 'credito' : 'pagada',
       cashSessionId: sessionId,
       cashierName: draft.cashierName,
+      ...(seller
+        ? {
+            sellerId: seller.id,
+            sellerName: seller.name,
+            commissionPct: seller.commissionPct,
+            commissionBase: seller.commissionBase,
+            commission: computeCommission(seller, items, totals.discount, products),
+          }
+        : {}),
       ...created(actor),
     };
     const invoiceId = tx.create('invoices', invoice as unknown as Record<string, unknown>);

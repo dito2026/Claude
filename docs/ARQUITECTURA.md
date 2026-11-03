@@ -311,3 +311,17 @@ e inventario (`src/services/accounting.ts`); no hay datos contables que digitar 
   cobrar (crédito tienda), cuentas por pagar y valor neto aproximado.
 - **Tope de no responsable de IVA:** ventas del año contra `uvtValue × ivaCapUvt` (Configuración).
 - **Exportar a Excel:** CSV con BOM y punto y coma, para que Excel en español lo abra bien.
+
+## 17. Vendedores y comisiones
+
+- Colección `sellers`: nombre, celular, `commissionPct`, `commissionBase` (`venta` = % sobre lo
+  vendido sin IVA y con descuento; `utilidad` = % sobre venta − costo), `lines` (líneas de negocio
+  donde gana comisión; vacío = todas) y `userId` si tiene acceso a la app.
+- En el POS se elige el vendedor (por defecto el vinculado al usuario). La factura guarda
+  `sellerId`, `sellerName`, `commissionPct`, `commissionBase` y `commission` calculada al vender:
+  cambiar el porcentaje después no altera ventas ya hechas, y anular la factura elimina la comisión.
+- Pago: Caja → «Pago a vendedor» (`pago_vendedor`, `refId` = vendedor). Por pagar = comisiones de
+  facturas no anuladas − pagos.
+- Contabilidad: las comisiones se restan en el P&G cuando se vende (por eso el pago en caja no se
+  resta otra vez); en el libro fiscal el pago es un egreso.
+- Reglas: `sellers` lectura para el personal, escritura solo administrador.

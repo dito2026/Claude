@@ -36,6 +36,7 @@ export interface NewUser {
   password: string;
   role: Role;
   technicianId?: string;
+  sellerId?: string;
 }
 
 export async function createStaffUser(actor: Actor, u: NewUser) {
@@ -48,15 +49,24 @@ export async function createStaffUser(actor: Actor, u: NewUser) {
     role: u.role,
     active: true,
     technicianId: u.technicianId || undefined,
+    sellerId: u.sellerId || undefined,
     ...created(actor),
   };
   await backend.set('users', newUid, profile as unknown as Record<string, unknown>);
   if (u.technicianId) await backend.update('technicians', u.technicianId, { userId: newUid });
+  if (u.sellerId) await backend.update('sellers', u.sellerId, { userId: newUid });
   return newUid;
 }
 
-export const updateUser = (id: string, patch: Partial<Pick<UserProfile, 'name' | 'role' | 'active' | 'technicianId'>>) =>
+export const updateUser = (id: string, patch: Partial<Pick<UserProfile, 'name' | 'role' | 'active' | 'technicianId' | 'sellerId'>>) =>
   backend.update('users', id, { ...patch, ...touched() });
+
+/** Vincula (o desvincula) un usuario con un vendedor. */
+export async function linkSeller(userId: string, sellerId: string, previous?: string) {
+  await backend.update('users', userId, { sellerId: sellerId || null, ...touched() });
+  if (previous && previous !== sellerId) await backend.update('sellers', previous, { userId: null });
+  if (sellerId) await backend.update('sellers', sellerId, { userId });
+}
 
 /** Primer administrador en una base vacía (regla meta/bootstrap en firestore.rules). */
 export async function bootstrapAdmin(name: string, email: string, password: string) {

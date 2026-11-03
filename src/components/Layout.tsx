@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Wrench, LifeBuoy, Package, HardHat, ShieldCheck, Receipt, Wallet,
-  Settings, LogOut, Menu, Moon, Sun, Smartphone, Truck, Calculator,
+  Settings, LogOut, Menu, Moon, Sun, Smartphone, Truck, Calculator, BadgePercent,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import type { Permission } from '../auth/permissions';
@@ -35,6 +35,7 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: 'Administración',
     items: [
+      { to: '/vendedores', label: 'Vendedores y comisiones', icon: <BadgePercent size={18} />, perm: 'staff.manage' },
       { to: '/tecnicos', label: 'Técnicos', icon: <HardHat size={18} />, perm: 'staff.manage' },
       { to: '/usuarios', label: 'Usuarios y roles', icon: <ShieldCheck size={18} />, perm: 'staff.manage' },
       { to: '/configuracion', label: 'Configuración', icon: <Settings size={18} />, perm: 'settings' },

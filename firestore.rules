@@ -64,6 +64,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ---- Vendedores (comisiones) ----
+    match /sellers/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
     // ---- Clientes ----
     match /customers/{id} {
       allow read: if isStaff();
