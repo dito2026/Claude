@@ -352,6 +352,8 @@ el servidor reintenta con su modelo de respaldo.
   con los productos del inventario (o artículos libres) e IMEI → compra prellenada para revisar.
 - **Asistente del negocio** (`/asistente`): chat que responde con un resumen JSON de ventas, P&G por
   período, más vendidos, órdenes, stock, reposición, deudas, técnicos y vendedores.
+- **Desactivada por defecto:** mientras no haya una clave activa, la app oculta el menú «Asistente IA»
+  y los botones «Diagnóstico con IA» y «Leer factura con IA» (`useAiEnabled`). No genera ningún costo.
 - **Clave de API:** la guarda el administrador en Configuración (`secrets/ai`, lectura solo para el
   personal con sesión). Como la llamada sale del navegador, la clave es visible para el personal:
   usar una clave exclusiva con límite de gasto en console.anthropic.com. Para ocultarla del todo,

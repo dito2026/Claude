@@ -15,6 +15,7 @@ import type { CashState } from '../services/cash';
 import { EMPTY_PRODUCT, ProductModal } from './Inventory';
 import { ImeiTextarea, parseImeiLines } from '../components/PhoneUnits';
 import { AiInvoiceModal, RestockTab, type PurchasePrefill } from '../components/PurchaseAutomation';
+import { useAiEnabled } from '../services/ai';
 
 const EMPTY_SUPPLIER: SupplierInput = { name: '', nit: '', phone: '', termDays: 30, notes: '', active: true };
 
@@ -29,6 +30,7 @@ export function Purchases() {
   const [tab, setTab] = useState<'compras' | 'proveedores' | 'reposicion'>('compras');
   const [buying, setBuying] = useState<PurchasePrefill | false>(false);
   const [readingAi, setReadingAi] = useState(false);
+  const aiOn = useAiEnabled();
 
   const owed = purchases.reduce((a, p) => a + purchaseBalance(p), 0);
   const overdue = purchases.filter(isOverduePurchase);
@@ -44,7 +46,7 @@ export function Purchases() {
         title="Compras y proveedores"
         subtitle="Repuestos y accesorios comprados de contado o a crédito, con su saldo por pagar."
         actions={<>
-          <button className="btn" onClick={() => setReadingAi(true)}><Sparkles size={16} />Leer factura con IA</button>
+          {aiOn && <button className="btn" onClick={() => setReadingAi(true)}><Sparkles size={16} />Leer factura con IA</button>}
           <button className="btn primary" onClick={() => setBuying({})}><Plus size={16} />Nueva compra</button>
         </>}
       />

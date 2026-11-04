@@ -17,7 +17,7 @@ import {
 } from '../services/orders';
 import { useSettings } from '../services/settings';
 import { readyMessage } from '../services/automation';
-import { aiDiagnose, aiErrorMessage, type Diagnosis } from '../services/ai';
+import { aiDiagnose, aiErrorMessage, useAiEnabled, type Diagnosis } from '../services/ai';
 
 export function OrderDetail() {
   const { id } = useParams();
@@ -25,6 +25,7 @@ export function OrderDetail() {
   const { doc: o, loading } = useDocument<RepairOrder>('repairOrders', id);
   const { actor, can, profile } = useAuth();
   const settings = useSettings();
+  const aiOn = useAiEnabled();
   const techs = useCollection<Technician>('technicians').rows;
   const { run, busy } = useAction();
   const [modal, setModal] = useState<'part' | 'deposit' | 'status' | 'receipt' | 'ai' | 'notify' | null>(null);
@@ -75,7 +76,7 @@ export function OrderDetail() {
           <div className="card">
             <div className="card-head">
               <h3>Equipo y falla</h3>
-              {canWork && <button className="btn sm" onClick={() => setModal('ai')}><Sparkles size={15} className="red" />Diagnóstico con IA</button>}
+              {canWork && aiOn && <button className="btn sm" onClick={() => setModal('ai')}><Sparkles size={15} className="red" />Diagnóstico con IA</button>}
             </div>
             <div className="card-pad">
               <dl className="kv">

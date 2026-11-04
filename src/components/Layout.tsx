@@ -9,15 +9,16 @@ import type { Permission } from '../auth/permissions';
 import { backend } from '../data';
 import { ROLE_LABEL } from '../services/staff';
 import { useOnline } from './ui';
+import { useAiEnabled } from '../services/ai';
 
-interface NavItem { to: string; label: string; icon: ReactNode; perm?: Permission }
+interface NavItem { to: string; label: string; icon: ReactNode; perm?: Permission; ai?: boolean }
 
 const SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: 'General',
     items: [
       { to: '/', label: 'Panel', icon: <LayoutDashboard size={18} /> },
-      { to: '/asistente', label: 'Asistente IA', icon: <Sparkles size={18} />, perm: 'dashboard.finance' },
+      { to: '/asistente', label: 'Asistente IA', icon: <Sparkles size={18} />, perm: 'dashboard.finance', ai: true },
     ],
   },
   {
@@ -65,6 +66,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [theme, toggleTheme] = useTheme();
   const online = useOnline();
+  const aiOn = useAiEnabled();
   const loc = useLocation();
   useEffect(() => setOpen(false), [loc.pathname]);
 
@@ -79,7 +81,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
         <nav className="nav">
           {SECTIONS.map((s) => {
-            const items = s.items.filter((i) => !i.perm || can(i.perm));
+            const items = s.items.filter((i) => (!i.perm || can(i.perm)) && (!i.ai || aiOn));
             if (!items.length) return null;
             return (
               <div key={s.label}>
