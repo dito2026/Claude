@@ -333,6 +333,16 @@ table.table { width: 100%; border-collapse: collapse; }
 .product-tile:active { transform: scale(0.98); }
 .product-tile:disabled { opacity: 0.45; cursor: not-allowed; }
 .product-tile .price { font-weight: 650; margin-top: auto; }
+.cat-bar { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.cat-chip {
+  flex-shrink: 0; border: 1px solid var(--line); background: var(--surface); color: var(--text-2); border-radius: 999px;
+  padding: 6px 12px; font: 500 13px var(--font); cursor: pointer; white-space: nowrap; transition: all 0.15s;
+}
+.cat-chip span { color: var(--text-3); font-size: 11px; margin-left: 2px; }
+.cat-chip:hover { border-color: var(--text-3); }
+.cat-chip.active { background: var(--text); border-color: var(--text); color: var(--surface); }
+.cat-chip.active span { color: var(--red); }
+.cat-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-2); margin: 6px 0 8px; border-left: 3px solid var(--red); padding-left: 8px; }
 
 /* Print */
 .print-only { display: none; }

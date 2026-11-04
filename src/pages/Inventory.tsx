@@ -7,6 +7,7 @@ import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
 import { RegisterUnitsModal, UnitsTab } from '../components/PhoneUnits';
+import { DEFAULT_CATEGORIES, categoryOf, guessCategory, sortCategories } from '../lib/categories';
 import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
 import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
 
@@ -40,13 +41,15 @@ export function Inventory() {
   const [stockOp, setStockOp] = useState<{ p: Product; kind: 'entrada' | 'ajuste' } | null>(null);
   const [kardexFor, setKardexFor] = useState('');
   const [bm, setBm] = useState<BrandModelValue>({ brand: '', model: '' });
+  const [cat, setCat] = useState('');
+  const categories = useMemo(() => sortCategories(products.map(categoryOf)), [products]);
   const pBrand = (p: Product) => p.brand || brandFromText(p.name);
   const pModel = (p: Product) => (p.type === 'EQUIPO' ? p.name : p.model);
   const brandOptions = useMemo(() => brandModelsOf(products.map((p) => ({ brand: pBrand(p), model: pModel(p) }))), [products]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const list = products
     .filter((p) => (type === 'TODOS' ? true : type === 'BAJO' ? isLowStock(p) : p.type === type))
-    .filter((p) => matchesBrand(bm.brand, pBrand(p)) && matchesModel(bm.model, pModel(p)))
+    .filter((p) => matchesBrand(bm.brand, pBrand(p)) && matchesModel(bm.model, pModel(p)) && (!cat || categoryOf(p) === cat))
     .filter((p) => matches(q, p.sku, p.name, p.brand, p.model))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -83,6 +86,10 @@ export function Inventory() {
               { value: 'TODOS', label: 'Todos' }, { value: 'REPUESTO', label: 'Repuestos' }, { value: 'ACCESORIO', label: 'Accesorios' },
               { value: 'EQUIPO', label: 'Equipos' }, { value: 'SERVICIO', label: 'Servicios' }, { value: 'BAJO', label: 'Stock bajo' },
             ]} />
+            <select className="input" style={{ width: 200 }} value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Categoría">
+              <option value="">Todas las categorías</option>
+              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
             <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />
           </div>
           <div className="card">
@@ -97,7 +104,7 @@ export function Inventory() {
                         <tr key={p.id} style={{ opacity: p.active ? 1 : 0.5 }}>
                           <td className="mono">{p.sku || '—'}</td>
                           <td><span className="strong">{p.name}</span><small>{[p.brand, p.model, p.color].filter(Boolean).join(' · ')}</small></td>
-                          <td><Badge tone="" >{p.type}</Badge></td>
+                          <td><Badge tone="" >{p.type}</Badge><small>{categoryOf(p)}</small></td>
                           <td className="num">{p.type === 'SERVICIO' ? <span className="faint">—</span> : !tracksStock(p) ? <Badge tone="info">Sin inventario</Badge> : (
                             <><Badge tone={p.stock <= 0 ? 'red' : isLowStock(p) ? 'warn' : 'ok'}>{p.stock}</Badge>
                               {p.type === 'EQUIPO' && p.stock > availableUnits(p.id) && <small className="red">{p.stock - availableUnits(p.id)} sin IMEI</small>}</>
@@ -213,6 +220,11 @@ export function ProductModal({ edit, onClose, onSaved }: { edit: { id?: string; 
             <Field label="Stock mínimo (alerta)"><input className="input num" type="number" min={0} value={d.minStock} onChange={(e) => set('minStock', Number(e.target.value))} /></Field>
           </>
         )}
+        <Field label="Categoría (para organizar Facturación)">
+          <input className="input" list="dc-categories" value={d.category ?? ''} placeholder={`Automática: ${guessCategory(d)}`}
+            onChange={(e) => set('category', e.target.value)} />
+          <datalist id="dc-categories">{DEFAULT_CATEGORIES.map((c) => <option key={c} value={c} />)}</datalist>
+        </Field>
         <Field label="Garantía (meses)"><input className="input num" type="number" min={0} value={d.warrantyMonths} onChange={(e) => set('warrantyMonths', Number(e.target.value))} /></Field>
         <Field label="Color"><input className="input" value={d.color} onChange={(e) => set('color', e.target.value)} /></Field>
         <label className="checkbox full"><input type="checkbox" checked={d.active} onChange={(e) => set('active', e.target.checked)} />Activo (visible en ventas y órdenes)</label>

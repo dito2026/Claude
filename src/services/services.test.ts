@@ -758,3 +758,27 @@ describe('marcas y modelos', () => {
     expect(b.matchesBrand('', 'cualquiera')).toBe(true);
   });
 });
+
+describe('categorías del catálogo', () => {
+  it('adivina la categoría por nombre y tipo (productos reales de la hoja)', async () => {
+    const { guessCategory, categoryOf, sortCategories } = await import('../lib/categories');
+    const g = (name: string, type: Product['type']) => guessCategory({ name, type });
+    expect(g('Cargador tipo c', 'ACCESORIO')).toBe('Cargadores');
+    expect(g('cable tipo c', 'ACCESORIO')).toBe('Cables');
+    expect(g('cargador iphone', 'ACCESORIO')).toBe('Cargadores');
+    expect(g('Silicona', 'SERVICIO')).toBe('Forros y estuches');
+    expect(g('Estuche', 'SERVICIO')).toBe('Forros y estuches');
+    expect(g('blindado', 'SERVICIO')).toBe('Vidrios y protectores');
+    expect(g('Vidrio templado (blindado)', 'ACCESORIO')).toBe('Vidrios y protectores');
+    expect(g('Sim card', 'SERVICIO')).toBe('Sim cards y recargas');
+    expect(g('Xiaomi buds', 'ACCESORIO')).toBe('Audífonos y parlantes');
+    expect(g('pantalla', 'SERVICIO')).toBe('Servicios');
+    expect(g('Virus', 'SERVICIO')).toBe('Servicios');
+    expect(g('Pantalla Huawei Y70', 'REPUESTO')).toBe('Repuestos');
+    expect(g('iPhone 14 Pro Max 128GB', 'EQUIPO')).toBe('Celulares');
+    expect(g('Lentes', 'ACCESORIO')).toBe('Vidrios y protectores');
+    expect(g('Llavero', 'ACCESORIO')).toBe('Accesorios varios');
+    expect(categoryOf({ name: 'cable', type: 'ACCESORIO', category: 'Ofertas' })).toBe('Ofertas');
+    expect(sortCategories(['Servicios', 'Ofertas', 'Cables', 'Celulares'])).toEqual(['Celulares', 'Cables', 'Servicios', 'Ofertas']);
+  });
+});

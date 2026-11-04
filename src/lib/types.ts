@@ -81,6 +81,8 @@ export interface Product extends BaseDoc {
   active: boolean;
   /** false = se vende sin controlar ni descontar inventario (por defecto true) */
   trackStock?: boolean;
+  /** categoría de venta (Cargadores, Forros…). Vacía = se adivina por el nombre */
+  category?: string;
 }
 
 export type StockReason =

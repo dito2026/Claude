@@ -14,6 +14,7 @@ import { depositsTotal } from '../services/orders';
 import { customerRef } from '../services/orders';
 import { useSettings } from '../services/settings';
 import { tracksStock } from '../services/inventory';
+import { categoryOf, sortCategories } from '../lib/categories';
 import { isPhone, normalizeImei } from '../services/phones';
 import { UnitPickerModal } from '../components/PhoneUnits';
 import { BrandModelFilter, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
@@ -82,13 +83,26 @@ function Pos() {
   }, [due, payments.length]);
 
   const [bm, setBm] = useState<BrandModelValue>({ brand: '', model: '' });
+  const [cat, setCat] = useState('');
   const pBrand = (p: Product) => p.brand || brandFromText(p.name);
   const pModel = (p: Product) => (p.type === 'EQUIPO' ? p.name : p.model);
   const brandOptions = useMemo(() => brandModelsOf(products.filter((p) => p.active).map((p) => ({ brand: pBrand(p), model: pModel(p) }))), [products]); // eslint-disable-line react-hooks/exhaustive-deps
   const catalog = useMemo(
-    () => products.filter((p) => p.active && matchesBrand(bm.brand, pBrand(p)) && matchesModel(bm.model, pModel(p)) && matches(q, p.name, p.sku, p.brand, p.model))
-      .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 40),
+    () => products.filter((p) => p.active && matchesBrand(bm.brand, pBrand(p)) && matchesModel(bm.model, pModel(p)) && matches(q, p.name, p.sku, p.brand, p.model, categoryOf(p)))
+      .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 400),
     [products, q, bm],
+  );
+  // Categorías con conteo (según búsqueda y marca), y catálogo agrupado
+  const catCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of catalog) m.set(categoryOf(p), (m.get(categoryOf(p)) ?? 0) + 1);
+    return m;
+  }, [catalog]);
+  const categories = sortCategories(catCounts.keys());
+  const shown = cat ? catalog.filter((p) => categoryOf(p) === cat) : catalog;
+  const groups = useMemo(
+    () => sortCategories(shown.map(categoryOf)).map((c) => ({ cat: c, items: shown.filter((p) => categoryOf(p) === c) })),
+    [shown],
   );
 
   const phoneUnits = useCollection<PhoneUnit>('phoneUnits').rows;
@@ -178,19 +192,32 @@ function Pos() {
           <button className="btn" onClick={() => setFreeItem(true)} title="Vender algo que no está en el inventario"><PenLine size={16} />Artículo libre</button>
         </div>
         <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />
-        <div className="product-grid">
-          {catalog.map((p) => {
-            const out = tracksStock(p) && p.stock <= 0;
-            return (
-              <button key={p.id} className="product-tile" disabled={out || (!p.price && !isPhone(p))} onClick={() => add(p)}>
-                <small className="faint mono">{p.sku} · {p.type}</small>
-                <span style={{ fontWeight: 500 }}>{p.name}</span>
-                <span className="faint" style={{ fontSize: 12 }}>{p.type === 'SERVICIO' ? 'Servicio' : tracksStock(p) ? `Stock ${p.stock}` : 'Sin inventario'}</span>
-                <span className="price">{p.price ? money(p.price) : 'Sin precio'}</span>
-              </button>
-            );
-          })}
+        <div className="cat-bar">
+          <button type="button" className={`cat-chip ${!cat ? 'active' : ''}`} onClick={() => setCat('')}>Todas <span>{catalog.length}</span></button>
+          {categories.map((c) => (
+            <button type="button" key={c} className={`cat-chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(cat === c ? '' : c)}>
+              {c} <span>{catCounts.get(c)}</span>
+            </button>
+          ))}
         </div>
+        {groups.map((g) => (
+          <div key={g.cat}>
+            {!cat && <div className="cat-title">{g.cat} <span className="faint">· {g.items.length}</span></div>}
+            <div className="product-grid">
+              {g.items.map((p) => {
+                const out = tracksStock(p) && p.stock <= 0;
+                return (
+                  <button key={p.id} className="product-tile" disabled={out || (!p.price && !isPhone(p))} onClick={() => add(p)}>
+                    <small className="faint mono">{p.sku || p.type}</small>
+                    <span style={{ fontWeight: 500 }}>{p.name}</span>
+                    <span className="faint" style={{ fontSize: 12 }}>{p.type === 'SERVICIO' ? 'Servicio' : tracksStock(p) ? `Stock ${p.stock}` : 'Sin inventario'}</span>
+                    <span className="price">{p.price ? money(p.price) : isPhone(p) ? 'Elegir IMEI' : 'Sin precio'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
         {imeiHits.length > 0 && (
           <div className="product-grid">
             {imeiHits.map((u) => (

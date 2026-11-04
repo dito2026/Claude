@@ -369,3 +369,13 @@ el servidor reintenta con su modelo de respaldo.
 - **Filtro Marca → Modelo** en Órdenes de reparación, Inventario (productos y celulares por IMEI) y
   Facturación. Solo muestra las marcas que existen en esa lista.
 - En «Nueva orden» y en los productos, los campos Marca y Modelo sugieren lo ya registrado.
+
+## 21. Categorías del catálogo
+
+- `products.category` (opcional). Si está vacía, la categoría se **adivina** por tipo y nombre
+  (`src/lib/categories.ts`): Celulares, Cargadores, Cables, Forros y estuches, Vidrios y protectores,
+  Audífonos y parlantes, Memorias y USB, Relojes y bandas, Soportes y holders, Sim cards y recargas,
+  Accesorios varios, Repuestos y Servicios. Se puede escribir una propia (por ejemplo «Ofertas»).
+- **Facturación:** barra de categorías con conteo y catálogo agrupado por categoría; combina con la
+  búsqueda y el filtro de marca y modelo.
+- **Inventario:** filtro por categoría y categoría visible en la lista.
