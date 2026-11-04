@@ -8,7 +8,7 @@ import { dateOnly, dateTime, fromLocalInput, matches, money, pad, toLocalInput, 
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction } from '../components/ui';
 import {
-  createPurchase, isOverduePurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
+  changePurchaseSupplier, createPurchase, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
 } from '../services/purchases';
 import { useSettings } from '../services/settings';
 import type { CashState } from '../services/cash';
@@ -20,9 +20,9 @@ import { useAiEnabled } from '../services/ai';
 const EMPTY_SUPPLIER: SupplierInput = { name: '', nit: '', phone: '', termDays: 30, notes: '', active: true };
 
 const statusTone = (p: Purchase) =>
-  p.status === 'pagada' ? 'ok' : isOverduePurchase(p) ? 'red' : p.status === 'parcial' ? 'warn' : 'info';
+  p.status === 'anulada' ? '' : p.status === 'pagada' ? 'ok' : isOverduePurchase(p) ? 'red' : p.status === 'parcial' ? 'warn' : 'info';
 const statusLabel = (p: Purchase) =>
-  p.status === 'pagada' ? 'Pagada' : isOverduePurchase(p) ? 'Vencida' : p.status === 'parcial' ? 'Abono parcial' : 'Por pagar';
+  p.status === 'anulada' ? 'Anulada' : p.status === 'pagada' ? 'Pagada' : isOverduePurchase(p) ? 'Vencida' : p.status === 'parcial' ? 'Abono parcial' : 'Por pagar';
 
 export function Purchases() {
   const suppliers = useCollection<Supplier>('suppliers').rows;
@@ -76,7 +76,7 @@ function PurchaseList({ purchases }: { purchases: Purchase[] }) {
   const [filter, setFilter] = useState<'pendientes' | 'todas'>('pendientes');
   const [view, setView] = useState<Purchase | null>(null);
   const list = purchases
-    .filter((p) => filter === 'todas' || p.status !== 'pagada')
+    .filter((p) => filter === 'todas' || (p.status !== 'pagada' && p.status !== 'anulada'))
     .filter((p) => matches(q, p.number, p.supplierName, p.invoiceRef, ...p.items.map((i) => i.name)))
     .sort((a, b) => b.number - a.number);
   return (
@@ -109,14 +109,59 @@ function PurchaseList({ purchases }: { purchases: Purchase[] }) {
           </div>
         )}
       </div>
-      {view && <PurchaseModal p={view} onClose={() => setView(null)} />}
+      {view && <PurchaseModal p={purchases.find((x) => x.id === view.id) ?? view} onClose={() => setView(null)} />}
     </>
   );
 }
 
 function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
+  const { actor, can } = useAuth();
+  const { run, busy } = useAction();
+  const suppliers = useCollection<Supplier>('suppliers').rows;
+  const [mode, setMode] = useState<'' | 'proveedor' | 'anular'>('');
+  const [newSupplier, setNewSupplier] = useState('');
+  const [reason, setReason] = useState('');
+  const voided = p.status === 'anulada';
   return (
-    <Modal title={<><span className="mono">C-{pad(p.number, 4)}</span> · {p.supplierName}</>} wide onClose={onClose}>
+    <Modal title={<><span className="mono">C-{pad(p.number, 4)}</span> · {p.supplierName}</>} wide onClose={onClose}
+      footer={voided ? undefined : (
+        <>
+          {can('settings') && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={() => setMode(mode === 'anular' ? '' : 'anular')}>Anular compra</button>}
+          <button className="btn" onClick={() => setMode(mode === 'proveedor' ? '' : 'proveedor')}>Cambiar proveedor</button>
+          <button className="btn ghost" onClick={onClose}>Cerrar</button>
+        </>
+      )}>
+      {voided && <div className="alert warn" style={{ marginBottom: 14 }}>Compra anulada el {dateTime(p.voidedAt)} por {p.voidedBy}: {p.voidReason}</div>}
+      {mode === 'proveedor' && (
+        <div className="card card-pad stack" style={{ marginBottom: 14 }}>
+          <b>¿Cuál es el proveedor correcto?</b>
+          <div className="row gap-sm" style={{ flexWrap: 'nowrap' }}>
+            <select className="input" value={newSupplier} onChange={(e) => setNewSupplier(e.target.value)} autoFocus>
+              <option value="">Seleccione…</option>
+              {suppliers.filter((s) => s.active && s.id !== p.supplierId).sort((a, b) => a.name.localeCompare(b.name)).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <button className="btn primary" disabled={busy || !newSupplier}
+              onClick={() => run(() => changePurchaseSupplier(actor, p.id, newSupplier), 'Proveedor corregido').then((ok) => ok && setMode(''))}>Guardar</button>
+          </div>
+          <small className="faint">La deuda, los abonos y los celulares de esta compra pasan al proveedor correcto. No cambia el inventario ni la caja.</small>
+        </div>
+      )}
+      {mode === 'anular' && (
+        <div className="card card-pad stack" style={{ marginBottom: 14, borderColor: 'var(--red-line)' }}>
+          <b className="red">Anular la compra completa</b>
+          <div className="faint" style={{ fontSize: 13 }}>
+            Se saca del inventario lo que entró con esta compra, se quita la deuda con {p.supplierName}
+            {(p.paid || 0) > 0 ? ` y los ${money(p.paid)} que se le pagaron vuelven a la caja abierta` : ''}. La compra no se borra: queda como «Anulada».
+            Si solo se equivocó de proveedor, use mejor «Cambiar proveedor».
+          </div>
+          <input className="input" placeholder="Motivo (obligatorio)" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <div className="row gap-sm">
+            <button className="btn primary" disabled={busy || !reason.trim()}
+              onClick={() => run(() => voidPurchase(actor, p.id, reason), 'Compra anulada').then((ok) => ok && setMode(''))}>Confirmar anulación</button>
+            <button className="btn ghost" onClick={() => setMode('')}>Cancelar</button>
+          </div>
+        </div>
+      )}
       <div className="row gap-sm" style={{ marginBottom: 14 }}>
         <Badge tone={statusTone(p)}>{statusLabel(p)}</Badge>
         <Badge tone={p.paymentType === 'credito' ? 'warn' : ''}>{p.paymentType === 'credito' ? 'Crédito' : 'Contado'}</Badge>

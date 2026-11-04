@@ -127,7 +127,7 @@ export function restockSuggestions(products: Product[], movements: StockMovement
     const suggested = target - p.stock;
     if (suggested <= 0 || (p.stock > p.minStock && used === 0)) continue;
     const last = purchases
-      .filter((x) => x.items.some((i) => i.productId === p.id))
+      .filter((x) => x.status !== 'anulada' && x.items.some((i) => i.productId === p.id))
       .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))[0];
     const sup = last ? suppliers.find((s) => s.id === last.supplierId) : undefined;
     out.push({ product: p, soldLast30: used, suggested, supplierId: sup?.id, supplierName: sup?.name ?? last?.supplierName, lastCost: last?.items.find((i) => i.productId === p.id)?.unitCost ?? p.cost });

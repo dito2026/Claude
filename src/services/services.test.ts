@@ -806,3 +806,65 @@ describe('ingreso rápido de datos', () => {
     expect(suggestedPrice(0, 80)).toBe(0);
   });
 });
+
+describe('corregir o anular compras', () => {
+  type Sup = import('../lib/types').Supplier;
+  type P = import('../lib/types').Purchase;
+  type Unit = import('../lib/types').PhoneUnit;
+  const base = { nit: '', phone: '', termDays: 30, notes: '', active: true };
+
+  it('cambiar proveedor: la deuda pasa al proveedor correcto sin tocar inventario ni caja', async () => {
+    const { saveSupplier, createPurchase, changePurchaseSupplier, supplierSummary } = await import('./purchases');
+    const pid = await saveProduct(actor, product({ stock: 0 }));
+    const wrong = (await backend.get<Sup>('suppliers', String(await saveSupplier(actor, { ...base, name: 'Pepe' }))))!;
+    const right = (await backend.get<Sup>('suppliers', String(await saveSupplier(actor, { ...base, name: 'Conco' }))))!;
+    const r = await createPurchase(actor, { supplier: wrong, items: [{ productId: pid, name: 'Pantalla X', qty: 2, unitCost: 40000 }], paymentType: 'credito', method: 'Efectivo', invoiceRef: '', note: '', updateCost: false });
+    await changePurchaseSupplier(actor, r.id, right.id);
+    const ps = await backend.list<P>('purchases');
+    expect(ps[0]).toMatchObject({ supplierId: right.id, supplierName: 'Conco' });
+    expect(supplierSummary(wrong, ps).owed).toBe(0);
+    expect(supplierSummary(right, ps).owed).toBe(80000);
+    expect(await stockOf(pid)).toBe(2);
+  });
+
+  it('anular: devuelve inventario, libera IMEI, quita deuda y reintegra lo pagado a caja', async () => {
+    const { saveSupplier, createPurchase, paySupplier, voidPurchase, supplierSummary } = await import('./purchases');
+    const { registerUnits } = await import('./phones');
+    const acc = await import('./accounting');
+    const pid = await saveProduct(actor, product({ stock: 0 }));
+    const cel = await saveProduct(actor, product({ sku: 'CEL-1', type: 'EQUIPO', name: 'iPhone 14', stock: 0 }));
+    const s = (await backend.get<Sup>('suppliers', String(await saveSupplier(actor, { ...base, name: 'Nano' }))))!;
+    await openSession(actor, 0);
+    const r = await createPurchase(actor, {
+      supplier: s, paymentType: 'credito', method: 'Efectivo', invoiceRef: '', note: '', updateCost: false,
+      items: [{ productId: pid, name: 'Pantalla X', qty: 3, unitCost: 40000 }, { productId: cel, name: 'iPhone 14', qty: 0, unitCost: 1300000, units: [{ imei: '358497893736757', condition: 'USADO' }] }],
+    });
+    await paySupplier(actor, s, [r.id], 100000, 'Nequi');
+    await expect(voidPurchase(actor, r.id, '')).rejects.toThrow(/motivo/);
+    await voidPurchase(actor, r.id, 'Proveedor equivocado');
+    expect(await stockOf(pid)).toBe(0);
+    expect(await stockOf(cel)).toBe(0);
+    expect((await backend.get<Unit>('phoneUnits', '358497893736757'))!.status).toBe('anulado');
+    const ps = await backend.list<P>('purchases');
+    expect(ps[0].status).toBe('anulada');
+    expect(supplierSummary(s, ps).owed).toBe(0);
+    const movs = await backend.list<CashMovement>('cashMovements');
+    expect(expectedByMethod({ openingCash: 0 }, movs, ['Nequi']).Nequi).toBe(0); // salió 100.000 y volvió
+    expect(acc.fiscalBook(acc.periodRange('hoy'), movs).outflow).toBe(0);
+    await expect(voidPurchase(actor, r.id, 'otra vez')).rejects.toThrow(/ya está anulada/);
+    // el IMEI se puede volver a ingresar con el proveedor correcto
+    await registerUnits(actor, cel, [{ imei: '358497893736757', condition: 'USADO' }], { cost: 1300000, supplierName: 'Conco', note: '', alreadyInStock: false });
+    expect((await backend.get<Unit>('phoneUnits', '358497893736757'))!).toMatchObject({ status: 'disponible', supplierName: 'Conco' });
+  });
+
+  it('no deja anular si lo comprado ya se vendió', async () => {
+    const { saveSupplier, createPurchase, voidPurchase } = await import('./purchases');
+    const pid = await saveProduct(actor, product({ type: 'ACCESORIO', stock: 0, price: 20000 }));
+    const s = (await backend.get<Sup>('suppliers', String(await saveSupplier(actor, { ...base, name: 'Maxel' }))))!;
+    const r = await createPurchase(actor, { supplier: s, items: [{ productId: pid, name: 'Acc', qty: 2, unitCost: 5000 }], paymentType: 'credito', method: 'Efectivo', invoiceRef: '', note: '', updateCost: false });
+    await openSession(actor, 0);
+    await createInvoice(actor, { customer: { name: 'CF', phone: '', document: '' }, items: [{ productId: pid, description: 'Acc', kind: 'producto', qty: 1, unitPrice: 20000, unitCost: 5000 }], discount: 0, taxRate: 0, payments: [{ method: 'Efectivo', amount: 20000 }], cashierName: 'T' });
+    await expect(voidPurchase(actor, r.id, 'error')).rejects.toThrow(/No hay suficiente/);
+    expect(await stockOf(pid)).toBe(1);
+  });
+});

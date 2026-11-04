@@ -167,6 +167,8 @@ export function fiscalSign(m: CashMovement): { income: number; outflow: number }
   if (m.category === 'anulacion') return { income: m.direction === 'egreso' ? -m.amount : m.amount, outflow: 0 };
   if (m.direction === 'ingreso' && INCOME.has(m.category)) return { income: m.amount, outflow: 0 };
   if (m.direction === 'egreso' && OUTFLOW.has(m.category)) return { income: 0, outflow: m.amount };
+  // reintegro de un pago (p. ej. compra anulada): resta de los egresos
+  if (m.direction === 'ingreso' && OUTFLOW.has(m.category)) return { income: 0, outflow: -m.amount };
   return { income: 0, outflow: 0 };
 }
 

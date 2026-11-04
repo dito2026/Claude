@@ -53,7 +53,11 @@ export async function assertImeisFree(tx: Tx, units: PhoneUnitInput[]) {
   for (const u of units) {
     for (const code of [u.imei, u.imei2].filter(Boolean) as string[]) {
       const hit = await tx.get<{ unitId: string }>('imeiIndex', code);
-      if (hit) throw new BusinessError(`El IMEI ${code} ya está registrado en el inventario.`);
+      if (hit) {
+        // Un IMEI de una compra anulada se puede volver a ingresar
+        const prev = await tx.get<PhoneUnit>('phoneUnits', hit.unitId);
+        if (prev?.status !== 'anulado') throw new BusinessError(`El IMEI ${code} ya está registrado en el inventario.`);
+      }
     }
   }
 }

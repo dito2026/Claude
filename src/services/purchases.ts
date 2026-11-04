@@ -2,7 +2,7 @@
 // Igual que las hojas «Compras» y «Proveedores» de Digital Cell POS:
 // lo comprado a crédito no sale de caja hasta el día en que se abona.
 import { backend } from '../data';
-import type { Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
+import type { PhoneUnit, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { addDays } from '../lib/format';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
@@ -12,14 +12,15 @@ import { assertImeisFree, cleanUnits, isPhone, writeUnits } from './phones';
 
 export type SupplierInput = Omit<Supplier, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>;
 
-export const purchaseBalance = (p: Pick<Purchase, 'total' | 'paid'>) => Math.max(0, p.total - (p.paid || 0));
+export const purchaseBalance = (p: Pick<Purchase, 'total' | 'paid'> & { status?: Purchase['status'] }) =>
+  p.status === 'anulada' ? 0 : Math.max(0, p.total - (p.paid || 0));
 
 export const isOverduePurchase = (p: Purchase) =>
   p.status !== 'pagada' && !!p.dueDate && new Date(p.dueDate).getTime() < Date.now();
 
 /** Resumen por proveedor (como la hoja «Proveedores»). */
 export function supplierSummary(s: Supplier, purchases: Purchase[]) {
-  const mine = purchases.filter((p) => p.supplierId === s.id);
+  const mine = purchases.filter((p) => p.supplierId === s.id && p.status !== 'anulada');
   const credit = sum(mine.filter((p) => p.paymentType === 'credito').map((p) => p.total));
   const cash = sum(mine.filter((p) => p.paymentType === 'contado').map((p) => p.total));
   const paidOnCredit = sum(mine.filter((p) => p.paymentType === 'credito').map((p) => p.paid || 0));
@@ -237,5 +238,87 @@ export async function buyFreeItem(
     invoiceRef: '',
     note: pay.note,
     updateCost: false,
+  });
+}
+
+/** Corrige el proveedor de una compra. La deuda y los abonos pasan con ella al proveedor correcto. */
+export async function changePurchaseSupplier(actor: Actor, purchaseId: string, supplierId: string) {
+  return backend.transaction(async (tx) => {
+    const p = await tx.get<Purchase>('purchases', purchaseId);
+    const s = await tx.get<Supplier>('suppliers', supplierId);
+    if (!p) throw new BusinessError('Compra no encontrada.');
+    if (!s) throw new BusinessError('Proveedor no encontrado.');
+    if (p.status === 'anulada') throw new BusinessError('La compra está anulada.');
+    if (p.supplierId === s.id) throw new BusinessError('Ese ya es el proveedor de la compra.');
+    const units: PhoneUnit[] = [];
+    for (const it of p.items) for (const u of it.units ?? []) {
+      const unit = await tx.get<PhoneUnit>('phoneUnits', u.imei);
+      if (unit && unit.purchaseId === p.id) units.push(unit);
+    }
+    // ---- escrituras ----
+    tx.update('purchases', p.id, {
+      supplierId: s.id,
+      supplierName: s.name,
+      note: [p.note, `Proveedor corregido de ${p.supplierName} a ${s.name} por ${actor.name}`].filter(Boolean).join(' · '),
+      ...touched(),
+    });
+    for (const u of units) tx.update('phoneUnits', u.id, { supplierName: s.name, ...touched() });
+  });
+}
+
+/**
+ * Anula una compra registrada por error: saca del inventario lo que entró (si todavía está),
+ * deja los IMEI libres para volver a ingresarlos, quita la deuda y, si se le había pagado algo
+ * al proveedor, lo devuelve a la caja abierta. La compra no se borra: queda «Anulada».
+ */
+export async function voidPurchase(actor: Actor, purchaseId: string, reason: string) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo de la anulación.');
+  return backend.transaction(async (tx) => {
+    const p = await tx.get<Purchase>('purchases', purchaseId);
+    if (!p) throw new BusinessError('Compra no encontrada.');
+    if (p.status === 'anulada') throw new BusinessError('La compra ya está anulada.');
+    const sessionId = (p.paid || 0) > 0 ? await requireOpenSession(tx) : null;
+    const products = new Map<string, Product>();
+    for (const it of p.items) {
+      if (it.productId && !products.has(it.productId)) {
+        const prod = await tx.get<Product>('products', it.productId);
+        if (prod) products.set(prod.id, prod);
+      }
+    }
+    const units: PhoneUnit[] = [];
+    for (const it of p.items) for (const u of it.units ?? []) {
+      const unit = await tx.get<PhoneUnit>('phoneUnits', u.imei);
+      if (!unit || unit.purchaseId !== p.id) continue;
+      if (unit.status === 'vendido') {
+        throw new BusinessError(`El celular IMEI ${unit.imei} ya se vendió (factura ${unit.invoiceNumber}). Anule primero esa venta.`);
+      }
+      units.push(unit);
+    }
+
+    // ---------- ESCRITURAS ----------
+    const at = new Date().toISOString();
+    for (const it of p.items) {
+      const prod = it.productId ? products.get(it.productId) : undefined;
+      if (!prod) continue; // artículo libre: no tocó inventario
+      try {
+        moveStock(tx, actor, prod, -it.qty, 'anulacion_compra', { refType: 'purchase', refId: p.id, refNumber: p.number, note: `Anulación compra ${p.number}` });
+      } catch {
+        throw new BusinessError(`No hay suficiente «${prod.name}» en inventario para devolver (${it.qty}). Puede que ya se haya vendido o usado.`);
+      }
+    }
+    for (const u of units) tx.update('phoneUnits', u.id, { status: 'anulado', ...touched() });
+    if (sessionId) {
+      // Reintegro: lo pagado vuelve a la caja por el mismo medio
+      const byMethod = new Map<string, number>();
+      for (const pay of p.payments ?? []) byMethod.set(pay.method, (byMethod.get(pay.method) ?? 0) + pay.amount);
+      for (const [method, amount] of byMethod) {
+        writeMovement(tx, actor, sessionId, {
+          direction: 'ingreso', category: 'pago_proveedor', method, amount,
+          description: `Reintegro por anulación de compra C-${String(p.number).padStart(4, '0')} · ${p.supplierName}`,
+          refType: 'purchase', refId: p.id,
+        });
+      }
+    }
+    tx.update('purchases', p.id, { status: 'anulada', voidReason: reason.trim(), voidedAt: at, voidedBy: actor.name, ...touched() });
   });
 }

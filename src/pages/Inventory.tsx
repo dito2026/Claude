@@ -20,7 +20,7 @@ const LINE_BY_TYPE: Record<ProductType, string> = {
 };
 const REASON: Record<StockMovement['reason'], string> = {
   compra: 'Compra / entrada', venta: 'Venta', reparacion: 'Usado en reparación', devolucion_reparacion: 'Devuelto de reparación',
-  ajuste: 'Ajuste de conteo', anulacion: 'Anulación de venta', inicial: 'Stock inicial',
+  ajuste: 'Ajuste de conteo', anulacion: 'Anulación de venta', anulacion_compra: 'Anulación de compra', inicial: 'Stock inicial',
 };
 
 export const EMPTY_PRODUCT: ProductInput = {

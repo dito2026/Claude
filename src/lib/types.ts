@@ -94,6 +94,7 @@ export type StockReason =
   | 'devolucion_reparacion'
   | 'ajuste'
   | 'anulacion'
+  | 'anulacion_compra'
   | 'inicial';
 
 export interface StockMovement extends BaseDoc {
@@ -340,8 +341,11 @@ export interface Purchase extends BaseDoc {
   dueDate?: string;
   paid: number;
   payments: SupplierPayment[];
-  status: 'pagada' | 'pendiente' | 'parcial';
+  status: 'pagada' | 'pendiente' | 'parcial' | 'anulada';
   note: string;
+  voidReason?: string;
+  voidedAt?: string;
+  voidedBy?: string;
 }
 
 // ---------------- Celulares por IMEI ----------------
@@ -367,7 +371,8 @@ export interface PhoneUnit extends BaseDoc {
   supplierName: string;
   purchaseId?: string;
   purchaseNumber?: number;
-  status: 'disponible' | 'vendido';
+  /** anulado = entró por una compra que se anuló; el IMEI se puede volver a ingresar */
+  status: 'disponible' | 'vendido' | 'anulado';
   invoiceId?: string;
   invoiceNumber?: number;
   soldAt?: string;

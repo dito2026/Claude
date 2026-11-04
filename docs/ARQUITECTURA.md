@@ -394,3 +394,14 @@ el servidor reintenta con su modelo de respaldo.
   cliente elige el primero.
 - **Facturación:** el buscador queda listo al abrir; con lector de código de barras (o escribiendo) el
   SKU o el IMEI + Enter agrega el producto directo.
+
+## 23. Corregir o anular compras
+
+- **Cambiar proveedor** (cajero o admin): corrige `supplierId`/`supplierName` de la compra (y el
+  proveedor de sus celulares). La deuda y los abonos pasan solos al proveedor correcto; no toca
+  inventario ni caja. Queda anotado en la nota de la compra.
+- **Anular compra** (solo admin, con motivo): saca del inventario lo que entró (kardex
+  `anulacion_compra`; se niega si ya se vendió o usó), marca sus celulares como `anulado` para que el
+  IMEI se pueda volver a ingresar, deja el saldo en 0 y, si se había pagado algo, lo devuelve a la caja
+  abierta por el mismo medio (ingreso `pago_proveedor`, que en el libro fiscal resta de los egresos).
+  Las compras nunca se borran: quedan «Anuladas».

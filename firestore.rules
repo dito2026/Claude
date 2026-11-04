@@ -137,7 +137,10 @@ service cloud.firestore {
     match /imeiIndex/{imei} {
       allow read: if isStaff();
       allow create: if isCashier() && !exists(/databases/$(database)/documents/imeiIndex/$(imei));
-      allow update, delete: if false;
+      // solo para volver a ingresar un IMEI cuyo equipo quedó anulado
+      allow update: if isCashier()
+        && get(/databases/$(database)/documents/phoneUnits/$(resource.data.unitId)).data.status == 'anulado';
+      allow delete: if false;
     }
 
     // ---- Compras y proveedores ----
@@ -149,8 +152,13 @@ service cloud.firestore {
     // Compras: no se borran; solo se actualizan los abonos
     match /purchases/{id} {
       allow read, create: if isCashier();
-      allow update: if isCashier()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paid', 'payments', 'status', 'updatedAt']);
+      // Abonos y corrección de proveedor: cajero o admin. Anular: solo admin.
+      allow update: if (isCashier()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paid', 'payments', 'status', 'updatedAt', 'supplierId', 'supplierName', 'note'])
+          && request.resource.data.status != 'anulada')
+        || (isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'voidReason', 'voidedAt', 'voidedBy', 'updatedAt'])
+          && request.resource.data.status == 'anulada');
       allow delete: if false;
     }
 
