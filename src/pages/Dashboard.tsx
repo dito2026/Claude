@@ -1,6 +1,10 @@
 import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Clock, LifeBuoy, Package, TrendingUp, Wallet, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, LifeBuoy, MessageCircle, Package, TrendingUp, Wallet, Wrench } from 'lucide-react';
+import { AlertsCenter } from '../components/AlertsCenter';
+import { dailySummaryText } from '../services/automation';
+import { useSettings } from '../services/settings';
+import { whatsappLink } from '../lib/format';
 import { useCollection, useDocument } from '../data/hooks';
 import type { CashMovement, CashSession, Invoice, Product, RepairOrder, Seller, Ticket } from '../lib/types';
 import { sellerBalance } from '../services/sellers';
@@ -28,6 +32,7 @@ export function Dashboard() {
   const cashState = useDocument<CashState & { id: string }>('meta', 'cash').doc;
   const session = useDocument<CashSession>('cashSessions', cashState?.openSessionId ?? undefined).doc;
   const finance = can('dashboard.finance');
+  const settings = useSettings();
   const nav = useNavigate();
 
   const mine = profile?.role === 'tecnico' ? orders.filter((o) => o.technicianId === profile.technicianId) : orders;
@@ -77,13 +82,21 @@ export function Dashboard() {
         actions={
           <>
             {can('orders.create') && <Link className="btn" to="/taller?nueva=1"><Wrench size={16} />Nueva orden</Link>}
+            {finance && settings.phone && (
+              <a className="btn" title="Resumen de ventas, utilidad y órdenes de hoy al WhatsApp del negocio"
+                href={whatsappLink(settings.phone, dailySummaryText({ invoices, movements, products, orders, businessName: settings.name }))} target="_blank" rel="noreferrer">
+                <MessageCircle size={16} />Resumen del día
+              </a>
+            )}
             {can('billing') && <Link className="btn primary" to="/facturacion"><TrendingUp size={16} />Vender</Link>}
           </>
         }
       />
 
+      {finance && <AlertsCenter admin={can('settings')} />}
+
       {finance && (
-        <div className="grid g4">
+        <div className="grid g4 mt">
           <Stat accent label="Ventas de hoy" value={money(stats.salesToday)} sub={`${stats.countToday} comprobantes`} icon={<TrendingUp size={14} />} />
           <Stat label="Ventas del mes" value={money(stats.salesMonth)} sub={`Utilidad bruta ${money(stats.profitMonth)} · ${stats.margin}%`} />
           <Stat label="Efectivo en caja" value={session ? money(cashNow) : '—'} sub={session ? `Caja abierta por ${session.openedBy}` : 'Caja cerrada'} icon={<Wallet size={14} />} />

@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, LifeBuoy, PackagePlus, Printer, Receipt, Trash2 } from 'lucide-react';
+import { ArrowLeft, LifeBuoy, MessageCircle, PackagePlus, Printer, Receipt, Sparkles, Trash2 } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { OrderStatus, Product, RepairOrder, Technician } from '../lib/types';
 import { ORDER_STATUSES } from '../lib/types';
-import { dateTime, matches, money, pad } from '../lib/format';
+import { dateTime, matches, money, pad, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, CommitMoney, Empty, Field, Modal, MoneyInput, Seg, useAction } from '../components/ui';
 import { tracksStock } from '../services/inventory';
@@ -16,6 +16,8 @@ import {
   addDeposit, addFreePart, addPart, depositsTotal, isOverdue, orderTotal, partsTotal, removePart, setStatus, updateOrder,
 } from '../services/orders';
 import { useSettings } from '../services/settings';
+import { readyMessage } from '../services/automation';
+import { aiDiagnose, aiErrorMessage, type Diagnosis } from '../services/ai';
 
 export function OrderDetail() {
   const { id } = useParams();
@@ -25,7 +27,7 @@ export function OrderDetail() {
   const settings = useSettings();
   const techs = useCollection<Technician>('technicians').rows;
   const { run, busy } = useAction();
-  const [modal, setModal] = useState<'part' | 'deposit' | 'status' | 'receipt' | null>(null);
+  const [modal, setModal] = useState<'part' | 'deposit' | 'status' | 'receipt' | 'ai' | 'notify' | null>(null);
   const [diagnosis, setDiagnosis] = useState<string | null>(null);
   const [note, setNote] = useState('');
 
@@ -71,7 +73,10 @@ export function OrderDetail() {
       <div className="grid g-main">
         <div className="stack">
           <div className="card">
-            <div className="card-head"><h3>Equipo y falla</h3></div>
+            <div className="card-head">
+              <h3>Equipo y falla</h3>
+              {canWork && <button className="btn sm" onClick={() => setModal('ai')}><Sparkles size={15} className="red" />Diagnóstico con IA</button>}
+            </div>
             <div className="card-pad">
               <dl className="kv">
                 <dt>Equipo</dt><dd className="strong">{o.device.brand} {o.device.model} {o.device.color && `· ${o.device.color}`}</dd>
@@ -201,7 +206,18 @@ export function OrderDetail() {
 
       {modal === 'part' && <AddPartModal order={o} onClose={() => setModal(null)} />}
       {modal === 'deposit' && <DepositModal order={o} methods={settings.paymentMethods} onClose={() => setModal(null)} />}
-      {modal === 'status' && <StatusModal order={o} onClose={() => setModal(null)} />}
+      {modal === 'status' && <StatusModal order={o} onClose={() => setModal(null)} onReady={() => setModal('notify')} />}
+      {modal === 'ai' && <AiDiagnosisModal order={o} onClose={() => setModal(null)}
+        onUse={(text) => void updateOrder(actor, o.id, { diagnosis: [o.diagnosis, text].filter(Boolean).join('\n\n') }, 'Diagnóstico con IA agregado').then(() => setModal(null))} />}
+      {modal === 'notify' && o.customer.phone && (
+        <Modal title="Avisar al cliente" onClose={() => setModal(null)}
+          footer={<><button className="btn ghost" onClick={() => setModal(null)}>Ahora no</button>
+            <a className="btn primary" href={whatsappLink(o.customer.phone, readyMessage(o, settings.name))} target="_blank" rel="noreferrer" onClick={() => setModal(null)}>
+              <MessageCircle size={16} />Enviar por WhatsApp</a></>}>
+          <p style={{ marginTop: 0 }}>La orden quedó <b>Reparado / Listo</b>. ¿Le avisamos a {o.customer.name}?</p>
+          <div className="card card-pad" style={{ whiteSpace: 'pre-wrap' }}>{readyMessage(o, settings.name)}</div>
+        </Modal>
+      )}
       {modal === 'receipt' && <OrderReceiptModal o={o} s={settings} onClose={() => setModal(null)} />}
     </>
   );
@@ -333,7 +349,7 @@ function DepositModal({ order, methods, onClose }: { order: RepairOrder; methods
   );
 }
 
-function StatusModal({ order, onClose }: { order: RepairOrder; onClose: () => void }) {
+function StatusModal({ order, onClose, onReady }: { order: RepairOrder; onClose: () => void; onReady: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
   const [status, setSt] = useState<OrderStatus>(order.status);
@@ -341,7 +357,10 @@ function StatusModal({ order, onClose }: { order: RepairOrder; onClose: () => vo
   return (
     <Modal title="Cambiar estado" onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy || status === order.status} onClick={() => run(() => setStatus(actor, order.id, status, note), 'Estado actualizado').then((ok) => ok && onClose())}>Guardar</button></>}>
+        <button className="btn primary" disabled={busy || status === order.status} onClick={() => run(() => setStatus(actor, order.id, status, note), 'Estado actualizado').then((ok) => {
+          if (!ok) return;
+          if (status === 'Reparado / Listo' && order.customer.phone) onReady(); else onClose();
+        })}>Guardar</button></>}>
       <div className="stack">
         <div className="row gap-sm">
           {ORDER_STATUSES.filter((s) => s !== 'Entregado').map((s) => (
@@ -351,6 +370,79 @@ function StatusModal({ order, onClose }: { order: RepairOrder; onClose: () => vo
         <div className="faint" style={{ fontSize: 12 }}>«Entregado» se asigna al facturar la orden.</div>
         <Field label="Nota (opcional)"><textarea className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </div>
+    </Modal>
+  );
+}
+
+function AiDiagnosisModal({ order, onClose, onUse }: { order: RepairOrder; onClose: () => void; onUse: (text: string) => void }) {
+  const products = useCollection<Product>('products').rows;
+  const settings = useSettings();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [d, setD] = useState<Diagnosis | null>(null);
+  const run = async () => {
+    setBusy(true); setError('');
+    try {
+      setD(await aiDiagnose({
+        brand: order.device.brand, model: order.device.model, issue: order.reportedIssue,
+        condition: order.device.condition, notes: order.diagnosis,
+        catalogParts: products.filter((p) => p.active && p.type === 'REPUESTO').map((p) => p.name),
+      }));
+    } catch (e) {
+      setError(aiErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const asText = (x: Diagnosis) => [
+    `IA: ${x.resumen}`,
+    `Causas probables: ${x.causas.map((c) => `${c.causa} (${c.probabilidad})`).join('; ')}`,
+    `Pruebas: ${x.pruebas.join(' → ')}`,
+    x.repuestos.length ? `Repuestos posibles: ${x.repuestos.join(', ')}` : '',
+    `Dificultad ${x.dificultad} · ${x.tiempo_estimado}`,
+    x.advertencias.length ? `Advertencias: ${x.advertencias.join('; ')}` : '',
+  ].filter(Boolean).join('\n');
+  return (
+    <Modal wide title={<><Sparkles size={16} className="red" /> Diagnóstico con IA · {order.device.brand} {order.device.model}</>} onClose={onClose}
+      footer={<>
+        <button className="btn ghost" onClick={onClose}>Cerrar</button>
+        {d && order.customer.phone && (
+          <a className="btn" href={whatsappLink(order.customer.phone, `${settings.name}: ${d.mensaje_cliente}`)} target="_blank" rel="noreferrer"><MessageCircle size={16} />Enviar al cliente</a>
+        )}
+        {d ? <button className="btn primary" onClick={() => onUse(asText(d))}>Guardar en el diagnóstico</button>
+          : <button className="btn primary" disabled={busy} onClick={run}><Sparkles size={16} />{busy ? 'Analizando…' : 'Analizar falla'}</button>}
+      </>}>
+      {!d && !busy && !error && (
+        <p className="muted" style={{ marginTop: 0 }}>
+          La IA analiza la falla «{order.reportedIssue}» y sugiere causas probables, pruebas para confirmar, repuestos y un mensaje para el cliente.
+          Es una ayuda para el técnico: confirme siempre con el equipo en la mano.
+        </p>
+      )}
+      {busy && <div className="empty">Analizando la falla…</div>}
+      {error && <div className="alert error">{error}</div>}
+      {d && (
+        <div className="stack">
+          <div className="alert info"><b>{d.resumen}</b></div>
+          <div className="grid g2">
+            <div className="card">
+              <div className="card-head"><h3>Causas probables</h3><Badge>Dificultad {d.dificultad} · {d.tiempo_estimado}</Badge></div>
+              {d.causas.map((c, i) => (
+                <div key={i} className="list-row" style={{ alignItems: 'flex-start' }}>
+                  <Badge tone={c.probabilidad === 'alta' ? 'red' : c.probabilidad === 'media' ? 'warn' : ''}>{c.probabilidad}</Badge>
+                  <div className="grow"><b>{c.causa}</b><div className="faint" style={{ fontSize: 13 }}>{c.porque}</div></div>
+                </div>
+              ))}
+            </div>
+            <div className="card card-pad stack" style={{ gap: 8 }}>
+              <b>Pruebas para confirmar</b>
+              <ol style={{ margin: 0, paddingLeft: 18 }}>{d.pruebas.map((p, i) => <li key={i}>{p}</li>)}</ol>
+              {d.repuestos.length > 0 && <><b>Repuestos que podría necesitar</b><div className="row gap-sm">{d.repuestos.map((r) => <Badge key={r} tone="info">{r}</Badge>)}</div></>}
+              {d.advertencias.length > 0 && <div className="alert warn">{d.advertencias.join(' · ')}</div>}
+            </div>
+          </div>
+          <div className="card card-pad"><div className="eyebrow">Mensaje sugerido para el cliente</div>{d.mensaje_cliente}</div>
+        </div>
+      )}
     </Modal>
   );
 }

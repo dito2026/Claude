@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Wrench, LifeBuoy, Package, HardHat, ShieldCheck, Receipt, Wallet,
-  Settings, LogOut, Menu, Moon, Sun, Smartphone, Truck, Calculator, BadgePercent,
+  Settings, LogOut, Menu, Moon, Sun, Smartphone, Truck, Calculator, BadgePercent, Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import type { Permission } from '../auth/permissions';
@@ -13,7 +13,13 @@ import { useOnline } from './ui';
 interface NavItem { to: string; label: string; icon: ReactNode; perm?: Permission }
 
 const SECTIONS: { label: string; items: NavItem[] }[] = [
-  { label: 'General', items: [{ to: '/', label: 'Panel', icon: <LayoutDashboard size={18} /> }] },
+  {
+    label: 'General',
+    items: [
+      { to: '/', label: 'Panel', icon: <LayoutDashboard size={18} /> },
+      { to: '/asistente', label: 'Asistente IA', icon: <Sparkles size={18} />, perm: 'dashboard.finance' },
+    ],
+  },
   {
     label: 'Operación',
     items: [

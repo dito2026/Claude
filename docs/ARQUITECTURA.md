@@ -325,3 +325,34 @@ e inventario (`src/services/accounting.ts`); no hay datos contables que digitar 
 - Contabilidad: las comisiones se restan en el P&G cuando se vende (por eso el pago en caja no se
   resta otra vez); en el libro fiscal el pago es un egreso.
 - Reglas: `sellers` lectura para el personal, escritura solo administrador.
+
+## 18. Automatizaciones
+
+Se calculan solas con los datos existentes (`src/services/automation.ts`); no necesitan servidor.
+
+- **Pendientes de hoy** (Panel): órdenes atrasadas, listas sin recoger ≥ 3 días (con botón de
+  WhatsApp al cliente), órdenes sin técnico, deudas con proveedores vencidas o que vencen en ≤ 3 días,
+  stock bajo, caja de un día anterior sin cerrar, saldos por pagar a técnicos y vendedores, y
+  recordatorio semanal de respaldo. Ordenadas por urgencia.
+- **Aviso al cliente:** al pasar una OT a «Reparado / Listo» se ofrece el mensaje de WhatsApp listo.
+- **Resumen del día** (Panel): ventas por línea, utilidad, gastos y órdenes al WhatsApp del negocio.
+- **Reposición sugerida** (Compras): uso de 30 días → cantidad para ~15 días + mínimo, agrupada por
+  el último proveedor; «Crear compra» deja la compra prellenada.
+- **Respaldo:** descarga de todas las colecciones en JSON (Configuración).
+
+## 19. Inteligencia artificial (Claude)
+
+`src/services/ai.ts`, SDK oficial `@anthropic-ai/sdk` desde el navegador, modelo `claude-opus-5-5`,
+con `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`): si el modelo declina por políticas,
+el servidor reintenta con su modelo de respaldo.
+
+- **Diagnóstico con IA** (orden de reparación): causas probables, pruebas, repuestos del inventario,
+  dificultad y mensaje para el cliente (salida estructurada con Zod).
+- **Leer factura con IA** (Compras): foto o PDF → proveedor, número, forma de pago e ítems relacionados
+  con los productos del inventario (o artículos libres) e IMEI → compra prellenada para revisar.
+- **Asistente del negocio** (`/asistente`): chat que responde con un resumen JSON de ventas, P&G por
+  período, más vendidos, órdenes, stock, reposición, deudas, técnicos y vendedores.
+- **Clave de API:** la guarda el administrador en Configuración (`secrets/ai`, lectura solo para el
+  personal con sesión). Como la llamada sale del navegador, la clave es visible para el personal:
+  usar una clave exclusiva con límite de gasto en console.anthropic.com. Para ocultarla del todo,
+  mover estas llamadas a una Cloud Function (requiere el plan Blaze de Firebase).

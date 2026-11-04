@@ -4,6 +4,7 @@ import { backend, cloudConfigured } from '../data';
 import { Field, PageHead, useAction } from '../components/ui';
 import { saveSettings, useSettings } from '../services/settings';
 import { ImportCard } from '../components/ImportCard';
+import { AiSettingsCard, BackupCard } from '../components/AiSettingsCard';
 
 export function SettingsPage() {
   const current = useSettings();
@@ -59,6 +60,8 @@ export function SettingsPage() {
           )}
         </div>
         <ImportCard />
+        <AiSettingsCard />
+        <BackupCard />
       </div>
     </>
   );

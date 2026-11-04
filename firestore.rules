@@ -44,6 +44,12 @@ service cloud.firestore {
       allow delete: if false; // se desactivan, no se borran
     }
 
+    // ---- Clave de la IA (Claude): la usa el personal, solo el admin la cambia ----
+    match /secrets/ai {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
     // ---- Configuración ----
     match /settings/{doc} {
       allow read: if isStaff();

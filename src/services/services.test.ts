@@ -639,3 +639,99 @@ describe('vendedores y comisiones', () => {
     })).rejects.toThrow(/inactivo/);
   });
 });
+
+describe('automatizaciones', () => {
+  it('alertas, reposición sugerida, resumen del día y datos para el asistente', async () => {
+    const auto = await import('./automation');
+    const { saveSupplier, createPurchase } = await import('./purchases');
+    const { setStatus } = await import('./orders');
+    const pid = await saveProduct(actor, product({ type: 'ACCESORIO', name: 'Cargador', price: 20000, cost: 10000, stock: 6, minStock: 2 }));
+    const sid = await saveSupplier(actor, { name: 'Maxel', nit: '', phone: '', termDays: 2, notes: '', active: true });
+    const sup = (await backend.get<import('../lib/types').Supplier>('suppliers', sid))!;
+    await createPurchase(actor, { supplier: sup, items: [{ productId: pid, name: 'Cargador', qty: 4, unitCost: 9000 }], paymentType: 'credito', method: 'Efectivo', invoiceRef: '', note: '', updateCost: false });
+    await openSession(actor, 0);
+    await createInvoice(actor, {
+      customer: { name: 'CF', phone: '', document: '' },
+      items: [{ productId: pid, description: 'Cargador', kind: 'producto', qty: 9, unitPrice: 20000, unitCost: 10000 }],
+      discount: 0, taxRate: 0, payments: [{ method: 'Efectivo', amount: 180000 }], cashierName: 'T',
+    });
+    const c = await newCustomer();
+    const o = await newOrder(c);
+    await setStatus(actor, o.id, 'Reparado / Listo');
+    // la orden lleva 5 días lista
+    const ord = (await backend.get<RepairOrder>('repairOrders', o.id))!;
+    const old = new Date(Date.now() - 5 * 86400000).toISOString();
+    await backend.update('repairOrders', o.id, { timeline: ord.timeline.map((t) => (t.status === 'Reparado / Listo' ? { ...t, at: old } : t)) });
+
+    const L = <T,>(c2: string) => backend.list<T>(c2);
+    const alerts = auto.buildAlerts({
+      orders: await L<RepairOrder>('repairOrders'), purchases: await L('purchases'), products: await L<Product>('products'),
+      sessions: await L('cashSessions'), openSessionId: (await backend.get<{ openSessionId: string }>('meta', 'cash'))!.openSessionId,
+      technicians: [], sellers: [], invoices: await L<Invoice>('invoices'), movements: await L<CashMovement>('cashMovements'),
+      businessName: 'Digital Cell', lastBackupAt: null,
+    });
+    const ids = alerts.map((a) => a.id);
+    expect(ids).toContain(`pickup-${o.id}`);
+    expect(alerts.find((a) => a.id === `pickup-${o.id}`)!.whatsapp!.text).toMatch(/ya está listo para recoger/);
+    expect(ids.some((i) => i.startsWith('psoon-'))).toBe(true); // vence en 2 días
+    expect(ids).toContain('lowstock'); // quedó 1 (mínimo 2)
+    expect(ids).toContain('backup');
+    expect(alerts[0].level).not.toBe('info'); // ordenadas por urgencia
+
+    const restock = auto.restockSuggestions(await L<Product>('products'), await L('stockMovements'), await L('purchases'), [sup]);
+    expect(restock[0]).toMatchObject({ supplierName: 'Maxel', soldLast30: 9, lastCost: 9000 });
+    expect(restock[0].suggested).toBe(Math.ceil((9 / 30) * 15) + 2 - 1);
+
+    const txt = auto.dailySummaryText({ invoices: await L('invoices'), movements: await L('cashMovements'), products: await L('products'), orders: await L('repairOrders'), businessName: 'Digital Cell' });
+    expect(txt).toMatch(/Ventas: \$ 180\.000/);
+
+    const snap = JSON.parse(auto.businessSnapshot({
+      invoices: await L('invoices'), movements: await L('cashMovements'), products: await L('products'), orders: await L('repairOrders'),
+      purchases: await L('purchases'), units: [], technicians: [], sellers: [], stockMovements: await L('stockMovements'), suppliers: [sup],
+    }));
+    expect(snap.hoy.ingresos).toBe(180000);
+    expect(snap.mas_vendidos_30_dias[0]).toMatchObject({ nombre: 'Cargador', unidades: 9 });
+    expect(snap.deudas_proveedores[0]).toMatchObject({ proveedor: 'Maxel', saldo: 36000 });
+  });
+});
+
+describe('IA (con respuesta simulada de la API)', () => {
+  it('envía la solicitud correcta y devuelve el diagnóstico estructurado', async () => {
+    const { vi } = await import('vitest');
+    const ai = await import('./ai');
+    await expect(ai.aiDiagnose({ brand: 'X', model: 'Y', issue: 'z', condition: '', notes: '', catalogParts: [] })).rejects.toThrow(/no está configurada/);
+    await ai.saveAiConfig({ apiKey: 'sk-ant-prueba', enabled: true });
+    const diag = {
+      resumen: 'Pantalla dañada', causas: [{ causa: 'Display roto', probabilidad: 'alta', porque: 'golpe' }],
+      pruebas: ['Conectar pantalla de prueba'], repuestos: ['Pantalla Redmi Note 9'], dificultad: 'baja',
+      tiempo_estimado: '1 hora', advertencias: [], mensaje_cliente: 'Su equipo necesita cambio de pantalla.',
+    };
+    let sent: { url: string; headers: Record<string, string>; body: Record<string, unknown> } | null = null;
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const h = new Headers(init?.headers);
+      sent = { url: String(url), headers: Object.fromEntries(h.entries()), body: JSON.parse(String(init?.body)) };
+      return new Response(JSON.stringify({
+        id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-opus-5-5',
+        content: [{ type: 'text', text: JSON.stringify(diag) }], stop_reason: 'end_turn', stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: 10 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const d = await ai.aiDiagnose({ brand: 'Xiaomi', model: 'Redmi Note 9', issue: 'no da imagen', condition: 'golpe', notes: '', catalogParts: ['Pantalla Redmi Note 9'] });
+      expect(d.resumen).toBe('Pantalla dañada');
+      expect(sent!.url).toMatch(/\/v1\/messages/);
+      expect(sent!.headers['x-api-key'] ?? sent!.headers['authorization']).toContain('sk-ant-prueba');
+      expect(sent!.headers['anthropic-beta']).toContain('server-side-fallback-2026-07-01');
+      expect(sent!.headers['anthropic-dangerous-direct-browser-access']).toBe('true');
+      expect(sent!.body).toMatchObject({ model: 'claude-opus-5-5', fallbacks: 'default' });
+      expect((sent!.body.output_config as { format: { type: string } }).format.type).toBe('json_schema');
+
+      fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }), { status: 401, headers: { 'content-type': 'application/json' } }));
+      const err = await ai.aiDiagnose({ brand: 'a', model: 'b', issue: 'c', condition: '', notes: '', catalogParts: [] }).catch((e) => e);
+      expect(ai.aiErrorMessage(err)).toMatch(/clave de API de Claude no es válida/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

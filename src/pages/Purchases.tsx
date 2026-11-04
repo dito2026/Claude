@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { HandCoins, PackagePlus, PenLine, Pencil, Plus, Trash2, Truck } from 'lucide-react';
+import { HandCoins, PackagePlus, PenLine, Pencil, Plus, Sparkles, Trash2, Truck } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { PhoneCondition, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
@@ -14,6 +14,7 @@ import { useSettings } from '../services/settings';
 import type { CashState } from '../services/cash';
 import { EMPTY_PRODUCT, ProductModal } from './Inventory';
 import { ImeiTextarea, parseImeiLines } from '../components/PhoneUnits';
+import { AiInvoiceModal, RestockTab, type PurchasePrefill } from '../components/PurchaseAutomation';
 
 const EMPTY_SUPPLIER: SupplierInput = { name: '', nit: '', phone: '', termDays: 30, notes: '', active: true };
 
@@ -25,8 +26,9 @@ const statusLabel = (p: Purchase) =>
 export function Purchases() {
   const suppliers = useCollection<Supplier>('suppliers').rows;
   const purchases = useCollection<Purchase>('purchases').rows;
-  const [tab, setTab] = useState<'compras' | 'proveedores'>('compras');
-  const [buying, setBuying] = useState(false);
+  const [tab, setTab] = useState<'compras' | 'proveedores' | 'reposicion'>('compras');
+  const [buying, setBuying] = useState<PurchasePrefill | false>(false);
+  const [readingAi, setReadingAi] = useState(false);
 
   const owed = purchases.reduce((a, p) => a + purchaseBalance(p), 0);
   const overdue = purchases.filter(isOverduePurchase);
@@ -41,7 +43,10 @@ export function Purchases() {
         eyebrow="Finanzas"
         title="Compras y proveedores"
         subtitle="Repuestos y accesorios comprados de contado o a crédito, con su saldo por pagar."
-        actions={<button className="btn primary" onClick={() => setBuying(true)}><Plus size={16} />Nueva compra</button>}
+        actions={<>
+          <button className="btn" onClick={() => setReadingAi(true)}><Sparkles size={16} />Leer factura con IA</button>
+          <button className="btn primary" onClick={() => setBuying({})}><Plus size={16} />Nueva compra</button>
+        </>}
       />
       <div className="grid g4" style={{ marginBottom: 16 }}>
         <Stat accent label="Deuda con proveedores" value={money(owed)} sub={`${suppliers.filter((s) => supplierSummary(s, purchases).owed > 0).length} proveedores con saldo`} />
@@ -52,9 +57,13 @@ export function Purchases() {
       <div className="tabs">
         <button className={tab === 'compras' ? 'active' : ''} onClick={() => setTab('compras')}>Compras</button>
         <button className={tab === 'proveedores' ? 'active' : ''} onClick={() => setTab('proveedores')}>Proveedores y saldos</button>
+        <button className={tab === 'reposicion' ? 'active' : ''} onClick={() => setTab('reposicion')}>Reposición sugerida</button>
       </div>
-      {tab === 'compras' ? <PurchaseList purchases={purchases} /> : <SupplierList suppliers={suppliers} purchases={purchases} />}
-      {buying && <NewPurchaseModal suppliers={suppliers} onClose={() => setBuying(false)} />}
+      {tab === 'compras' && <PurchaseList purchases={purchases} />}
+      {tab === 'proveedores' && <SupplierList suppliers={suppliers} purchases={purchases} />}
+      {tab === 'reposicion' && <RestockTab onBuy={(p) => setBuying(p)} />}
+      {buying && <NewPurchaseModal suppliers={suppliers} prefill={buying} onClose={() => setBuying(false)} />}
+      {readingAi && <AiInvoiceModal suppliers={suppliers} onClose={() => setReadingAi(false)} onReady={(p) => { setReadingAi(false); setBuying(p); }} />}
     </>
   );
 }
@@ -252,27 +261,27 @@ function PayModal({ supplier, purchases, onClose }: { supplier: Supplier; purcha
 }
 
 // ---------------- Nueva compra ----------------
-function NewPurchaseModal({ suppliers, onClose }: { suppliers: Supplier[]; onClose: () => void }) {
+function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Supplier[]; prefill?: PurchasePrefill; onClose: () => void }) {
   const { actor, can } = useAuth();
   const settings = useSettings();
   const products = useCollection<Product>('products').rows;
   const cash = useDocument<CashState & { id: string }>('meta', 'cash').doc;
   const { run, busy } = useAction();
-  const [supplierId, setSupplierId] = useState('');
+  const [supplierId, setSupplierId] = useState(prefill.supplierId ?? '');
   const [newSupplier, setNewSupplier] = useState(false);
   const [pendingSupplier, setPendingSupplier] = useState('');
-  const [items, setItems] = useState<PurchaseItem[]>([]);
+  const [items, setItems] = useState<PurchaseItem[]>(prefill.items ?? []);
   const [q, setQ] = useState('');
-  const [paymentType, setPaymentType] = useState<'credito' | 'contado'>('credito');
+  const [paymentType, setPaymentType] = useState<'credito' | 'contado'>(prefill.paymentType ?? 'credito');
   const [method, setMethod] = useState('Efectivo');
-  const [invoiceRef, setInvoiceRef] = useState('');
+  const [invoiceRef, setInvoiceRef] = useState(prefill.invoiceRef ?? '');
   const [due, setDue] = useState('');
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState(prefill.note ?? '');
   const [updateCost, setUpdateCost] = useState(true);
   const [newProduct, setNewProduct] = useState(false);
   const [pendingProduct, setPendingProduct] = useState('');
   // Celulares: IMEI por línea de compra
-  const [imeiText, setImeiText] = useState<Record<string, string>>({});
+  const [imeiText, setImeiText] = useState<Record<string, string>>(prefill.imeiText ?? {});
   const [imeiCond, setImeiCond] = useState<Record<string, PhoneCondition>>({});
   const isPhoneLine = (it: PurchaseItem) => products.find((p) => p.id === it.productId)?.type === 'EQUIPO';
   const lineUnits = (it: PurchaseItem) => parseImeiLines(imeiText[it.productId] ?? '', imeiCond[it.productId] ?? 'NUEVO');
