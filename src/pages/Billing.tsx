@@ -16,6 +16,9 @@ import { useSettings } from '../services/settings';
 import { tracksStock } from '../services/inventory';
 import { isPhone, normalizeImei } from '../services/phones';
 import { UnitPickerModal } from '../components/PhoneUnits';
+import { BrandModelFilter, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
+import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
+
 import { BuyFromSupplierFields, EMPTY_BUY, useSuppliers, type BuyFromSupplierValue } from '../components/BuyFromSupplier';
 import { buyFreeItem } from '../services/purchases';
 import { BASE_LABEL, computeCommission } from '../services/sellers';
@@ -78,10 +81,14 @@ function Pos() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [due, payments.length]);
 
+  const [bm, setBm] = useState<BrandModelValue>({ brand: '', model: '' });
+  const pBrand = (p: Product) => p.brand || brandFromText(p.name);
+  const pModel = (p: Product) => (p.type === 'EQUIPO' ? p.name : p.model);
+  const brandOptions = useMemo(() => brandModelsOf(products.filter((p) => p.active).map((p) => ({ brand: pBrand(p), model: pModel(p) }))), [products]); // eslint-disable-line react-hooks/exhaustive-deps
   const catalog = useMemo(
-    () => products.filter((p) => p.active && matches(q, p.name, p.sku, p.brand, p.model))
+    () => products.filter((p) => p.active && matchesBrand(bm.brand, pBrand(p)) && matchesModel(bm.model, pModel(p)) && matches(q, p.name, p.sku, p.brand, p.model))
       .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 40),
-    [products, q],
+    [products, q, bm],
   );
 
   const phoneUnits = useCollection<PhoneUnit>('phoneUnits').rows;
@@ -170,6 +177,7 @@ function Pos() {
           <div className="grow"><SearchBox value={q} onChange={setQ} placeholder="Buscar producto o servicio por nombre o SKU…" /></div>
           <button className="btn" onClick={() => setFreeItem(true)} title="Vender algo que no está en el inventario"><PenLine size={16} />Artículo libre</button>
         </div>
+        <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />
         <div className="product-grid">
           {catalog.map((p) => {
             const out = tracksStock(p) && p.stock <= 0;

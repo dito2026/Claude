@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { useCollection } from '../data/hooks';
@@ -8,6 +8,9 @@ import { dateTime, fromLocalInput, matches, money, pad, toLocalInput } from '../
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
 import { CustomerPicker } from '../components/CustomerPicker';
+import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
+import { matchesBrand, matchesModel } from '../lib/brands';
+
 import { orderTone, PRIORITIES, priorityTone } from '../components/status';
 import { createOrder, isOverdue, orderTotal } from '../services/orders';
 import { useSettings } from '../services/settings';
@@ -23,6 +26,8 @@ export function Orders() {
   const [filter, setFilter] = useState<Filter>('abiertas');
   const [mineOnly, setMineOnly] = useState(profile?.role === 'tecnico');
   const creating = params.get('nueva') === '1';
+  const [bm, setBm] = useState<BrandModelValue>({ brand: '', model: '' });
+  const brandOptions = useMemo(() => brandModelsOf(rows.map((o) => ({ brand: o.device.brand, model: o.device.model }))), [rows]);
 
   const list = rows
     .filter((o) => !mineOnly || o.technicianId === profile?.technicianId)
@@ -35,6 +40,7 @@ export function Orders() {
         default: return true;
       }
     })
+    .filter((o) => matchesBrand(bm.brand, o.device.brand) && matchesModel(bm.model, o.device.model))
     .filter((o) => matches(q, o.number, o.customer.name, o.customer.phone, o.device.brand, o.device.model, o.device.imei, o.reportedIssue))
     .sort((a, b) => b.number - a.number);
 
@@ -65,6 +71,7 @@ export function Orders() {
             { value: 'todas', label: 'Todas' },
           ]}
         />
+        <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />
         {profile?.technicianId && (
           <label className="checkbox"><input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} />Solo mis órdenes</label>
         )}
@@ -159,8 +166,8 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
       <div className="stack">
         <Field label="Cliente" required><CustomerPicker value={customer} onChange={setCustomer} /></Field>
         <div className="form-grid three">
-          <Field label="Marca" required><input className="input" value={device.brand} onChange={dev('brand')} placeholder="Samsung, Apple, Xiaomi…" /></Field>
-          <Field label="Modelo" required><input className="input" value={device.model} onChange={dev('model')} /></Field>
+          <Field label="Marca" required><BrandInput value={device.brand} onChange={(v) => setDevice((d) => ({ ...d, brand: v }))} required /></Field>
+          <Field label="Modelo" required><ModelInput brand={device.brand} value={device.model} onChange={(v) => setDevice((d) => ({ ...d, model: v }))} /></Field>
           <Field label="IMEI o serial"><input className="input mono" value={device.imei} onChange={dev('imei')} /></Field>
           <Field label="Color"><input className="input" value={device.color} onChange={dev('color')} /></Field>
           <Field label="Clave / patrón de desbloqueo"><input className="input" value={device.unlockCode} onChange={dev('unlockCode')} /></Field>

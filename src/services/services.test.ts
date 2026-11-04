@@ -735,3 +735,26 @@ describe('IA (con respuesta simulada de la API)', () => {
     }
   });
 });
+
+describe('marcas y modelos', () => {
+  it('normaliza marcas, reconoce sub-marcas y agrupa modelos sin repetir', async () => {
+    const b = await import('../lib/brands');
+    expect(b.canonicalBrand('samsung')).toBe('Samsung');
+    expect(b.canonicalBrand('SAMSUNG ')).toBe('Samsung');
+    expect(b.canonicalBrand('Redmi')).toBe('Xiaomi');
+    expect(b.canonicalBrand('iphone')).toBe('Apple');
+    expect(b.canonicalBrand('marca rara')).toBe('Marca rara');
+    expect(b.brandFromText('iPhone 14 Pro Max 128GB')).toBe('Apple');
+    expect(b.brandFromText('Samsung Galaxy S25 Ultra')).toBe('Samsung');
+    expect(b.brandFromText('Cargador tipo C')).toBe('');
+    const m = b.buildBrandModels([
+      { brand: 'samsung', model: 'galaxy A35' }, { brand: 'Samsung', model: 'Galaxy  A35' }, { brand: 'SAMSUNG', model: 'Galaxy A05' },
+      { brand: 'redmi', model: 'Note 9' }, { brand: 'Xiaomi', model: 'Note 13' },
+    ]);
+    expect(m.get('Samsung')).toEqual(['Galaxy A05', 'Galaxy A35']);
+    expect(m.get('Xiaomi')).toEqual(['Note 9', 'Note 13']); // orden numérico
+    expect(b.matchesBrand('Samsung', 'samsung')).toBe(true);
+    expect(b.matchesModel('Galaxy A35', 'galaxy  a35')).toBe(true);
+    expect(b.matchesBrand('', 'cualquiera')).toBe(true);
+  });
+});

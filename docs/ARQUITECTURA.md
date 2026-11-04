@@ -358,3 +358,14 @@ el servidor reintenta con su modelo de respaldo.
   personal con sesión). Como la llamada sale del navegador, la clave es visible para el personal:
   usar una clave exclusiva con límite de gasto en console.anthropic.com. Para ocultarla del todo,
   mover estas llamadas a una Cloud Function (requiere el plan Blaze de Firebase).
+
+## 20. Marcas y modelos de celulares
+
+- `src/lib/brands.ts`: lista de marcas comerciales (Samsung, Apple, Xiaomi, Motorola, Huawei, Honor,
+  Oppo, Vivo, Realme, Tecno, Infinix…) y sub-marcas que se agrupan (Redmi/Poco → Xiaomi,
+  iPhone → Apple, Galaxy → Samsung). La marca se escribe siempre igual al salir del campo.
+- Los **modelos** no son una lista fija: se arman solos con lo ya registrado en órdenes y productos,
+  sin duplicados por mayúsculas o espacios, ordenados de forma natural (Note 9 antes de Note 13).
+- **Filtro Marca → Modelo** en Órdenes de reparación, Inventario (productos y celulares por IMEI) y
+  Facturación. Solo muestra las marcas que existen en esa lista.
+- En «Nueva orden» y en los productos, los campos Marca y Modelo sugieren lo ya registrado.

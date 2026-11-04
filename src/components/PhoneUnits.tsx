@@ -6,6 +6,8 @@ import { dateOnly, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { registerUnits, warrantyActive } from '../services/phones';
 import { Badge, Empty, Field, Modal, MoneyInput, SearchBox, Seg, useAction } from './ui';
+import { BrandModelFilter, brandModelsOf, type BrandModelValue } from './BrandModel';
+import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
 
 /** Texto con un IMEI por línea → unidades. Acepta «IMEI1 / IMEI2» o «IMEI1, IMEI2» para doble SIM. */
 export function parseImeiLines(text: string, condition: PhoneCondition, color = ''): PhoneUnitInput[] {
@@ -108,14 +110,22 @@ export function UnitPickerModal({ product, exclude, onPick, onClose }: {
 /** Pestaña de Inventario: todos los celulares por IMEI (historial y garantía). */
 export function UnitsTab() {
   const { rows } = useCollection<PhoneUnit>('phoneUnits');
+  const products = useCollection<Product>('products').rows;
+  const [bm, setBm] = useState<BrandModelValue>({ brand: '', model: '' });
+  const brandOf = useMemo(() => {
+    const m = new Map(products.map((p) => [p.id, p.brand || brandFromText(p.name)]));
+    return (u: PhoneUnit) => m.get(u.productId) || brandFromText(u.productName);
+  }, [products]);
+  const brandOptions = useMemo(() => brandModelsOf(rows.map((u) => ({ brand: brandOf(u), model: u.productName }))), [rows, brandOf]);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<'disponible' | 'vendido' | 'todos'>('disponible');
   const list = useMemo(
     () => rows
       .filter((u) => status === 'todos' || u.status === status)
+      .filter((u) => matchesBrand(bm.brand, brandOf(u)) && matchesModel(bm.model, u.productName))
       .filter((u) => matches(q, u.imei, u.imei2, u.productName, u.customerName, u.supplierName, u.invoiceNumber))
       .sort((a, b) => (b.soldAt ?? b.createdAt ?? '').localeCompare(a.soldAt ?? a.createdAt ?? '')),
-    [rows, q, status],
+    [rows, q, status, bm, brandOf],
   );
   const available = rows.filter((u) => u.status === 'disponible');
   return (
@@ -127,6 +137,7 @@ export function UnitsTab() {
           { value: 'todos', label: 'Todos' },
         ]} />
         <SearchBox value={q} onChange={setQ} placeholder="IMEI, modelo, cliente o factura" />
+        <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />
         <span className="faint">Valor disponible a costo: {money(available.reduce((a, u) => a + u.cost, 0))}</span>
       </div>
       <div className="card">

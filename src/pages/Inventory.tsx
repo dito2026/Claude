@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDownToLine, Pencil, Plus, SlidersHorizontal, Smartphone } from 'lucide-react';
 import { useCollection } from '../data/hooks';
@@ -7,6 +7,9 @@ import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
 import { RegisterUnitsModal, UnitsTab } from '../components/PhoneUnits';
+import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
+import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
+
 import { adjustStock, isLowStock, receiveStock, saveProduct, tracksStock, type ProductInput } from '../services/inventory';
 
 const TYPES: ProductType[] = ['REPUESTO', 'ACCESORIO', 'EQUIPO', 'SERVICIO'];
@@ -36,9 +39,14 @@ export function Inventory() {
   const [edit, setEdit] = useState<{ id?: string; data: ProductInput } | null>(null);
   const [stockOp, setStockOp] = useState<{ p: Product; kind: 'entrada' | 'ajuste' } | null>(null);
   const [kardexFor, setKardexFor] = useState('');
+  const [bm, setBm] = useState<BrandModelValue>({ brand: '', model: '' });
+  const pBrand = (p: Product) => p.brand || brandFromText(p.name);
+  const pModel = (p: Product) => (p.type === 'EQUIPO' ? p.name : p.model);
+  const brandOptions = useMemo(() => brandModelsOf(products.map((p) => ({ brand: pBrand(p), model: pModel(p) }))), [products]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const list = products
     .filter((p) => (type === 'TODOS' ? true : type === 'BAJO' ? isLowStock(p) : p.type === type))
+    .filter((p) => matchesBrand(bm.brand, pBrand(p)) && matchesModel(bm.model, pModel(p)))
     .filter((p) => matches(q, p.sku, p.name, p.brand, p.model))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -75,6 +83,7 @@ export function Inventory() {
               { value: 'TODOS', label: 'Todos' }, { value: 'REPUESTO', label: 'Repuestos' }, { value: 'ACCESORIO', label: 'Accesorios' },
               { value: 'EQUIPO', label: 'Equipos' }, { value: 'SERVICIO', label: 'Servicios' }, { value: 'BAJO', label: 'Stock bajo' },
             ]} />
+            <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />
           </div>
           <div className="card">
             {loading ? <Empty>Cargando…</Empty> : list.length === 0 ? <Empty>No hay productos.</Empty> : (
@@ -182,8 +191,8 @@ export function ProductModal({ edit, onClose, onSaved }: { edit: { id?: string; 
         </Field>
         <Field label="SKU / código"><input className="input mono" value={d.sku} onChange={(e) => set('sku', e.target.value)} placeholder="REP-0001" /></Field>
         <Field label="Nombre" required className="full"><input className="input" autoFocus value={d.name} onChange={(e) => set('name', e.target.value)} /></Field>
-        <Field label="Marca"><input className="input" value={d.brand} onChange={(e) => set('brand', e.target.value)} /></Field>
-        <Field label="Modelo compatible"><input className="input" value={d.model} onChange={(e) => set('model', e.target.value)} /></Field>
+        <Field label="Marca"><BrandInput value={d.brand} onChange={(v) => set('brand', v)} /></Field>
+        <Field label="Modelo compatible"><ModelInput brand={d.brand} value={d.model} onChange={(v) => set('model', v)} placeholder="Ej.: Galaxy A35, iPhone 13" /></Field>
         <Field label="Costo unitario"><MoneyInput value={d.cost} onChange={(v) => set('cost', v)} /></Field>
         <Field label={d.type === 'REPUESTO' ? 'Precio de venta (opcional)' : 'Precio de venta'}><MoneyInput value={d.price} onChange={(v) => set('price', v)} /></Field>
         {d.type === 'EQUIPO' && (
