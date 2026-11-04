@@ -379,3 +379,18 @@ el servidor reintenta con su modelo de respaldo.
 - **Facturación:** barra de categorías con conteo y catálogo agrupado por categoría; combina con la
   búsqueda y el filtro de marca y modelo.
 - **Inventario:** filtro por categoría y categoría visible en la lista.
+
+## 22. Ingreso rápido de datos
+
+- **Enter = botón principal** en todas las ventanas (Guardar, Crear, Registrar…), salvo en textos
+  largos, listas y botones.
+- **Valores rápidos** en todos los campos de dinero: `120k`/`120 mil` = 120.000, `2m` = 2.000.000,
+  `1,5m` = 1.500.000 (`parseMoney`).
+- **Producto nuevo:** solo nombre y costo. El tipo y la marca se adivinan por el nombre, el código se
+  genera solo (ACC-0012, REP-0005…), el precio se sugiere con el margen de Configuración (80 % por
+  defecto, redondeado a miles) y la categoría es automática. El resto queda en «Más detalles».
+- **Nueva orden:** botones rápidos para la falla, los accesorios y el estado físico; fecha de entrega
+  con Hoy / Mañana / 2 días / 1 semana; recuerda el último técnico elegido; Enter en el buscador de
+  cliente elige el primero.
+- **Facturación:** el buscador queda listo al abrir; con lector de código de barras (o escribiendo) el
+  SKU o el IMEI + Enter agrega el producto directo.

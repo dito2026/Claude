@@ -6,7 +6,7 @@ import type { Customer, Device, Priority, RepairOrder, Technician } from '../lib
 import { OPEN_STATUSES } from '../lib/types';
 import { dateTime, fromLocalInput, matches, money, pad, toLocalInput } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
-import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
+import { Badge, Empty, Field, Modal, MoneyInput, PageHead, QuickChips, SearchBox, Seg, useAction } from '../components/ui';
 import { CustomerPicker } from '../components/CustomerPicker';
 import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
 import { matchesBrand, matchesModel } from '../lib/brands';
@@ -117,7 +117,9 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [device, setDevice] = useState<Device>(EMPTY_DEVICE);
   const [issue, setIssue] = useState('');
-  const [techId, setTechId] = useState('');
+  // Recuerda el último técnico elegido en este equipo
+  const [techId, setTechIdRaw] = useState(() => { try { return localStorage.getItem('dcpro:lastTech') ?? ''; } catch { return ''; } });
+  const setTechId = (v: string) => { setTechIdRaw(v); try { localStorage.setItem('dcpro:lastTech', v); } catch { /* sin almacenamiento */ } };
   const [priority, setPriority] = useState<Priority>('normal');
   const [promised, setPromised] = useState(toLocalInput(new Date(Date.now() + 2 * 86400000).toISOString()));
   const [budget, setBudget] = useState(0);
@@ -171,9 +173,18 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
           <Field label="IMEI o serial"><input className="input mono" value={device.imei} onChange={dev('imei')} /></Field>
           <Field label="Color"><input className="input" value={device.color} onChange={dev('color')} /></Field>
           <Field label="Clave / patrón de desbloqueo"><input className="input" value={device.unlockCode} onChange={dev('unlockCode')} /></Field>
-          <Field label="Accesorios que deja"><input className="input" value={device.accessories} onChange={dev('accessories')} placeholder="Cargador, forro, SIM…" /></Field>
-          <Field label="Falla reportada" required className="full"><textarea className="input" value={issue} onChange={(e) => setIssue(e.target.value)} /></Field>
-          <Field label="Revisión al recibir (estado físico)" className="full"><input className="input" value={device.condition} onChange={dev('condition')} placeholder="Rayones, golpes, pantalla, humedad…" /></Field>
+          <Field label="Falla reportada (toque o escriba)" required className="full">
+            <input className="input" value={issue} onChange={(e) => setIssue(e.target.value)} placeholder="Ej.: pantalla rota, no carga…" />
+            <QuickChips value={issue} onChange={setIssue} options={['Pantalla', 'Display / táctil', 'Batería', 'Puerto de carga', 'No enciende', 'Se mojó', 'Software / se reinicia', 'Desbloqueo / cuenta', 'Cámara', 'Audio / micrófono', 'Botones', 'Señal / SIM', 'Tapa trasera']} />
+          </Field>
+          <Field label="Accesorios que deja" className="full">
+            <input className="input" value={device.accessories} onChange={dev('accessories')} placeholder="Toque los que deja" />
+            <QuickChips value={device.accessories} onChange={(v) => setDevice((d) => ({ ...d, accessories: v }))} options={['Sin accesorios', 'Cargador', 'Cable', 'Forro', 'SIM', 'Memoria', 'Caja']} />
+          </Field>
+          <Field label="Revisión al recibir (estado físico)" className="full">
+            <input className="input" value={device.condition} onChange={dev('condition')} placeholder="Toque lo que observa" />
+            <QuickChips value={device.condition} onChange={(v) => setDevice((d) => ({ ...d, condition: v }))} options={['Sin daños visibles', 'Rayones', 'Golpes', 'Pantalla rota', 'Tapa rota', 'Señales de humedad', 'No enciende al recibir']} />
+          </Field>
           <Field label="Técnico">
             <select className="input" value={techId} onChange={(e) => setTechId(e.target.value)}>
               <option value="">Sin asignar</option>
@@ -185,7 +196,15 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
               {PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
           </Field>
-          <Field label="Prometida para"><input className="input" type="datetime-local" value={promised} onChange={(e) => setPromised(e.target.value)} /></Field>
+          <Field label="Prometida para">
+            <input className="input" type="datetime-local" value={promised} onChange={(e) => setPromised(e.target.value)} />
+            <div className="row gap-sm" style={{ marginTop: 6 }}>
+              {([['Hoy', 0], ['Mañana', 1], ['2 días', 2], ['1 semana', 7]] as const).map(([label, days]) => {
+                const d = new Date(); d.setDate(d.getDate() + days); d.setHours(18, 0, 0, 0);
+                return <button key={label} type="button" className="cat-chip" onClick={() => setPromised(toLocalInput(d.toISOString()))}>{label}</button>;
+              })}
+            </div>
+          </Field>
           <Field label="Presupuesto al cliente"><MoneyInput value={budget} onChange={setBudget} /></Field>
           <Field label="Mano de obra (cobro)"><MoneyInput value={labor} onChange={setLabor} /></Field>
           <Field label="Pago al técnico"><MoneyInput value={techPay} onChange={setTechPay} /></Field>

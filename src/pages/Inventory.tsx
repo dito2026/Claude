@@ -11,9 +11,10 @@ import { DEFAULT_CATEGORIES, categoryOf, guessCategory, sortCategories } from '.
 import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
 import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
 
-import { adjustStock, isLowStock, receiveStock, saveProduct, tracksStock, type ProductInput } from '../services/inventory';
+import { adjustStock, guessType, isLowStock, nextSku, receiveStock, saveProduct, suggestedPrice, tracksStock, type ProductInput } from '../services/inventory';
+import { useSettings } from '../services/settings';
+import { canonicalBrand } from '../lib/brands';
 
-const TYPES: ProductType[] = ['REPUESTO', 'ACCESORIO', 'EQUIPO', 'SERVICIO'];
 const LINE_BY_TYPE: Record<ProductType, string> = {
   REPUESTO: 'Servicio técnico', ACCESORIO: 'Accesorios', EQUIPO: 'Equipos', SERVICIO: 'Servicio técnico',
 };
@@ -184,51 +185,87 @@ export function Inventory() {
 export function ProductModal({ edit, onClose, onSaved }: { edit: { id?: string; data: ProductInput }; onClose: () => void; onSaved?: (id: string) => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
+  const settings = useSettings();
+  const all = useCollection<Product>('products').rows;
+  const isNew = !edit.id;
   const [d, setD] = useState(edit.data);
-  const set = <K extends keyof ProductInput>(k: K, v: ProductInput[K]) => setD({ ...d, [k]: v });
+  const [typeTouched, setTypeTouched] = useState(!isNew);
+  const [priceTouched, setPriceTouched] = useState(!isNew || edit.data.price > 0);
+  const [more, setMore] = useState(!isNew);
+  const set = <K extends keyof ProductInput>(k: K, v: ProductInput[K]) => setD((x) => ({ ...x, [k]: v }));
+  const margin = settings.suggestedMarginPct ?? 80;
+  const sugg = suggestedPrice(d.cost, margin);
+
+  // Al escribir el nombre: tipo y marca se adivinan solos (si no los cambió usted)
+  const onName = (name: string) => setD((x) => {
+    const t = !typeTouched ? guessType(name) : null;
+    return { ...x, name, ...(t ? { type: t, line: LINE_BY_TYPE[t] } : {}), brand: x.brand || brandFromText(name) };
+  });
+  // Al escribir el costo: precio sugerido automático (si no lo escribió usted)
+  const onCost = (cost: number) => setD((x) => ({ ...x, cost, ...(priceTouched ? {} : { price: suggestedPrice(cost, margin) }) }));
+
+  const save = () => run(async () => {
+    const data = { ...d, sku: d.sku.trim() || (isNew ? nextSku(d.type, all) : d.sku), brand: canonicalBrand(d.brand) };
+    const id = await saveProduct(actor, data, edit.id);
+    onSaved?.(String(id));
+  }, 'Producto guardado').then((ok) => ok && onClose());
+
   return (
-    <Modal title={edit.id ? 'Editar producto' : 'Nuevo producto'} onClose={onClose}
+    <Modal title={isNew ? 'Nuevo producto' : 'Editar producto'} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy} onClick={() => run(async () => { const id = await saveProduct(actor, d, edit.id); onSaved?.(String(id)); }, 'Producto guardado').then((ok) => ok && onClose())}>Guardar</button></>}>
+        <button className="btn primary" disabled={busy || !d.name.trim()} onClick={save}>Guardar</button></>}>
       <div className="form-grid">
-        <Field label="Tipo">
-          <select className="input" value={d.type} onChange={(e) => { const t = e.target.value as ProductType; setD({ ...d, type: t, line: LINE_BY_TYPE[t] }); }}>
-            {TYPES.map((t) => <option key={t}>{t}</option>)}
-          </select>
+        <Field label="Nombre" required className="full">
+          <input className="input" autoFocus value={d.name} onChange={(e) => onName(e.target.value)} placeholder="Ej.: Cargador tipo C Samsung, Pantalla Redmi Note 9" />
         </Field>
-        <Field label="SKU / código"><input className="input mono" value={d.sku} onChange={(e) => set('sku', e.target.value)} placeholder="REP-0001" /></Field>
-        <Field label="Nombre" required className="full"><input className="input" autoFocus value={d.name} onChange={(e) => set('name', e.target.value)} /></Field>
-        <Field label="Marca"><BrandInput value={d.brand} onChange={(v) => set('brand', v)} /></Field>
-        <Field label="Modelo compatible"><ModelInput brand={d.brand} value={d.model} onChange={(v) => set('model', v)} placeholder="Ej.: Galaxy A35, iPhone 13" /></Field>
-        <Field label="Costo unitario"><MoneyInput value={d.cost} onChange={(v) => set('cost', v)} /></Field>
-        <Field label={d.type === 'REPUESTO' ? 'Precio de venta (opcional)' : 'Precio de venta'}><MoneyInput value={d.price} onChange={(v) => set('price', v)} /></Field>
+        <Field label="Tipo" className="full">
+          <Seg<ProductType> value={d.type} onChange={(t) => { setTypeTouched(true); setD((x) => ({ ...x, type: t, line: LINE_BY_TYPE[t] })); }}
+            options={[{ value: 'ACCESORIO', label: 'Accesorio' }, { value: 'REPUESTO', label: 'Repuesto' }, { value: 'EQUIPO', label: 'Celular' }, { value: 'SERVICIO', label: 'Servicio' }]} />
+        </Field>
+        <Field label="Costo (lo que le cuesta)"><MoneyInput value={d.cost} onChange={onCost} placeholder="Ej.: 10k" /></Field>
+        <Field label={d.type === 'REPUESTO' ? 'Precio de venta (opcional)' : 'Precio de venta'}>
+          <MoneyInput value={d.price} onChange={(v) => { setPriceTouched(true); set('price', v); }} placeholder="Ej.: 20k" />
+          {sugg > 0 && d.price !== sugg && (
+            <button type="button" className="btn sm ghost" style={{ justifyContent: 'flex-start', paddingLeft: 0 }} onClick={() => { setPriceTouched(true); set('price', sugg); }}>
+              Usar sugerido {money(sugg)} (margen {margin}%)
+            </button>
+          )}
+          {!priceTouched && d.price > 0 && <small className="faint">Sugerido automático con margen {margin}%. Cámbielo si quiere.</small>}
+        </Field>
         {d.type === 'EQUIPO' && (
           <div className="alert info full">Celulares: se controlan uno por uno con su IMEI. El stock sube al ingresarlos («Ingresar» en la lista o una compra) y baja al venderlos escogiendo el IMEI.</div>
         )}
-        {d.type !== 'SERVICIO' && d.type !== 'EQUIPO' && (
-          <label className="checkbox full">
-            <input type="checkbox" checked={d.trackStock !== false} onChange={(e) => set('trackStock', e.target.checked)} />
-            Controlar inventario (descontar stock al vender o usar en reparación)
-          </label>
+        {tracksStock(d) && isNew && d.type !== 'EQUIPO' && (
+          <Field label="¿Cuántos tiene?"><input className="input num" type="number" min={0} inputMode="numeric" value={d.stock || ''} placeholder="0" onChange={(e) => set('stock', Number(e.target.value))} /></Field>
         )}
-        {d.type !== 'SERVICIO' && d.trackStock === false && (
-          <div className="alert info full">Sin inventario: se puede vender y usar en reparaciones sin límite de cantidad. No lleva stock ni alertas de reposición; las ventas y la utilidad sí quedan registradas.</div>
-        )}
-        {tracksStock(d) && (
+        <button type="button" className="btn ghost full" style={{ justifyContent: 'flex-start' }} onClick={() => setMore(!more)}>
+          {more ? '▾ Menos detalles' : '▸ Más detalles (código, marca, categoría, garantía…) — opcionales, se llenan solos'}
+        </button>
+        {more && (
           <>
-            {!edit.id && d.type !== 'EQUIPO' && <Field label="Stock inicial"><input className="input num" type="number" min={0} value={d.stock} onChange={(e) => set('stock', Number(e.target.value))} /></Field>}
-            <Field label="Stock mínimo (alerta)"><input className="input num" type="number" min={0} value={d.minStock} onChange={(e) => set('minStock', Number(e.target.value))} /></Field>
+            <Field label="Código / SKU"><input className="input mono" value={d.sku} onChange={(e) => set('sku', e.target.value)} placeholder={isNew ? `Automático: ${nextSku(d.type, all)}` : ''} /></Field>
+            <Field label="Marca"><BrandInput value={d.brand} onChange={(v) => set('brand', v)} /></Field>
+            <Field label="Modelo compatible"><ModelInput brand={d.brand} value={d.model} onChange={(v) => set('model', v)} placeholder="Ej.: Galaxy A35, iPhone 13" /></Field>
+            <Field label="Categoría (organiza Facturación)">
+              <input className="input" list="dc-categories" value={d.category ?? ''} placeholder={`Automática: ${guessCategory(d)}`} onChange={(e) => set('category', e.target.value)} />
+              <datalist id="dc-categories">{DEFAULT_CATEGORIES.map((c) => <option key={c} value={c} />)}</datalist>
+            </Field>
+            {d.type !== 'SERVICIO' && d.type !== 'EQUIPO' && (
+              <label className="checkbox full">
+                <input type="checkbox" checked={d.trackStock !== false} onChange={(e) => set('trackStock', e.target.checked)} />
+                Controlar inventario (descontar stock al vender o usar en reparación)
+              </label>
+            )}
+            {d.type !== 'SERVICIO' && d.trackStock === false && (
+              <div className="alert info full">Sin inventario: se puede vender y usar en reparaciones sin límite de cantidad. No lleva stock ni alertas de reposición; las ventas y la utilidad sí quedan registradas.</div>
+            )}
+            {tracksStock(d) && <Field label="Stock mínimo (alerta)"><input className="input num" type="number" min={0} value={d.minStock} onChange={(e) => set('minStock', Number(e.target.value))} /></Field>}
+            <Field label="Garantía (meses)"><input className="input num" type="number" min={0} value={d.warrantyMonths} onChange={(e) => set('warrantyMonths', Number(e.target.value))} /></Field>
+            <Field label="Color"><input className="input" value={d.color} onChange={(e) => set('color', e.target.value)} /></Field>
+            <label className="checkbox full"><input type="checkbox" checked={d.active} onChange={(e) => set('active', e.target.checked)} />Activo (visible en ventas y órdenes)</label>
+            {edit.id && <div className="faint full" style={{ fontSize: 12 }}>El stock se modifica con «Entrada» o «Ajuste» para que quede registrado en el kardex.</div>}
           </>
         )}
-        <Field label="Categoría (para organizar Facturación)">
-          <input className="input" list="dc-categories" value={d.category ?? ''} placeholder={`Automática: ${guessCategory(d)}`}
-            onChange={(e) => set('category', e.target.value)} />
-          <datalist id="dc-categories">{DEFAULT_CATEGORIES.map((c) => <option key={c} value={c} />)}</datalist>
-        </Field>
-        <Field label="Garantía (meses)"><input className="input num" type="number" min={0} value={d.warrantyMonths} onChange={(e) => set('warrantyMonths', Number(e.target.value))} /></Field>
-        <Field label="Color"><input className="input" value={d.color} onChange={(e) => set('color', e.target.value)} /></Field>
-        <label className="checkbox full"><input type="checkbox" checked={d.active} onChange={(e) => set('active', e.target.checked)} />Activo (visible en ventas y órdenes)</label>
-        {edit.id && <div className="faint full" style={{ fontSize: 12 }}>El stock se modifica con «Entrada» o «Ajuste» para que quede registrado en el kardex.</div>}
       </div>
     </Modal>
   );

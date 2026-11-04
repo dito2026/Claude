@@ -67,6 +67,9 @@ export function CustomerPicker({ value, onChange }: { value: Customer | null; on
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && found.length > 0 && q.trim()) { e.preventDefault(); e.stopPropagation(); onChange(found[0]); }
+          }}
         />
         <button type="button" className="btn" onClick={() => { setCreating(true); setDraft({ name: q, phone: '', document: '' }); }}>
           <UserPlus size={16} />Nuevo

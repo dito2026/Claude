@@ -782,3 +782,27 @@ describe('categorías del catálogo', () => {
     expect(sortCategories(['Servicios', 'Ofertas', 'Cables', 'Celulares'])).toEqual(['Celulares', 'Cables', 'Servicios', 'Ofertas']);
   });
 });
+
+describe('ingreso rápido de datos', () => {
+  it('valores con k / mil / m, código automático, tipo adivinado y precio sugerido', async () => {
+    const { parseMoney } = await import('../components/ui');
+    expect(parseMoney('120k')).toBe(120000);
+    expect(parseMoney('120 mil')).toBe(120000);
+    expect(parseMoney('2m')).toBe(2000000);
+    expect(parseMoney('1,5m')).toBe(1500000);
+    expect(parseMoney('1.350.000')).toBe(1350000);
+    expect(parseMoney('$ 45.000')).toBe(45000);
+    expect(parseMoney('')).toBe(0);
+    const { nextSku, guessType, suggestedPrice } = await import('./inventory');
+    expect(nextSku('ACCESORIO', [{ sku: 'ACC-0007' }, { sku: 'ACC-0002' }, { sku: 'REP-0009' }])).toBe('ACC-0008');
+    expect(nextSku('REPUESTO', [])).toBe('REP-0001');
+    expect(guessType('Pantalla Redmi Note 9')).toBe('REPUESTO');
+    expect(guessType('Cambio de pantalla')).toBe('SERVICIO');
+    expect(guessType('iPhone 13 128GB')).toBe('EQUIPO');
+    expect(guessType('Cargador tipo C')).toBe('ACCESORIO');
+    expect(guessType('Llavero')).toBeNull();
+    expect(suggestedPrice(10000, 80)).toBe(18000);
+    expect(suggestedPrice(12500, 80)).toBe(23000);
+    expect(suggestedPrice(0, 80)).toBe(0);
+  });
+});

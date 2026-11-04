@@ -36,6 +36,8 @@ export interface BusinessSettings {
   uvtValue?: number;
   /** tope de ingresos para no responsable de IVA, en UVT */
   ivaCapUvt?: number;
+  /** margen para el precio sugerido de productos nuevos (%) */
+  suggestedMarginPct?: number;
 }
 
 export interface Technician extends BaseDoc {

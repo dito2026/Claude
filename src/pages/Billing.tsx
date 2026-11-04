@@ -120,6 +120,22 @@ function Pos() {
       && !items.some((x) => x.unitId === u.id)).slice(0, 6)
     : [];
 
+  /** Enter en el buscador (o lector de código de barras): agrega directo si hay un solo resultado claro. */
+  const quickAdd = () => {
+    const code = q.trim();
+    if (!code) return;
+    const n = normalizeImei(code);
+    const unit = phoneUnits.find((u) => u.status === 'disponible' && (u.imei === n || u.imei2 === n));
+    if (unit) { addUnit(unit); setQ(''); return; }
+    const bySku = products.find((p) => p.active && p.sku && p.sku.toUpperCase() === code.toUpperCase());
+    const only = catalog.length === 1 ? catalog[0] : undefined;
+    const p = bySku ?? only;
+    if (p) {
+      const out = tracksStock(p) && p.stock <= 0;
+      if (!out && (p.price || isPhone(p))) { add(p); setQ(''); }
+    }
+  };
+
   const add = (p: Product) => {
     if (isPhone(p)) return setPicker(p); // los celulares se venden escogiendo el IMEI
     setItems((xs) => {
@@ -188,7 +204,7 @@ function Pos() {
           </div>
         ) : null}
         <div className="row gap-sm" style={{ flexWrap: 'nowrap' }}>
-          <div className="grow"><SearchBox value={q} onChange={setQ} placeholder="Buscar producto o servicio por nombre o SKU…" /></div>
+          <div className="grow"><SearchBox value={q} onChange={setQ} onEnter={quickAdd} autoFocus placeholder="Buscar, escanear código o IMEI y Enter…" /></div>
           <button className="btn" onClick={() => setFreeItem(true)} title="Vender algo que no está en el inventario"><PenLine size={16} />Artículo libre</button>
         </div>
         <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />

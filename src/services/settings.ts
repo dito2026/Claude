@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
   taxRate: 0,
   uvtValue: 52374,
   ivaCapUvt: 3500,
+  suggestedMarginPct: 80,
 };
 
 export function useSettings(): BusinessSettings {

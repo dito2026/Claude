@@ -109,3 +109,27 @@ export async function adjustStock(actor: Actor, productId: string, newStock: num
 }
 
 export const isLowStock = (p: Product) => tracksStock(p) && p.active && p.stock <= p.minStock;
+
+const SKU_PREFIX: Record<Product['type'], string> = { ACCESORIO: 'ACC', REPUESTO: 'REP', EQUIPO: 'CEL', SERVICIO: 'SRV' };
+
+/** Siguiente código libre para el tipo: ACC-0012, REP-0005… */
+export function nextSku(type: Product['type'], products: Pick<Product, 'sku'>[]): string {
+  const prefix = SKU_PREFIX[type];
+  const re = new RegExp(`^${prefix}-(\\d+)$`, 'i');
+  const max = products.reduce((m, p) => Math.max(m, Number(re.exec(p.sku ?? '')?.[1] ?? 0)), 0);
+  return `${prefix}-${String(max + 1).padStart(4, '0')}`;
+}
+
+/** Tipo probable según el nombre (solo para sugerir al crear). */
+export function guessType(name: string): Product['type'] | null {
+  const n = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (/\b(pantalla|display|bateria|flex|puerto|pin de carga|tapa|camara|visor|tactil|boton|altavoz|auricular)\b/.test(n) && !/\b(cambio|instalacion|servicio)\b/.test(n)) return 'REPUESTO';
+  if (/\b(iphone|galaxy|redmi|poco|moto g|moto e|honor|realme|celular|telefono)\b/.test(n) && /\b(\d+ ?gb|pro|max|ultra|plus|lite|\d{2,3})\b/.test(n)) return 'EQUIPO';
+  if (/\b(revision|diagnostico|software|desbloqueo|instalacion|cambio de|mano de obra|actualizacion|limpieza)\b/.test(n)) return 'SERVICIO';
+  if (/\b(cargador|cable|forro|estuche|vidrio|protector|audifono|parlante|memoria|soporte|reloj|sim)\b/.test(n)) return 'ACCESORIO';
+  return null;
+}
+
+/** Precio sugerido: costo + margen, redondeado hacia arriba a miles. */
+export const suggestedPrice = (cost: number, marginPct: number) =>
+  cost > 0 ? Math.ceil((cost * (1 + marginPct / 100)) / 1000) * 1000 : 0;

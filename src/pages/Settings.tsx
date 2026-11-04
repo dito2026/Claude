@@ -39,6 +39,7 @@ export function SettingsPage() {
           <div className="form-grid">
             <Field label="Garantía por defecto en reparaciones (días)"><input className="input num" type="number" min={0} value={d.defaultWarrantyDays} onChange={(e) => set('defaultWarrantyDays', Number(e.target.value))} /></Field>
             <Field label="IVA (%) · 0 = no responsable"><input className="input num" type="number" min={0} max={19} value={d.taxRate} onChange={(e) => set('taxRate', Number(e.target.value))} /></Field>
+            <Field label="Margen para precio sugerido (%)"><input className="input num" type="number" min={0} value={d.suggestedMarginPct ?? 80} onChange={(e) => set('suggestedMarginPct', Number(e.target.value))} /></Field>
             <Field label="Valor de la UVT (DIAN)"><input className="input num" type="number" min={0} value={d.uvtValue ?? 52374} onChange={(e) => set('uvtValue', Number(e.target.value))} /></Field>
             <Field label="Tope no responsable de IVA (UVT)"><input className="input num" type="number" min={0} value={d.ivaCapUvt ?? 3500} onChange={(e) => set('ivaCapUvt', Number(e.target.value))} /></Field>
             <Field label="Medios de pago (uno por línea)">{list('paymentMethods')}</Field>

@@ -68,6 +68,22 @@ export function useAction() {
 }
 
 // ---------------- Modal ----------------
+/**
+ * Enter = botón principal de la ventana (Guardar, Crear, Registrar…), salvo en textos largos,
+ * listas y botones. Así se puede llenar todo con el teclado sin tocar el mouse.
+ */
+function submitOnEnter(e: React.KeyboardEvent<HTMLDivElement>) {
+  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || e.defaultPrevented) return;
+  const t = e.target as HTMLElement;
+  if (t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON' || t.tagName === 'SELECT' || t.tagName === 'A') return;
+  const modal = e.currentTarget;
+  const primary = [...modal.querySelectorAll<HTMLButtonElement>('.modal-foot button.primary')].filter((b) => !b.disabled).pop();
+  if (primary) {
+    e.preventDefault();
+    primary.click();
+  }
+}
+
 export function Modal({
   title, onClose, children, footer, wide,
 }: { title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
@@ -78,7 +94,7 @@ export function Modal({
   }, [onClose]);
   return createPortal(
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true">
+      <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" onKeyDown={submitOnEnter}>
         <div className="modal-head">
           <h2>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar"><X size={18} /></button>
@@ -101,6 +117,22 @@ export function Field({ label, required, children, className = '' }: { label: st
   );
 }
 
+/**
+ * Lee un valor en pesos escrito rápido: «120k» o «120 mil» = 120.000, «2m» o «2 millones» = 2.000.000,
+ * «1,5m» = 1.500.000. Los puntos de miles se ignoran.
+ */
+export function parseMoney(raw: string): number {
+  const t = raw.toLowerCase().replace(/\s+/g, '').replace(/\$/g, '');
+  const m = t.match(/^([\d.,]*)(k|mil|m|mill|millon|millones|mm)?$/);
+  if (!m) return Number(t.replace(/\D/g, '')) || 0;
+  const [, num, suffix] = m;
+  if (!suffix) return Number(num.replace(/\D/g, '')) || 0;
+  const mult = suffix === 'k' || suffix === 'mil' ? 1000 : 1000000;
+  // con sufijo, la coma es decimal: «1,5m»; los puntos se toman como miles
+  const n = Number(num.replace(/\./g, '').replace(',', '.')) || 0;
+  return Math.round(n * mult);
+}
+
 export function MoneyInput({ value, onChange, ...rest }: { value: number; onChange: (n: number) => void } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
   return (
     <input
@@ -109,16 +141,19 @@ export function MoneyInput({ value, onChange, ...rest }: { value: number; onChan
       inputMode="numeric"
       value={value ? value.toLocaleString('es-CO') : ''}
       placeholder="$ 0"
-      onChange={(e) => onChange(Number(e.target.value.replace(/\D/g, '')) || 0)}
+      onChange={(e) => onChange(parseMoney(e.target.value))}
     />
   );
 }
 
-export function SearchBox({ value, onChange, placeholder = 'Buscar…' }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+export function SearchBox({ value, onChange, placeholder = 'Buscar…', onEnter, autoFocus }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; onEnter?: () => void; autoFocus?: boolean;
+}) {
   return (
     <div className="search">
       <Search size={16} />
-      <input className="input" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+      <input className="input" value={value} autoFocus={autoFocus} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); } }} />
     </div>
   );
 }
@@ -208,4 +243,21 @@ export function useOnline() {
     };
   }, []);
   return online;
+}
+
+/**
+ * Botones rápidos para llenar un campo de texto tocando en vez de escribir.
+ * Cada toque agrega (o quita) la opción, separada por comas.
+ */
+export function QuickChips({ options, value, onChange }: { options: string[]; value: string; onChange: (v: string) => void }) {
+  const parts = value.split(',').map((x) => x.trim()).filter(Boolean);
+  const has = (o: string) => parts.some((p) => p.toLowerCase() === o.toLowerCase());
+  const toggle = (o: string) => onChange((has(o) ? parts.filter((p) => p.toLowerCase() !== o.toLowerCase()) : [...parts, o]).join(', '));
+  return (
+    <div className="row gap-sm" style={{ marginTop: 6 }}>
+      {options.map((o) => (
+        <button key={o} type="button" className={`cat-chip ${has(o) ? 'active' : ''}`} onClick={() => toggle(o)}>{o}</button>
+      ))}
+    </div>
+  );
 }
