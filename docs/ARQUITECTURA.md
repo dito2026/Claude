@@ -430,3 +430,9 @@ el servidor reintenta con su modelo de respaldo.
 
 - **Facturación:** el medio de pago ya no viene marcado como «Efectivo». Hay que tocar uno (Efectivo, Transferencia, Nequi…) antes de cobrar; mientras falte, el botón Cobrar queda bloqueado y se resalta la elección. El servicio `createInvoice` también rechaza pagos sin medio.
 - **Caja → Movimientos del turno:** cada venta muestra debajo los productos de la factura (cantidad, nombre e IMEI si es celular), también para ventas anteriores.
+
+## 27. Respaldo de datos (corrección)
+
+- El respaldo listaba la colección `meta` completa, y las reglas de Firestore solo permiten leer `meta/bootstrap` y `meta/cash`. Por eso Firebase rechazaba el respaldo con «permisos insuficientes». Ahora esos documentos se leen uno por uno.
+- Si alguna colección falla, el resto se respalda igual. El archivo trae `incompleto: [...]` y se muestra un aviso.
+- En celular se usa «Compartir» (guardar en Archivos o Drive, o enviar por WhatsApp) porque la descarga directa no siempre funciona en iPhone con la app instalada.

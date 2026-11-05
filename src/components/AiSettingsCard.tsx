@@ -57,24 +57,65 @@ export function AiSettingsCard() {
 }
 
 const BACKUP_COLLECTIONS = [
-  'settings', 'meta', 'counters', 'users', 'technicians', 'sellers', 'customers', 'products', 'stockMovements', 'phoneUnits',
+  'settings', 'counters', 'users', 'technicians', 'sellers', 'customers', 'products', 'stockMovements', 'phoneUnits',
   'imeiIndex', 'repairOrders', 'tickets', 'invoices', 'cashSessions', 'cashMovements', 'suppliers', 'purchases',
 ];
+/** «meta» no se puede listar entera (reglas de Firestore): se leen sus documentos uno por uno. */
+const META_DOCS = ['bootstrap', 'cash'];
+
+/** Lee todos los datos. Una colección que falle no detiene el respaldo: queda anotada en `failed`. */
+export async function collectBackup() {
+  const data: Record<string, unknown[]> = {};
+  const failed: string[] = [];
+  const results = await Promise.allSettled(BACKUP_COLLECTIONS.map((c) => backend.list(c)));
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') data[BACKUP_COLLECTIONS[i]] = r.value;
+    else failed.push(BACKUP_COLLECTIONS[i]);
+  });
+  data.meta = [];
+  for (const id of META_DOCS) {
+    try {
+      const d = await backend.get('meta', id);
+      if (d) data.meta.push({ ...(d as object), id });
+    } catch {
+      failed.push(`meta/${id}`);
+    }
+  }
+  return { data, failed };
+}
 
 /** Descarga todos los datos en un archivo JSON (no incluye la clave de IA). */
 export function BackupCard() {
   const { run, busy } = useAction();
+  const toast = useToast();
   const download = () => run(async () => {
-    const data: Record<string, unknown[]> = {};
-    for (const c of BACKUP_COLLECTIONS) data[c] = await backend.list(c);
-    const blob = new Blob([JSON.stringify({ app: 'DIGITAL CELL PRO', exportedAt: new Date().toISOString(), data }, null, 1)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `respaldo-digital-cell_${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const { data, failed } = await collectBackup();
+    if (failed.length === BACKUP_COLLECTIONS.length) throw new Error('No se pudo leer ningún dato. Revise la conexión a internet e intente de nuevo.');
+    const name = `respaldo-digital-cell_${new Date().toISOString().slice(0, 10)}.json`;
+    const json = JSON.stringify({ app: 'DIGITAL CELL PRO', exportedAt: new Date().toISOString(), data, ...(failed.length ? { incompleto: failed } : {}) }, null, 1);
+    const blob = new Blob([json], { type: 'application/json' });
+    // En celular (sobre todo iPhone con la app instalada) descargar no siempre funciona: se usa «Compartir»
+    const file = typeof File !== 'undefined' ? new File([blob], name, { type: 'application/json' }) : null;
+    const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+    let shared = false;
+    if (touch && file && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Respaldo Digital Cell' });
+        shared = true;
+      } catch (e) {
+        if ((e as Error)?.name === 'AbortError') return; // el usuario canceló
+      }
+    }
+    if (!shared) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
     try { localStorage.setItem(BACKUP_KEY, new Date().toISOString()); } catch { /* sin almacenamiento */ }
+    if (failed.length) toast(`Respaldo descargado, pero sin: ${failed.join(', ')} (sin permiso).`, 'error');
   }, 'Respaldo descargado');
   return (
     <div className="card card-pad">
