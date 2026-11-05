@@ -128,22 +128,24 @@ export function Accounting() {
         <div className="grid g2">
           <div className="card">
             <div className="card-head"><h3>Estado de resultados (P&amp;G)</h3><button className="btn sm" onClick={exportResults}><Download size={15} />Excel</button></div>
-            <table className="table">
-              <thead><tr><th>Concepto</th><th className="num">Valor</th><th className="num">% ingresos</th></tr></thead>
-              <tbody>
-                {report.byLine.map((l) => (
-                  <tr key={l.line}><td>Ventas {l.line.toLowerCase()}</td><td className="num">{money(l.sales)}</td><td className="num faint">{pct(l.sales, report.income)}</td></tr>
-                ))}
-                {report.discounts > 0 && <tr><td className="faint">Descuentos ya aplicados</td><td className="num faint">{money(report.discounts)}</td><td /></tr>}
-                <tr><td className="strong">Total ingresos</td><td className="num strong">{money(report.income)}</td><td className="num">100%</td></tr>
-                <tr><td>(−) Costo de lo vendido</td><td className="num red">−{money(report.cost)}</td><td className="num faint">{pct(report.cost, report.income)}</td></tr>
-                <tr><td className="strong">Utilidad bruta</td><td className="num strong">{money(report.grossProfit)}</td><td className="num">{pct(report.grossProfit, report.income)}</td></tr>
-                <tr><td>(−) Gastos del período</td><td className="num red">−{money(report.expenses)}</td><td className="num faint">{pct(report.expenses, report.income)}</td></tr>
-                {report.commissions > 0 && <tr><td>(−) Comisiones de vendedores</td><td className="num red">−{money(report.commissions)}</td><td className="num faint">{pct(report.commissions, report.income)}</td></tr>}
-                <tr style={{ fontSize: 16 }}><td className="strong">Utilidad neta</td><td className={`num strong ${report.netProfit < 0 ? 'red' : ''}`}>{money(report.netProfit)}</td><td className="num strong">{pct(report.netProfit, report.income)}</td></tr>
-                {report.tax > 0 && <tr><td className="faint">IVA cobrado (no es ingreso, se paga a la DIAN)</td><td className="num faint">{money(report.tax)}</td><td /></tr>}
-              </tbody>
-            </table>
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Concepto</th><th className="num">Valor</th><th className="num">% ingresos</th></tr></thead>
+                <tbody>
+                  {report.byLine.map((l) => (
+                    <tr key={l.line}><td>Ventas {l.line.toLowerCase()}</td><td className="num">{money(l.sales)}</td><td className="num faint">{pct(l.sales, report.income)}</td></tr>
+                  ))}
+                  {report.discounts > 0 && <tr><td className="faint">Descuentos ya aplicados</td><td className="num faint">{money(report.discounts)}</td><td /></tr>}
+                  <tr><td className="strong">Total ingresos</td><td className="num strong">{money(report.income)}</td><td className="num">100%</td></tr>
+                  <tr><td>(−) Costo de lo vendido</td><td className="num red">−{money(report.cost)}</td><td className="num faint">{pct(report.cost, report.income)}</td></tr>
+                  <tr><td className="strong">Utilidad bruta</td><td className="num strong">{money(report.grossProfit)}</td><td className="num">{pct(report.grossProfit, report.income)}</td></tr>
+                  <tr><td>(−) Gastos del período</td><td className="num red">−{money(report.expenses)}</td><td className="num faint">{pct(report.expenses, report.income)}</td></tr>
+                  {report.commissions > 0 && <tr><td>(−) Comisiones de vendedores</td><td className="num red">−{money(report.commissions)}</td><td className="num faint">{pct(report.commissions, report.income)}</td></tr>}
+                  <tr style={{ fontSize: 16 }}><td className="strong">Utilidad neta</td><td className={`num strong ${report.netProfit < 0 ? 'red' : ''}`}>{money(report.netProfit)}</td><td className="num strong">{pct(report.netProfit, report.income)}</td></tr>
+                  {report.tax > 0 && <tr><td className="faint">IVA cobrado (no es ingreso, se paga a la DIAN)</td><td className="num faint">{money(report.tax)}</td><td /></tr>}
+                </tbody>
+              </table>
+            </div>
             <div className="card-pad faint" style={{ fontSize: 12 }}>
               El costo de la mano de obra es el «pago al técnico» de cada orden; las comisiones se cuentan cuando se vende.
               Por eso los pagos a técnicos ({money(report.technicianPayments)}) y a vendedores en caja no se restan otra vez como gasto.
@@ -153,33 +155,37 @@ export function Accounting() {
           <div className="stack">
             <div className="card">
               <div className="card-head"><h3>Margen por línea de negocio</h3></div>
-              <table className="table">
-                <thead><tr><th>Línea</th><th className="num">Ventas</th><th className="num">Costo</th><th className="num">Ganancia</th><th className="num">Margen</th></tr></thead>
-                <tbody>
-                  {report.byLine.map((l) => (
-                    <tr key={l.line}>
-                      <td className="strong">{l.line}</td><td className="num">{money(l.sales)}</td><td className="num">{money(l.cost)}</td>
-                      <td className="num">{money(l.profit)}</td><td className="num">{l.margin === null ? '—' : `${Math.round(l.margin * 100)}%`}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead><tr><th>Línea</th><th className="num">Ventas</th><th className="num">Costo</th><th className="num">Ganancia</th><th className="num">Margen</th></tr></thead>
+                  <tbody>
+                    {report.byLine.map((l) => (
+                      <tr key={l.line}>
+                        <td className="strong">{l.line}</td><td className="num">{money(l.sales)}</td><td className="num">{money(l.cost)}</td>
+                        <td className="num">{money(l.profit)}</td><td className="num">{l.margin === null ? '—' : `${Math.round(l.margin * 100)}%`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               <div className="card-pad faint" style={{ fontSize: 12 }}>Si vende algo sin escribir su costo, aparece con 100 % de margen. Escriba el costo para que la ganancia sea real.</div>
             </div>
             <div className="card">
               <div className="card-head"><h3>Gastos por categoría</h3></div>
               {report.expensesByCategory.length === 0 ? <Empty>Sin gastos en el período. Se registran en Caja → Gasto.</Empty> : (
-                <table className="table">
-                  <tbody>
-                    {report.expensesByCategory.map((g) => (
-                      <tr key={g.category}>
-                        <td>{g.category}<div className="bar red" style={{ marginTop: 6 }}><i style={{ width: `${(g.amount / report.expenses) * 100}%` }} /></div></td>
-                        <td className="num">{money(g.amount)}</td><td className="num faint">{pct(g.amount, report.expenses)}</td>
-                      </tr>
-                    ))}
-                    <tr><td className="strong">Total gastos</td><td className="num strong">{money(report.expenses)}</td><td className="num">100%</td></tr>
-                  </tbody>
-                </table>
+                <div className="table-wrap">
+                  <table className="table">
+                    <tbody>
+                      {report.expensesByCategory.map((g) => (
+                        <tr key={g.category}>
+                          <td>{g.category}<div className="bar red" style={{ marginTop: 6 }}><i style={{ width: `${(g.amount / report.expenses) * 100}%` }} /></div></td>
+                          <td className="num">{money(g.amount)}</td><td className="num faint">{pct(g.amount, report.expenses)}</td>
+                        </tr>
+                      ))}
+                      <tr><td className="strong">Total gastos</td><td className="num strong">{money(report.expenses)}</td><td className="num">100%</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>
@@ -197,15 +203,17 @@ export function Accounting() {
             <b> Egresos</b>: gastos y pagos a proveedores, técnicos y vendedores. Los retiros del dueño no cuentan. Las ventas a crédito tienda no son ingreso hasta que se cobran.
           </div>
           {fiscal.days.length === 0 ? <Empty>Sin operaciones en el período.</Empty> : (
-            <table className="table">
-              <thead><tr><th>Día</th><th className="num">Ingresos</th><th className="num">Egresos</th><th className="num">Neto</th></tr></thead>
-              <tbody>
-                <tr><td className="strong">Total del período</td><td className="num strong">{money(fiscal.income)}</td><td className="num strong">{money(fiscal.outflow)}</td><td className={`num strong ${fiscal.net < 0 ? 'red' : ''}`}>{money(fiscal.net)}</td></tr>
-                {fiscal.days.map((d) => (
-                  <tr key={d.day}><td>{fmtDay(d.day)}</td><td className="num">{money(d.income)}</td><td className="num">{money(d.outflow)}</td><td className={`num ${d.net < 0 ? 'red' : ''}`}>{money(d.net)}</td></tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Día</th><th className="num">Ingresos</th><th className="num">Egresos</th><th className="num">Neto</th></tr></thead>
+                <tbody>
+                  <tr><td className="strong">Total del período</td><td className="num strong">{money(fiscal.income)}</td><td className="num strong">{money(fiscal.outflow)}</td><td className={`num strong ${fiscal.net < 0 ? 'red' : ''}`}>{money(fiscal.net)}</td></tr>
+                  {fiscal.days.map((d) => (
+                    <tr key={d.day}><td>{fmtDay(d.day)}</td><td className="num">{money(d.income)}</td><td className="num">{money(d.outflow)}</td><td className={`num ${d.net < 0 ? 'red' : ''}`}>{money(d.net)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -245,15 +253,17 @@ export function Accounting() {
         <div className="grid g2">
           <div className="card">
             <div className="card-head"><h3>Resumen del negocio hoy</h3></div>
-            <table className="table">
-              <tbody>
-                <tr><td>Inventario de celulares (a costo)</td><td className="num">{money(balance.phones)}</td></tr>
-                <tr><td>Inventario de repuestos y accesorios controlados (a costo)</td><td className="num">{money(balance.stock)}</td></tr>
-                <tr><td>Le deben clientes (ventas a crédito tienda)</td><td className="num">{money(balance.receivables)}</td></tr>
-                <tr><td>Debe a proveedores (cuentas por pagar)</td><td className="num red">−{money(balance.payables)}</td></tr>
-                <tr style={{ fontSize: 16 }}><td className="strong">Valor neto aproximado</td><td className={`num strong ${balance.net < 0 ? 'red' : ''}`}>{money(balance.net)}</td></tr>
-              </tbody>
-            </table>
+            <div className="table-wrap">
+              <table className="table">
+                <tbody>
+                  <tr><td>Inventario de celulares (a costo)</td><td className="num">{money(balance.phones)}</td></tr>
+                  <tr><td>Inventario de repuestos y accesorios controlados (a costo)</td><td className="num">{money(balance.stock)}</td></tr>
+                  <tr><td>Le deben clientes (ventas a crédito tienda)</td><td className="num">{money(balance.receivables)}</td></tr>
+                  <tr><td>Debe a proveedores (cuentas por pagar)</td><td className="num red">−{money(balance.payables)}</td></tr>
+                  <tr style={{ fontSize: 16 }}><td className="strong">Valor neto aproximado</td><td className={`num strong ${balance.net < 0 ? 'red' : ''}`}>{money(balance.net)}</td></tr>
+                </tbody>
+              </table>
+            </div>
             <div className="card-pad faint" style={{ fontSize: 12 }}>No incluye el efectivo en caja ni los saldos en bancos o billeteras (Nequi, Daviplata).</div>
           </div>
           <div className="card card-pad">

@@ -27,12 +27,12 @@ export function BrandModelFilter({ value, onChange, brands }: {
   const list = [...brands.keys()];
   const models = value.brand ? brands.get(value.brand) ?? [] : [];
   return (
-    <div className="row gap-sm" style={{ flexWrap: 'nowrap' }}>
-      <select className="input" style={{ width: 170 }} value={value.brand} onChange={(e) => onChange({ brand: e.target.value, model: '' })} aria-label="Marca">
+    <div className="row gap-sm brand-filter" style={{ flexWrap: 'nowrap' }}>
+      <select className="input" style={{ width: 170, minWidth: 0, flexShrink: 1 }} value={value.brand} onChange={(e) => onChange({ brand: e.target.value, model: '' })} aria-label="Marca">
         <option value="">Todas las marcas</option>
         {list.map((b) => <option key={b} value={b}>{b}</option>)}
       </select>
-      <select className="input" style={{ width: 210 }} value={value.model} disabled={!value.brand} onChange={(e) => onChange({ ...value, model: e.target.value })} aria-label="Modelo">
+      <select className="input" style={{ width: 210, minWidth: 0, flexShrink: 1 }} value={value.model} disabled={!value.brand} onChange={(e) => onChange({ ...value, model: e.target.value })} aria-label="Modelo">
         <option value="">{value.brand ? 'Todos los modelos' : 'Modelo (elija marca)'}</option>
         {models.map((m) => <option key={m} value={m}>{m}</option>)}
       </select>

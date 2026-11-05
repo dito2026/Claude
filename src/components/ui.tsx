@@ -6,9 +6,10 @@ import {
   useState,
   type ReactNode,
   type InputHTMLAttributes,
+  type CSSProperties,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Inbox, Search, X } from 'lucide-react';
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Inbox, Search, X } from 'lucide-react';
 
 // ---------------- Toasts ----------------
 interface Toast { id: number; text: string; kind: 'ok' | 'error' }
@@ -164,11 +165,24 @@ export const Badge = ({ tone = '', children }: { tone?: Tone; children: ReactNod
   <span className={`badge ${tone}`}>{children}</span>
 );
 
-export function Stat({ label, value, sub, icon, accent }: { label: string; value: ReactNode; sub?: ReactNode; icon?: ReactNode; accent?: boolean }) {
+/** Variación contra un periodo anterior. `invert`: subir es malo (p. ej. gastos). */
+export function Delta({ pct, label, invert }: { pct: number | null; label: string; invert?: boolean }) {
+  if (pct == null) return <span className="delta flat">Sin comparación con {label}</span>;
+  const good = invert ? pct <= 0 : pct >= 0;
+  const Icon = pct > 0 ? ArrowUpRight : pct < 0 ? ArrowDownRight : ArrowRight;
   return (
-    <div className={`card stat ${accent ? 'accent' : ''}`}>
-      <div className="stat-label">{icon}{label}</div>
+    <span className={`delta ${pct === 0 ? 'flat' : good ? 'up' : 'down'}`}>
+      <Icon size={13} />{pct > 0 ? '+' : ''}{pct}% vs {label}
+    </span>
+  );
+}
+
+export function Stat({ label, value, sub, icon, accent, delta, className = '', style }: { label: string; value: ReactNode; sub?: ReactNode; icon?: ReactNode; accent?: boolean; delta?: ReactNode; className?: string; style?: CSSProperties }) {
+  return (
+    <div className={`card stat ${accent ? 'accent' : ''} ${className}`} style={style}>
+      <div className="stat-label">{icon && <span className="stat-icon">{icon}</span>}{label}</div>
       <div className="stat-value">{value}</div>
+      {delta && <div className="stat-delta">{delta}</div>}
       {sub && <div className="stat-sub">{sub}</div>}
     </div>
   );

@@ -415,3 +415,13 @@ el servidor reintenta con su modelo de respaldo.
 - **Panel → Ganancias diarias:** por día (7, 15 o 30 días) ventas, costo, utilidad bruta, gastos y
   comisiones, y ganancia neta, con el mismo cálculo de Contabilidad (`buildReport` por día). La tarjeta
   «Ganancia de hoy» reemplaza a «Stock bajo», que ya aparece en Pendientes de hoy.
+
+## 25. Panel empresarial: KPIs y gráficos
+
+- **KPIs fijos** (hoy y mes en curso): Ventas del día, Ingresos del mes, Gastos del mes, Ganancia neta del mes, Efectivo en caja, Productos disponibles, Servicios pendientes y Servicios terminados. Cada uno se compara con el mismo corte del periodo anterior (ayer a esta hora; el mes anterior al mismo día).
+- **Definiciones** (iguales a Contabilidad): Ingresos = ventas netas de facturas no anuladas; Gastos = costo de lo vendido + gastos de caja + comisiones; Ganancia neta = Ingresos − Gastos. Retiros del dueño no son gasto. Una orden cuenta como terminada el día en que quedó «Reparado / Listo» (o «Entregado»).
+- **Filtros**: Día (24 horas), Semana (lunes a domingo), Mes (cada día) y Año (12 meses), con ‹ › para consultar periodos anteriores. La elección se recuerda en el equipo.
+- **Gráficos** (`src/components/charts.tsx`, SVG propio sin librerías): Ventas (la barra del periodo actual en rojo), Ingresos vs gastos, Ganancia neta (línea con área), Servicios técnicos (recibidos vs terminados), Celulares y accesorios vendidos, Comparativo mensual (año vs año anterior) e Inventario disponible por categoría. Todos tienen tooltip y vista de tabla.
+- **Cálculo** (`src/services/analytics.ts`): una sola pasada por colección y búsqueda binaria del bucket; todo memorizado. Sin datos ficticios: un periodo vacío muestra «Sin movimientos».
+- **Colores de series** validados (tono, croma, daltonismo y contraste) en claro (`#1f5fae`, `#e10600`) y oscuro (`#3d85dc`, `#f2453d`), como tokens `--s1`, `--s2`, `--s-accent`, `--s-ink` y `--s-context`.
+- **Adaptación a pantallas**: se corrigieron desbordes horizontales en iPhone (Panel, Taller, Inventario, Facturación, Caja y Contabilidad). Las animaciones respetan «reducir movimiento».
