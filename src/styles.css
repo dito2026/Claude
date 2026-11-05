@@ -534,3 +534,7 @@ table.table { width: 100%; border-collapse: collapse; }
   .hide-sm { display: none; }
 }
 .brand-filter { min-width: 0; max-width: 100%; }
+.pay-methods { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border-radius: 10px; border: 1px dashed transparent; }
+.pay-methods.missing { border-color: var(--red-line); background: var(--red-soft); }
+.input.invalid { border-color: var(--red); }
+.mov-items { color: var(--text-2) !important; }

@@ -106,6 +106,17 @@ describe('facturación y caja', () => {
     ).rejects.toThrow(/caja abierta/);
   });
 
+  it('exige elegir el medio de pago', async () => {
+    await openSession(actor, 0);
+    await expect(
+      createInvoice(actor, {
+        customer: { name: '', phone: '', document: '' }, items: [{ description: 'x', kind: 'servicio', qty: 1, unitPrice: 1000, unitCost: 0 }],
+        discount: 0, taxRate: 0, payments: [{ method: '', amount: 1000 }], cashierName: 'T',
+      }),
+    ).rejects.toThrow(/medio de pago/);
+    expect(await backend.list('invoices')).toHaveLength(0);
+  });
+
   it('venta directa: descuenta stock, registra caja y cuadra el arqueo', async () => {
     const pid = await saveProduct(actor, product({ type: 'ACCESORIO', name: 'Cargador', price: 20000, cost: 10000, stock: 5 }));
     const sid = await openSession(actor, 100000);

@@ -58,7 +58,7 @@ function Pos() {
     if (!sellerId && profile?.sellerId && sellers.some((s) => s.id === profile.sellerId)) setSellerId(profile.sellerId);
   }, [profile?.sellerId, sellers.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const seller = sellers.find((s) => s.id === sellerId);
-  const [payments, setPayments] = useState<Payment[]>([{ method: 'Efectivo', amount: 0 }]);
+  const [payments, setPayments] = useState<Payment[]>([{ method: '', amount: 0 }]);
   const [received, setReceived] = useState(0);
   const [done, setDone] = useState<Invoice | null>(null);
   const [freeItem, setFreeItem] = useState(false);
@@ -150,7 +150,7 @@ function Pos() {
   const stockOf = (id?: string) => products.find((p) => p.id === id);
 
   const reset = () => {
-    setItems([]); setCustomer(null); setDiscount(0); setPayments([{ method: 'Efectivo', amount: 0 }]); setReceived(0);
+    setItems([]); setCustomer(null); setDiscount(0); setPayments([{ method: '', amount: 0 }]); setReceived(0);
     if (orderId) setParams({});
   };
 
@@ -162,7 +162,7 @@ function Pos() {
         items,
         discount,
         taxRate: settings.taxRate,
-        payments,
+        payments: payments.filter((p) => p.amount > 0),
         repairOrderId: order?.id,
         cashierName: profile?.name ?? actor.name,
         sellerId: seller?.id,
@@ -178,6 +178,7 @@ function Pos() {
       reset();
     }, 'Venta registrada');
 
+  const missingMethod = payments.some((p) => p.amount > 0 && !p.method);
   const cashPart = payments.find((p) => p.method === 'Efectivo')?.amount ?? 0;
   const change = received > cashPart && cashPart > 0 ? received - cashPart : 0;
 
@@ -303,12 +304,22 @@ function Pos() {
           </div>
 
           <div className="stack" style={{ gap: 8 }}>
-            <div className="row between"><b style={{ fontSize: 13 }}>Pagos</b>
-              <button className="btn sm ghost" onClick={() => setPayments([...payments, { method: 'Transferencia', amount: Math.max(0, due - paid) }])}><Plus size={13} />Otro medio</button>
+            <div className="row between"><b style={{ fontSize: 13 }}>Medio de pago <span className="red">*</span></b>
+              <button className="btn sm ghost" onClick={() => setPayments([...payments, { method: '', amount: Math.max(0, due - paid) }])}><Plus size={13} />Otro medio</button>
             </div>
-            {payments.map((p, i) => (
+            {payments.length === 1 && due > 0 && (
+              <div className={`pay-methods ${missingMethod ? 'missing' : ''}`} role="radiogroup" aria-label="Medio de pago">
+                {settings.paymentMethods.map((m) => (
+                  <button key={m} type="button" role="radio" aria-checked={payments[0].method === m}
+                    className={`cat-chip ${payments[0].method === m ? 'active' : ''}`}
+                    onClick={() => setPayments([{ ...payments[0], method: m }])}>{m}</button>
+                ))}
+              </div>
+            )}
+            {!(payments.length === 1 && due > 0) && payments.map((p, i) => (
               <div key={i} className="row gap-sm" style={{ flexWrap: 'nowrap' }}>
-                <select className="input" value={p.method} onChange={(e) => setPayments(payments.map((x, k) => (k === i ? { ...x, method: e.target.value } : x)))}>
+                <select className={`input ${p.amount > 0 && !p.method ? 'invalid' : ''}`} value={p.method} onChange={(e) => setPayments(payments.map((x, k) => (k === i ? { ...x, method: e.target.value } : x)))}>
+                  <option value="" disabled>Elija el medio de pago…</option>
                   {settings.paymentMethods.map((m) => <option key={m}>{m}</option>)}
                 </select>
                 <div style={{ width: 150, flexShrink: 0 }}>
@@ -317,6 +328,7 @@ function Pos() {
                 {payments.length > 1 && <button className="btn sm ghost" onClick={() => setPayments(payments.filter((_, k) => k !== i))}><X size={14} /></button>}
               </div>
             ))}
+            {missingMethod && <div className="alert warn">Elija el medio de pago: ¿efectivo, transferencia, Nequi…?</div>}
             {paid !== due && <div className="alert error">Los pagos suman {money(paid)}; faltan {money(due - paid)}.</div>}
             {cashPart > 0 && (
               <div className="row between">
@@ -327,7 +339,7 @@ function Pos() {
             {change > 0 && <div className="row between"><b>Cambio</b><b className="red">{money(change)}</b></div>}
           </div>
 
-          <button className="btn primary block" style={{ height: 46, fontSize: 15 }} disabled={busy || items.length === 0 || paid !== due} onClick={charge}>
+          <button className="btn primary block" style={{ height: 46, fontSize: 15 }} disabled={busy || items.length === 0 || paid !== due || missingMethod} onClick={charge}>
             Cobrar {money(due)}
           </button>
         </div>

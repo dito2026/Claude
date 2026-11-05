@@ -64,6 +64,7 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
   if (items.some((i) => i.unitPrice < 0)) throw new BusinessError('Hay precios negativos.');
   const totals = computeTotals(items, draft.discount, draft.taxRate);
   const payments = draft.payments.filter((p) => p.amount > 0);
+  if (payments.some((p) => !p.method?.trim())) throw new BusinessError('Elija el medio de pago (efectivo, transferencia, Nequi…).');
   const usesCredit = payments.some((p) => p.method === CREDIT_METHOD);
   if (usesCredit && !draft.customerId) {
     throw new BusinessError('Para vender a crédito seleccione un cliente registrado.');

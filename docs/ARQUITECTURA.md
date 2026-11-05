@@ -425,3 +425,8 @@ el servidor reintenta con su modelo de respaldo.
 - **Cálculo** (`src/services/analytics.ts`): una sola pasada por colección y búsqueda binaria del bucket; todo memorizado. Sin datos ficticios: un periodo vacío muestra «Sin movimientos».
 - **Colores de series** validados (tono, croma, daltonismo y contraste) en claro (`#1f5fae`, `#e10600`) y oscuro (`#3d85dc`, `#f2453d`), como tokens `--s1`, `--s2`, `--s-accent`, `--s-ink` y `--s-context`.
 - **Adaptación a pantallas**: se corrigieron desbordes horizontales en iPhone (Panel, Taller, Inventario, Facturación, Caja y Contabilidad). Las animaciones respetan «reducir movimiento».
+
+## 26. Medio de pago obligatorio y productos en la caja
+
+- **Facturación:** el medio de pago ya no viene marcado como «Efectivo». Hay que tocar uno (Efectivo, Transferencia, Nequi…) antes de cobrar; mientras falte, el botón Cobrar queda bloqueado y se resalta la elección. El servicio `createInvoice` también rechaza pagos sin medio.
+- **Caja → Movimientos del turno:** cada venta muestra debajo los productos de la factura (cantidad, nombre e IMEI si es celular), también para ventas anteriores.

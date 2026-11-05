@@ -16,6 +16,10 @@ const CAT: Record<CashCategory, string> = {
   pago_tecnico: 'Pago a técnico', pago_vendedor: 'Pago a vendedor', retiro: 'Retiro / consignación', ingreso_otro: 'Otro ingreso', anulacion: 'Anulación',
 };
 
+/** Productos de una factura en una línea: «2× Cable USB C · Vidrio templado A15». */
+export const itemsText = (inv: Pick<Invoice, 'items'>) =>
+  (inv.items ?? []).map((it) => `${it.qty > 1 ? `${it.qty}× ` : ''}${it.description}${it.imei ? ` (IMEI ${it.imei})` : ''}`).join(' · ');
+
 type MovKind = 'gasto' | 'pago_tecnico' | 'pago_vendedor' | 'pago_proveedor' | 'retiro' | 'ingreso_otro';
 
 export function Cash() {
@@ -25,6 +29,8 @@ export function Cash() {
   const { doc: session } = useDocument<CashSession>('cashSessions', sessionId);
   const allMovements = useCollection<CashMovement>('cashMovements').rows;
   const sessions = useCollection<CashSession>('cashSessions').rows;
+  const invoices = useCollection<Invoice>('invoices').rows;
+  const invById = useMemo(() => new Map(invoices.map((i) => [i.id, i])), [invoices]);
   const { actor } = useAuth();
   const { run, busy } = useAction();
   const [opening, setOpening] = useState(0);
@@ -83,8 +89,8 @@ export function Cash() {
                     <tbody>
                       {movements.map((m) => (
                         <tr key={m.id}>
-                          <td className="nowrap">{dateTime(m.createdAt)}</td>
-                          <td>{m.description}{m.expenseCategory && <small>{m.expenseCategory}</small>}</td>
+                          <td className="nowrap" title={dateTime(m.createdAt)}>{m.createdAt ? new Date(m.createdAt).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }) : '—'}</td>
+                          <td style={{ minWidth: 200 }}>{m.description}{m.expenseCategory && <small>{m.expenseCategory}</small>}{m.refType === 'invoice' && m.refId && invById.get(m.refId) && <small className="mov-items">{itemsText(invById.get(m.refId)!)}</small>}</td>
                           <td><Badge tone={m.direction === 'ingreso' ? 'ok' : 'red'}>{CAT[m.category]}</Badge></td>
                           <td>{m.method}</td>
                           <td className={`num ${m.direction === 'egreso' ? 'red' : ''}`}>{m.direction === 'egreso' ? '-' : ''}{money(m.amount)}</td>
