@@ -14,7 +14,7 @@ import { depositsTotal } from '../services/orders';
 import { customerRef } from '../services/orders';
 import { useSettings } from '../services/settings';
 import { tracksStock } from '../services/inventory';
-import { categoryOf, sortCategories } from '../lib/categories';
+import { categoryOf, itemCategory, sortCategories } from '../lib/categories';
 import { isPhone, normalizeImei } from '../services/phones';
 import { UnitPickerModal } from '../components/PhoneUnits';
 import { BrandModelFilter, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
@@ -349,19 +349,43 @@ function History() {
   const [view, setView] = useState<Invoice | null>(null);
   const [voiding, setVoiding] = useState<Invoice | null>(null);
   const [reason, setReason] = useState('');
+  const [cat, setCat] = useState('');
+  const products = useCollection<Product>('products').rows;
+  const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+
+  // Valor de cada categoría dentro de cada comprobante
+  const byCat = useMemo(() => new Map(rows.map((inv) => {
+    const m = new Map<string, number>();
+    for (const it of inv.items) {
+      const c = itemCategory(it, productMap);
+      m.set(c, (m.get(c) ?? 0) + it.qty * it.unitPrice);
+    }
+    return [inv.id, m];
+  })), [rows, productMap]);
+  const allCats = useMemo(() => sortCategories([...byCat.values()].flatMap((m) => [...m.keys()])), [byCat]);
 
   const list = rows
-    .filter((i) => matches(q, i.number, i.customer.name, i.customer.document, i.repairOrderNumber))
+    .filter((i) => !cat || byCat.get(i.id)?.has(cat))
+    .filter((i) => matches(q, i.number, i.customer.name, i.customer.document, i.repairOrderNumber, ...i.items.map((it) => it.description), ...[...(byCat.get(i.id)?.keys() ?? [])]))
     .sort((a, b) => b.number - a.number);
+  const valid = list.filter((i) => i.status !== 'anulada');
+  const catTotal = cat ? valid.reduce((a, i) => a + (byCat.get(i.id)?.get(cat) ?? 0), 0) : valid.reduce((a, i) => a + i.total, 0);
 
   return (
     <>
-      <div className="row" style={{ marginBottom: 14 }}><SearchBox value={q} onChange={setQ} placeholder="N.º, cliente u OT" /></div>
+      <div className="row" style={{ marginBottom: 14 }}>
+        <SearchBox value={q} onChange={setQ} placeholder="N.º, cliente, OT o producto" />
+        <select className="input" style={{ width: 220 }} value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Categoría">
+          <option value="">Todas las categorías</option>
+          {allCats.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span className="muted">{valid.length} comprobantes · {cat ? `vendido en ${cat}` : 'total'}: <b>{money(catTotal)}</b></span>
+      </div>
       <div className="card">
         {list.length === 0 ? <Empty>Sin comprobantes.</Empty> : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>N.º</th><th>Fecha</th><th>Cliente</th><th>Origen</th><th>Medios</th><th>Vendedor</th><th>Estado</th><th className="num">Total</th><th /></tr></thead>
+              <thead><tr><th>N.º</th><th>Fecha</th><th>Cliente</th><th>Origen</th><th>Categorías</th><th>Medios</th><th>Vendedor</th><th>Estado</th><th className="num">Total</th><th /></tr></thead>
               <tbody>
                 {list.map((i) => (
                   <tr key={i.id} className="click" onClick={() => setView(i)}>
@@ -369,6 +393,13 @@ function History() {
                     <td className="nowrap">{dateTime(i.createdAt)}</td>
                     <td>{i.customer.name || 'Consumidor final'}</td>
                     <td>{i.repairOrderNumber ? <span className="mono">OT {pad(i.repairOrderNumber)}</span> : 'Venta directa'}</td>
+                    <td>
+                      <div className="row gap-sm" style={{ gap: 4 }}>
+                        {sortCategories(byCat.get(i.id)?.keys() ?? []).map((c) => (
+                          <span key={c} className={`badge plain ${c === cat ? 'dark' : ''}`} title={money(byCat.get(i.id)!.get(c))}>{c}</span>
+                        ))}
+                      </div>
+                    </td>
                     <td>{i.payments.map((p) => p.method).join(', ') || (i.depositsApplied ? 'Abonos' : '—')}</td>
                     <td>{i.sellerName ? <>{i.sellerName}<small>Comisión {money(i.commission)}</small></> : <span className="faint">—</span>}</td>
                     <td><Badge tone={i.status === 'anulada' ? 'red' : i.status === 'credito' ? 'warn' : 'ok'}>{i.status}</Badge></td>

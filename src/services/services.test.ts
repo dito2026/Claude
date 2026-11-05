@@ -868,3 +868,35 @@ describe('corregir o anular compras', () => {
     expect(await stockOf(pid)).toBe(1);
   });
 });
+
+describe('categoría en el historial de facturación', () => {
+  it('toma la categoría del producto o la adivina en líneas libres y de órdenes', async () => {
+    const { itemCategory } = await import('../lib/categories');
+    const products = new Map([['p1', { name: 'Cargador tipo C', type: 'ACCESORIO' as const, category: '' }], ['p2', { name: 'Cable', type: 'ACCESORIO' as const, category: 'Ofertas' }]]);
+    const it = (o: Partial<InvoiceItem>) => ({ description: '', kind: 'producto' as const, ...o });
+    expect(itemCategory(it({ productId: 'p1' }), products)).toBe('Cargadores');
+    expect(itemCategory(it({ productId: 'p2' }), products)).toBe('Ofertas');
+    expect(itemCategory(it({ unitId: '351234567890124' }), products)).toBe('Celulares');
+    expect(itemCategory(it({ kind: 'mano_obra', description: 'Mano de obra OT 1' }), products)).toBe('Servicios');
+    expect(itemCategory(it({ kind: 'repuesto', description: 'Display Note 9' }), products)).toBe('Repuestos');
+    expect(itemCategory(it({ description: 'Forro iPhone 13 transparente' }), products)).toBe('Forros y estuches');
+  });
+});
+
+describe('ganancias diarias', () => {
+  it('calcula la ganancia de cada día (ventas − costo − gastos)', async () => {
+    const { dailyProfits } = await import('../components/DailyProfit');
+    const pid = await saveProduct(actor, product({ type: 'ACCESORIO', price: 20000, cost: 8000, stock: 10 }));
+    await openSession(actor, 0);
+    await createInvoice(actor, {
+      customer: { name: 'CF', phone: '', document: '' },
+      items: [{ productId: pid, description: 'Acc', kind: 'producto', qty: 3, unitPrice: 20000, unitCost: 8000 }],
+      discount: 0, taxRate: 0, payments: [{ method: 'Efectivo', amount: 60000 }], cashierName: 'T',
+    });
+    await addMovement(actor, { direction: 'egreso', category: 'gasto', expenseCategory: 'Transporte', method: 'Efectivo', amount: 5000, description: 'Domicilio' });
+    const days = dailyProfits(3, { invoices: await backend.list<Invoice>('invoices'), movements: await backend.list<CashMovement>('cashMovements'), products: await backend.list<Product>('products') });
+    expect(days).toHaveLength(3);
+    expect(days[0]).toMatchObject({ sales: 60000, cost: 24000, gross: 36000, expenses: 5000, net: 31000, count: 1 });
+    expect(days[1]).toMatchObject({ sales: 0, net: 0 });
+  });
+});

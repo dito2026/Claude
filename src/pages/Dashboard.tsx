@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Clock, LifeBuoy, MessageCircle, Package, TrendingUp, Wallet, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, LifeBuoy, MessageCircle, TrendingUp, Wallet, Wrench } from 'lucide-react';
 import { AlertsCenter } from '../components/AlertsCenter';
+import { DailyProfitCard, useDailyProfits } from '../components/DailyProfit';
 import { dailySummaryText } from '../services/automation';
 import { useSettings } from '../services/settings';
 import { whatsappLink } from '../lib/format';
@@ -32,6 +33,7 @@ export function Dashboard() {
   const cashState = useDocument<CashState & { id: string }>('meta', 'cash').doc;
   const session = useDocument<CashSession>('cashSessions', cashState?.openSessionId ?? undefined).doc;
   const finance = can('dashboard.finance');
+  const [today] = useDailyProfits(1);
   const settings = useSettings();
   const nav = useNavigate();
 
@@ -100,9 +102,11 @@ export function Dashboard() {
           <Stat accent label="Ventas de hoy" value={money(stats.salesToday)} sub={`${stats.countToday} comprobantes`} icon={<TrendingUp size={14} />} />
           <Stat label="Ventas del mes" value={money(stats.salesMonth)} sub={`Utilidad bruta ${money(stats.profitMonth)} · ${stats.margin}%`} />
           <Stat label="Efectivo en caja" value={session ? money(cashNow) : '—'} sub={session ? `Caja abierta por ${session.openedBy}` : 'Caja cerrada'} icon={<Wallet size={14} />} />
-          <Stat label="Stock bajo" value={low.length} sub="productos en o bajo el mínimo" icon={<Package size={14} />} />
+          <Stat label="Ganancia de hoy" value={<span className={today.net < 0 ? 'red' : ''}>{money(today.net)}</span>}
+            sub={`Utilidad bruta ${money(today.gross)}${today.expenses ? ` · gastos ${money(today.expenses)}` : ''}`} icon={<TrendingUp size={14} />} />
         </div>
       )}
+      {finance && <DailyProfitCard />}
 
       {myComm && (
         <div className="grid g3 mt">

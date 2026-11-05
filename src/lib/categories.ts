@@ -1,6 +1,6 @@
 // Categorías del catálogo de venta. Cada producto puede tener la suya; si no tiene,
 // se adivina por el nombre y el tipo (así el catálogo queda organizado sin trabajo extra).
-import type { Product } from './types';
+import type { InvoiceItem, Product } from './types';
 import { normalize } from './format';
 
 export const CELULARES = 'Celulares';
@@ -45,4 +45,14 @@ export const categoryOf = (p: Pick<Product, 'name' | 'type' | 'category'>) => (p
 export function sortCategories(cats: Iterable<string>): string[] {
   const order = new Map(DEFAULT_CATEGORIES.map((c, i) => [c, i]));
   return [...new Set(cats)].sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99) || a.localeCompare(b));
+}
+
+/** Categoría de una línea de factura: la del producto; si es libre, se adivina por el texto. */
+export function itemCategory(it: Pick<InvoiceItem, 'productId' | 'description' | 'kind' | 'unitId'>, products: Map<string, Pick<Product, 'name' | 'type' | 'category'>>): string {
+  const p = it.productId ? products.get(it.productId) : undefined;
+  if (p) return categoryOf(p);
+  if (it.unitId) return CELULARES;
+  if (it.kind === 'mano_obra') return SERVICIOS;
+  if (it.kind === 'repuesto') return REPUESTOS;
+  return guessCategory({ name: it.description, type: it.kind === 'servicio' ? 'SERVICIO' : 'ACCESORIO' });
 }

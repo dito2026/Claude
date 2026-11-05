@@ -405,3 +405,13 @@ el servidor reintenta con su modelo de respaldo.
   IMEI se pueda volver a ingresar, deja el saldo en 0 y, si se había pagado algo, lo devuelve a la caja
   abierta por el mismo medio (ingreso `pago_proveedor`, que en el libro fiscal resta de los egresos).
   Las compras nunca se borran: quedan «Anuladas».
+
+## 24. Historial por categoría y ganancias diarias
+
+- **Facturación → Historial:** cada comprobante muestra sus categorías (`itemCategory`: la del
+  producto; en líneas libres u órdenes se adivina: mano de obra → Servicios, repuesto → Repuestos,
+  celular por IMEI → Celulares). Filtro por categoría con el total vendido de esa categoría; el
+  buscador también encuentra por producto o categoría.
+- **Panel → Ganancias diarias:** por día (7, 15 o 30 días) ventas, costo, utilidad bruta, gastos y
+  comisiones, y ganancia neta, con el mismo cálculo de Contabilidad (`buildReport` por día). La tarjeta
+  «Ganancia de hoy» reemplaza a «Stock bajo», que ya aparece en Pendientes de hoy.
