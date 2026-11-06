@@ -35,6 +35,15 @@ export function SettingsPage() {
           </div>
         </div>
         <div className="card card-pad">
+          <h3 style={{ marginBottom: 6 }}>Comprador en contratos</h3>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Quien firma como comprador en la compraventa de celulares usados.</p>
+          <div className="form-grid">
+            <Field label="Nombre" className="full"><input className="input" value={d.ownerName ?? ''} onChange={(e) => set('ownerName', e.target.value)} /></Field>
+            <Field label="Cédula"><input className="input" value={d.ownerDocument ?? ''} onChange={(e) => set('ownerDocument', e.target.value)} /></Field>
+            <Field label="Expedida en"><input className="input" value={d.ownerDocumentCity ?? ''} onChange={(e) => set('ownerDocumentCity', e.target.value)} /></Field>
+          </div>
+        </div>
+        <div className="card card-pad">
           <h3 style={{ marginBottom: 14 }}>Reglas</h3>
           <div className="form-grid">
             <Field label="Garantía por defecto en reparaciones (días)"><input className="input num" type="number" min={0} value={d.defaultWarrantyDays} onChange={(e) => set('defaultWarrantyDays', Number(e.target.value))} /></Field>

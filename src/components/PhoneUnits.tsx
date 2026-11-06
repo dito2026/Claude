@@ -98,7 +98,7 @@ export function UnitPickerModal({ product, exclude, onPick, onClose }: {
                 <small className="faint">{[u.imei2 && `IMEI 2: ${u.imei2}`, u.color, u.supplierName && `Prov. ${u.supplierName}`, `Ingresó ${dateOnly(u.createdAt)}`].filter(Boolean).join(' · ')}</small>
               </div>
               <Badge tone={u.condition === 'NUEVO' ? 'ok' : 'warn'}>{u.condition}</Badge>
-              <span className="mono">{money(u.cost)}</span>
+              <span className="mono" title={u.price ? 'Precio de venta de este equipo' : 'Costo'}>{money(u.price || u.cost)}</span>
             </div>
           ))}
         </div>

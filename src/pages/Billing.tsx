@@ -111,7 +111,7 @@ function Pos() {
     const p = products.find((x) => x.id === u.productId);
     setItems((xs) => xs.some((x) => x.unitId === u.id) ? xs : [...xs, {
       productId: u.productId, description: `${u.productName}${u.condition === 'USADO' ? ' (usado)' : ''}`, kind: 'producto',
-      qty: 1, unitPrice: p?.price ?? 0, unitCost: u.cost, imei: u.imei, unitId: u.id,
+      qty: 1, unitPrice: u.price || p?.price || 0, unitCost: u.cost, imei: u.imei, unitId: u.id,
     }]);
   };
   const imeiQuery = normalizeImei(q);

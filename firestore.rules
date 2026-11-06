@@ -87,7 +87,10 @@ service cloud.firestore {
     // Los técnicos actualizan solo el stock (al usar repuestos en una OT).
     match /products/{id} {
       allow read: if isStaff();
-      allow create, delete: if isAdmin();
+      allow delete: if isAdmin();
+      // el cajero puede crear un celular nuevo (sin stock) al comprar un usado
+      allow create: if isAdmin()
+        || (isCashier() && request.resource.data.type == 'EQUIPO' && request.resource.data.stock == 0);
       allow update: if isCashier()
         || (isStaff() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'updatedAt']));
     }
@@ -160,6 +163,12 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'voidReason', 'voidedAt', 'voidedBy', 'updatedAt'])
           && request.resource.data.status == 'anulada');
       allow delete: if false;
+    }
+
+    // Contratos de compraventa de usados: solo se agregan
+    match /usedPurchases/{id} {
+      allow read, create: if isCashier();
+      allow update, delete: if false;
     }
 
     // Libro de caja: solo se agregan registros. Única excepción: corregir un gasto,

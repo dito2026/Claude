@@ -38,6 +38,10 @@ export interface BusinessSettings {
   ivaCapUvt?: number;
   /** margen para el precio sugerido de productos nuevos (%) */
   suggestedMarginPct?: number;
+  /** comprador que firma los contratos de compraventa de usados */
+  ownerName?: string;
+  ownerDocument?: string;
+  ownerDocumentCity?: string;
 }
 
 export interface Technician extends BaseDoc {
@@ -103,7 +107,7 @@ export interface StockMovement extends BaseDoc {
   kind: 'entrada' | 'salida' | 'ajuste';
   qty: number; // con signo
   reason: StockReason;
-  refType?: 'repairOrder' | 'invoice' | 'purchase' | 'manual';
+  refType?: 'repairOrder' | 'invoice' | 'purchase' | 'usedPurchase' | 'manual';
   refId?: string;
   refNumber?: number;
   unitCost: number;
@@ -296,7 +300,7 @@ export interface CashMovement extends BaseDoc {
   method: string;
   amount: number;
   description: string;
-  refType?: 'invoice' | 'repairOrder' | 'technician' | 'seller' | 'purchase' | 'manual';
+  refType?: 'invoice' | 'repairOrder' | 'technician' | 'seller' | 'purchase' | 'usedPurchase' | 'manual';
   refId?: string;
   /** correcciones de un gasto: cada entrada guarda los valores ANTERIORES */
   edits?: MovementEdit[];
@@ -393,6 +397,39 @@ export interface PhoneUnit extends BaseDoc {
   warrantyMonths: number;
   warrantyUntil?: string;
   notes: string;
+  /** precio de venta propio de este equipo (usados); si no hay, se usa el del producto */
+  price?: number;
+  /** contrato de compraventa con el que entró (usados) */
+  usedPurchaseId?: string;
+  usedPurchaseNumber?: number;
+}
+
+// ---------------- Compraventa de celulares usados ----------------
+export interface UsedSeller {
+  name: string;
+  document: string;
+  documentCity: string;
+  address: string;
+  phone: string;
+  landline: string;
+}
+
+export interface UsedPurchase extends BaseDoc {
+  number: number;
+  /** fecha del contrato (AAAA-MM-DD) */
+  date: string;
+  city: string;
+  seller: UsedSeller;
+  buyer: { name: string; document: string; documentCity: string };
+  device: { brand: string; model: string; color: string; imei: string; imei2: string };
+  price: number;
+  method: string;
+  /** precio al que se venderá (opcional) */
+  salePrice: number;
+  imeiVerified: boolean;
+  productId: string;
+  productName: string;
+  createdByName: string;
 }
 
 // ---------------- Vendedores y comisiones ----------------

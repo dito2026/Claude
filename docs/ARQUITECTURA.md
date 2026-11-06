@@ -443,3 +443,11 @@ el servidor reintenta con su modelo de respaldo.
 - **No se borra nada:** el gasto guarda en `edits` los valores anteriores con fecha, usuario y motivo. En la lista aparece «Corregido por … · antes $X».
 - **Permisos:** el cajero corrige solo gastos del turno abierto. El administrador también corrige gastos de turnos cerrados, en la tarjeta «Gastos de turnos anteriores» (últimos 60 días). El arqueo de un turno ya cerrado no cambia, porque guarda sus cifras; Contabilidad y el Panel usan el valor corregido.
 - **Reglas de Firestore:** `cashMovements` sigue siendo de solo agregar, salvo esta actualización limitada a gastos, a esos campos, con `edits` creciendo en uno y valor mayor que 0.
+
+## 29. Compraventa de celulares usados
+
+- **Menú → Compraventa usados (`/usados`):** sirve cuando un cliente le vende un celular a la tienda. El formulario pide los datos del vendedor (nombre, documento, expedición, dirección, celular, fijo), del comprador (sale de Configuración → «Comprador en contratos») y del equipo (marca, modelo, color, IMEI 1 y 2), además del precio que se paga, el medio de pago (obligatorio), el precio de venta (opcional) y la casilla «IMEI verificado» (obligatoria).
+- **Una sola transacción (`buyUsedPhone`):** asigna el consecutivo `usedPurchases` y guarda el contrato (`usedPurchases`, solo se agregan). El equipo entra por IMEI como **USADO** (`phoneUnits` + `imeiIndex`, el IMEI no se puede repetir). Suma +1 al stock con el kardex «compra» y registra el egreso de la caja abierta como «Pago a proveedor».
+- **Producto:** se usa el EQUIPO existente de esa marca y modelo. Si no existe, se crea en Celulares; el cajero puede crearlo porque nace con stock 0. El precio de venta propio queda en la unidad (`price`) y Facturación lo usa al escanear ese IMEI.
+- **Contrato imprimible:** tamaño carta, con el valor en letras, cláusulas de propiedad y procedencia lícita, verificación del IMEI y datos personales (Ley 1581 de 2012), y firmas con recuadro de huella. «Imprimir / PDF» → «Guardar como PDF»; el archivo se llama `Contrato-compraventa-0001-Nombre`.
+- **Impresión:** al imprimir se oculta `#root`, así ya no sale una primera hoja en blanco (también en los comprobantes).

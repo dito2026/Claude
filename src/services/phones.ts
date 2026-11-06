@@ -67,6 +67,10 @@ export interface UnitOrigin {
   supplierName: string;
   purchaseId?: string;
   purchaseNumber?: number;
+  /** precio de venta propio (usados) */
+  price?: number;
+  usedPurchaseId?: string;
+  usedPurchaseNumber?: number;
 }
 
 /** Fase de escrituras: crea las unidades y reserva sus IMEI. No mueve stock. */
@@ -86,6 +90,8 @@ export function writeUnits(tx: Tx, actor: Actor, product: Product, units: PhoneU
       status: 'disponible',
       warrantyMonths: product.warrantyMonths || 0,
       notes: u.notes ?? '',
+      ...(origin.price ? { price: origin.price } : {}),
+      ...(origin.usedPurchaseId ? { usedPurchaseId: origin.usedPurchaseId, usedPurchaseNumber: origin.usedPurchaseNumber } : {}),
       ...created(actor),
     };
     tx.set('phoneUnits', u.imei, unit as unknown as Record<string, unknown>);

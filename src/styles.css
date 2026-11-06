@@ -384,7 +384,7 @@ table.table { width: 100%; border-collapse: collapse; }
   .overlay { position: static; background: none; padding: 0; display: block; }
   .overlay > .modal { box-shadow: none; border: 0; width: auto; max-height: none; }
   .overlay > .modal > .modal-body { padding: 0; overflow: visible; }
-  body.printing .shell { display: none; }
+  body.printing .shell, body.printing #root { display: none !important; }
   .print-only { display: block; }
 }
 .receipt { width: 80mm; max-width: 100%; margin: 0 auto; font: 12px/1.45 var(--mono); color: #000; background: #fff; padding: 10px; }
@@ -538,3 +538,28 @@ table.table { width: 100%; border-collapse: collapse; }
 .pay-methods.missing { border-color: var(--red-line); background: var(--red-soft); }
 .input.invalid { border-color: var(--red); }
 .mov-items { color: var(--text-2) !important; }
+
+/* ---------------- Contrato de compraventa (carta / PDF) ---------------- */
+.form-section { font-size: 14px; margin: 22px 0 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.contract { background: #fff; color: #111; font: 12.5px/1.55 var(--font); max-width: 780px; margin: 0 auto; padding: 8px 4px; }
+.contract h1 { font-size: 16px; text-align: center; text-transform: uppercase; letter-spacing: 0.04em; margin: 18px 0 14px; }
+.contract p { margin: 0 0 9px; text-align: justify; }
+.contract-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 2px solid #e10600; padding-bottom: 8px; font-size: 11px; color: #444; }
+.contract-head b { font-size: 14px; color: #111; letter-spacing: 0.06em; }
+.contract-no { font-size: 12px; white-space: nowrap; }
+.contract-no b { font-size: 15px; color: #e10600; }
+.contract-table { width: 100%; border-collapse: collapse; margin: 4px 0 12px; font-size: 12px; }
+.contract-table th, .contract-table td { border: 1px solid #bbb; padding: 5px 8px; text-align: left; }
+.contract-table th { background: #f4f4f4; width: 14%; font-weight: 600; }
+.contract-signs { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 54px; }
+.sign { font-size: 12px; align-self: end; }
+.sign.with-print { display: flex; align-items: flex-end; gap: 12px; }
+.sign-line { border-top: 1px solid #111; margin-bottom: 6px; }
+.fingerprint { flex-shrink: 0; width: 72px; height: 90px; border: 1px solid #999; border-radius: 6px; display: grid; place-items: end center; padding: 0 4px 4px; font-size: 9px; line-height: 1.2; text-align: center; color: #777; }
+.contract-foot { margin-top: 26px; font-size: 10px; color: #777; text-align: center; border-top: 1px solid #ddd; padding-top: 6px; }
+@media (max-width: 600px) { .contract-signs { grid-template-columns: 1fr; gap: 70px; } }
+@media print {
+  body.print-letter { font-size: 12px; }
+  body.print-letter .contract { max-width: none; padding: 8mm 10mm; }
+  body.print-letter .contract-signs { grid-template-columns: 1fr 1fr; gap: 40px; }
+}
