@@ -75,3 +75,23 @@ describe('compraventa de usados', () => {
     expect(pesosInWords(380000)).toBe('trescientos ochenta mil pesos m/cte');
   });
 });
+
+describe('anular ingreso manual de un celular', () => {
+  it('saca el equipo del stock, libera el IMEI y luego entra bien por compraventa', async () => {
+    const { registerUnits, voidUnitEntry } = await import('./phones');
+    await openSession(actor, 0);
+    const pid = await saveProduct(actor, { sku: 'CEL-0001', type: 'EQUIPO', name: 'Samsung A07 128GB', brand: 'Samsung', model: 'A07 128GB', color: '', cost: 0, price: 0, stock: 0, minStock: 0, warrantyMonths: 0, line: 'Equipos', active: true });
+    await registerUnits(actor, pid, [{ imei: IMEI, condition: 'USADO' }], { cost: 250000, supplierName: '', note: '', alreadyInStock: false });
+    expect((await backend.get<Product>('products', pid))!.stock).toBe(1);
+    await expect(voidUnitEntry(actor, IMEI, '')).rejects.toThrow(/motivo/);
+    await voidUnitEntry(actor, IMEI, 'Lo registro como compraventa');
+    expect((await backend.get<Product>('products', pid))!.stock).toBe(0);
+    expect((await backend.get<PhoneUnit>('phoneUnits', IMEI))!.status).toBe('anulado');
+    const products = await backend.list<Product>('products');
+    await buyUsedPhone(actor, draft({ device: { brand: 'Samsung', model: 'A07 128GB', color: '', imei: IMEI, imei2: '' } }), products);
+    expect((await backend.get<PhoneUnit>('phoneUnits', IMEI))!).toMatchObject({ status: 'disponible', usedPurchaseNumber: 1 });
+    expect((await backend.get<Product>('products', pid))!.stock).toBe(1);
+    // los que entraron por contrato o compra no se anulan aquí
+    await expect(voidUnitEntry(actor, IMEI, 'x')).rejects.toThrow(/contrato/);
+  });
+});

@@ -451,3 +451,9 @@ el servidor reintenta con su modelo de respaldo.
 - **Producto:** se usa el EQUIPO existente de esa marca y modelo. Si no existe, se crea en Celulares; el cajero puede crearlo porque nace con stock 0. El precio de venta propio queda en la unidad (`price`) y Facturación lo usa al escanear ese IMEI.
 - **Contrato imprimible:** tamaño carta, con el valor en letras, cláusulas de propiedad y procedencia lícita, verificación del IMEI y datos personales (Ley 1581 de 2012), y firmas con recuadro de huella. «Imprimir / PDF» → «Guardar como PDF»; el archivo se llama `Contrato-compraventa-0001-Nombre`.
 - **Impresión:** al imprimir se oculta `#root`, así ya no sale una primera hoja en blanco (también en los comprobantes).
+
+## 30. Origen de cada celular y anulación de ingresos manuales
+
+- **Inventario → Celulares (IMEI)** muestra de dónde entró cada equipo: «Compra C-0011», «Contrato compraventa N.º 0001» o «Ingreso manual (sin compra)».
+- **Ingreso manual:** el botón «Ingresar» solo registra IMEI, sin compra ni caja. Por eso esos equipos no aparecen en Compras, y un aviso lo explica.
+- **Anular ingreso** (solo administrador, `voidUnitEntry`): solo aplica a ingresos manuales disponibles. Resta 1 al stock (kardex «ajuste»), deja la unidad `anulado` con motivo y libera el IMEI para registrarlo bien, con Nueva compra o con Compraventa usados. Los equipos que entraron por compra o contrato se anulan desde su origen.

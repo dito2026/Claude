@@ -169,3 +169,26 @@ export function markAvailable(tx: Tx, unit: PhoneUnit) {
 }
 
 export const warrantyActive = (u: PhoneUnit) => !!u.warrantyUntil && new Date(u.warrantyUntil).getTime() > Date.now();
+
+/**
+ * Anula el ingreso de un celular que entró con «Ingresar» (sin compra ni contrato):
+ * sale del stock (kardex «ajuste») y el IMEI queda libre para ingresarlo de nuevo bien.
+ * Los que entraron por compra o compraventa se anulan desde allá, para que la deuda y la caja cuadren.
+ */
+export async function voidUnitEntry(actor: Actor, imei: string, reason: string) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo.');
+  return backend.transaction(async (tx) => {
+    const u = await tx.get<PhoneUnit>('phoneUnits', imei);
+    if (!u) throw new BusinessError('Equipo no encontrado.');
+    if (u.status !== 'disponible') throw new BusinessError(u.status === 'vendido' ? 'Ese equipo ya se vendió: anule primero la venta.' : 'Ese ingreso ya está anulado.');
+    if (u.purchaseId) throw new BusinessError(`Entró con la compra C-${String(u.purchaseNumber ?? '').padStart(4, '0')}: anúlela en Compras y proveedores.`);
+    if (u.usedPurchaseId) throw new BusinessError(`Entró con el contrato de compraventa N.º ${u.usedPurchaseNumber}.`);
+    const p = await tx.get<Product>('products', u.productId);
+    if (!p) throw new BusinessError('Producto no encontrado.');
+    // ---- escrituras ----
+    if ((Number(p.stock) || 0) > 0) {
+      moveStock(tx, actor, p, -1, 'ajuste', { refType: 'manual', note: `Anulación de ingreso IMEI ${u.imei}: ${reason.trim()}` });
+    }
+    tx.update('phoneUnits', u.id, { status: 'anulado', voidReason: reason.trim(), voidedAt: new Date().toISOString(), voidedBy: actor.name, ...touched() });
+  });
+}

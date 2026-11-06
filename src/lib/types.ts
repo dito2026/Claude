@@ -402,6 +402,9 @@ export interface PhoneUnit extends BaseDoc {
   /** contrato de compraventa con el que entró (usados) */
   usedPurchaseId?: string;
   usedPurchaseNumber?: number;
+  voidReason?: string;
+  voidedAt?: string;
+  voidedBy?: string;
 }
 
 // ---------------- Compraventa de celulares usados ----------------

@@ -4,7 +4,7 @@ import { useCollection } from '../data/hooks';
 import type { PhoneCondition, PhoneUnit, PhoneUnitInput, Product } from '../lib/types';
 import { dateOnly, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
-import { registerUnits, warrantyActive } from '../services/phones';
+import { registerUnits, voidUnitEntry, warrantyActive } from '../services/phones';
 import { Badge, Empty, Field, Modal, MoneyInput, SearchBox, Seg, useAction } from './ui';
 import { BrandModelFilter, brandModelsOf, type BrandModelValue } from './BrandModel';
 import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
@@ -128,6 +128,9 @@ export function UnitsTab() {
     [rows, q, status, bm, brandOf],
   );
   const available = rows.filter((u) => u.status === 'disponible');
+  const isAdmin = useAuth().can('settings');
+  const [voiding, setVoiding] = useState<PhoneUnit | null>(null);
+  const manual = available.filter((u) => !u.purchaseId && !u.usedPurchaseId).length;
   return (
     <>
       <div className="row" style={{ marginBottom: 14 }}>
@@ -140,24 +143,33 @@ export function UnitsTab() {
         <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />
         <span className="faint">Valor disponible a costo: {money(available.reduce((a, u) => a + u.cost, 0))}</span>
       </div>
+      {manual > 0 && (
+        <div className="alert info" style={{ marginBottom: 14 }}><div>
+          {manual} celular(es) disponibles entraron con «Ingresar» (sin compra): por eso no aparecen en Compras ni descontaron dinero de la caja.
+          Lo que se compra a un proveedor va en <b>Compras → Nueva compra</b>, y lo que se le compra a un cliente, en <b>Compraventa usados</b>.
+        </div></div>
+      )}
       <div className="card">
         {list.length === 0 ? <Empty icon={<Smartphone size={36} />}>No hay celulares en esta vista. Ingréselos desde «Productos» (botón del celular) o con una compra.</Empty> : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>IMEI</th><th>Equipo</th><th>Condición</th><th>Ingreso</th><th className="num">Costo</th><th>Estado</th><th>Venta</th><th>Garantía</th></tr></thead>
+              <thead><tr><th>IMEI</th><th>Equipo</th><th>Condición</th><th>Ingreso</th><th className="num">Costo</th><th>Estado</th><th>Venta</th><th>Garantía</th><th /></tr></thead>
               <tbody>
                 {list.map((u) => (
                   <tr key={u.id}>
                     <td><span className="mono strong">{u.imei}</span>{u.imei2 && <small className="mono">{u.imei2}</small>}</td>
-                    <td>{u.productName}<small>{[u.color, u.supplierName && `Prov. ${u.supplierName}`, u.purchaseNumber && `Compra C-${pad(u.purchaseNumber, 4)}`].filter(Boolean).join(' · ')}</small></td>
+                    <td>{u.productName}<small>{[u.color, u.supplierName && `Prov. ${u.supplierName}`, origin(u)].filter(Boolean).join(' · ')}</small></td>
                     <td><Badge tone={u.condition === 'NUEVO' ? 'ok' : 'warn'}>{u.condition}</Badge></td>
                     <td className="nowrap">{dateOnly(u.createdAt)}</td>
                     <td className="num">{money(u.cost)}</td>
-                    <td><Badge tone={u.status === 'disponible' ? 'info' : ''}>{u.status === 'disponible' ? 'Disponible' : 'Vendido'}</Badge></td>
+                    <td>{u.status === 'anulado' ? <Badge tone="red">Anulado</Badge> : <Badge tone={u.status === 'disponible' ? 'info' : ''}>{u.status === 'disponible' ? 'Disponible' : 'Vendido'}</Badge>}{u.status === 'anulado' && u.voidReason && <small>{u.voidReason}</small>}</td>
                     <td>{u.status === 'vendido' ? <>{u.customerName}<small>Fact. {pad(u.invoiceNumber, 6)} · {dateOnly(u.soldAt)} · {money(u.salePrice)}</small></> : <span className="faint">—</span>}</td>
                     <td>{u.status !== 'vendido' ? <span className="faint">{u.warrantyMonths} meses</span>
                       : u.warrantyUntil ? <Badge tone={warrantyActive(u) ? 'ok' : ''}>{warrantyActive(u) ? 'Vigente' : 'Vencida'} · {dateOnly(u.warrantyUntil)}</Badge>
                       : <span className="faint">Sin garantía</span>}</td>
+                    <td className="nowrap">{isAdmin && u.status === 'disponible' && !u.purchaseId && !u.usedPurchaseId && (
+                      <button className="btn sm danger" title="Entró con «Ingresar», sin compra: anule el ingreso para registrarlo bien" onClick={() => setVoiding(u)}>Anular ingreso</button>
+                    )}</td>
                   </tr>
                 ))}
               </tbody>
@@ -165,6 +177,30 @@ export function UnitsTab() {
           </div>
         )}
       </div>
+      {voiding && <VoidEntryModal u={voiding} onClose={() => setVoiding(null)} />}
     </>
+  );
+}
+
+const origin = (u: PhoneUnit) =>
+  u.purchaseNumber ? `Compra C-${pad(u.purchaseNumber, 4)}` : u.usedPurchaseNumber ? `Contrato compraventa N.º ${pad(u.usedPurchaseNumber, 4)}` : 'Ingreso manual (sin compra)';
+
+function VoidEntryModal({ u, onClose }: { u: PhoneUnit; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const [reason, setReason] = useState('');
+  return (
+    <Modal title={`Anular ingreso · ${u.productName}`} onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || !reason.trim()} onClick={() => run(() => voidUnitEntry(actor, u.imei, reason), 'Ingreso anulado · el IMEI quedó libre').then((ok) => ok && onClose())}>Anular ingreso</button></>}>
+      <div className="stack">
+        <div className="alert warn"><div>
+          El equipo IMEI <b className="mono">{u.imei}</b> sale del inventario (1 unidad menos) y el IMEI queda libre.
+          Así lo puede registrar bien: con <b>Compras → Nueva compra</b> si es de un proveedor, o con <b>Compraventa usados</b> si se lo compró a un cliente.
+          No mueve dinero de la caja, porque este ingreso tampoco lo movió.
+        </div></div>
+        <Field label="Motivo" required><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} autoFocus placeholder="Ej.: lo registro como compraventa" /></Field>
+      </div>
+    </Modal>
   );
 }
