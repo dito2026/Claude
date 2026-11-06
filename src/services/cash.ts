@@ -50,6 +50,50 @@ export async function addMovement(actor: Actor, m: MovementInput) {
   });
 }
 
+export interface ExpenseFix {
+  amount: number;
+  method: string;
+  description: string;
+  expenseCategory: string;
+  reason: string;
+}
+
+/**
+ * Corrige un gasto ya registrado (valor, medio, descripción o categoría).
+ * No borra nada: guarda los valores anteriores en `edits` con quién y por qué.
+ * El cajero solo corrige gastos del turno abierto; el administrador, cualquiera.
+ */
+export async function editExpense(actor: Actor, movementId: string, fix: ExpenseFix, isAdmin: boolean) {
+  if (!(fix.amount > 0)) throw new BusinessError('El valor debe ser mayor que cero.');
+  if (!fix.description.trim()) throw new BusinessError('Escriba una descripción.');
+  if (!fix.method || fix.method === CREDIT_METHOD) throw new BusinessError('Elija un medio de pago válido.');
+  if (!fix.reason.trim()) throw new BusinessError('Escriba el motivo de la corrección.');
+  return backend.transaction(async (tx) => {
+    const m = await tx.get<CashMovement>('cashMovements', movementId);
+    if (!m) throw new BusinessError('Movimiento no encontrado.');
+    if (m.direction !== 'egreso' || m.category !== 'gasto') throw new BusinessError('Solo se pueden corregir gastos.');
+    const st = await tx.get<CashState>('meta', 'cash');
+    if (!isAdmin && st?.openSessionId !== m.sessionId) {
+      throw new BusinessError('Ese gasto es de un turno ya cerrado: solo el administrador puede corregirlo.');
+    }
+    const same = m.amount === fix.amount && m.method === fix.method && m.description === fix.description.trim()
+      && (m.expenseCategory ?? '') === fix.expenseCategory;
+    if (same) throw new BusinessError('No hay cambios para guardar.');
+    const prev = {
+      at: new Date().toISOString(), by: actor.name, reason: fix.reason.trim(),
+      amount: m.amount, method: m.method, description: m.description, ...(m.expenseCategory ? { expenseCategory: m.expenseCategory } : {}),
+    };
+    tx.update('cashMovements', movementId, {
+      amount: fix.amount,
+      method: fix.method,
+      description: fix.description.trim(),
+      expenseCategory: fix.expenseCategory,
+      edits: [...(m.edits ?? []), prev],
+      ...touched(),
+    });
+  });
+}
+
 /** Esperado por medio de pago: igual que la hoja «Cierre de caja». */
 export function expectedByMethod(
   session: Pick<CashSession, 'openingCash'>,

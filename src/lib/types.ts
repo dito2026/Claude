@@ -298,6 +298,18 @@ export interface CashMovement extends BaseDoc {
   description: string;
   refType?: 'invoice' | 'repairOrder' | 'technician' | 'seller' | 'purchase' | 'manual';
   refId?: string;
+  /** correcciones de un gasto: cada entrada guarda los valores ANTERIORES */
+  edits?: MovementEdit[];
+}
+
+export interface MovementEdit {
+  at: string;
+  by: string;
+  reason: string;
+  amount: number;
+  method: string;
+  description: string;
+  expenseCategory?: string;
 }
 
 export const CREDIT_METHOD = 'Crédito tienda';

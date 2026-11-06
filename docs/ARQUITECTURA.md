@@ -436,3 +436,10 @@ el servidor reintenta con su modelo de respaldo.
 - El respaldo listaba la colección `meta` completa, y las reglas de Firestore solo permiten leer `meta/bootstrap` y `meta/cash`. Por eso Firebase rechazaba el respaldo con «permisos insuficientes». Ahora esos documentos se leen uno por uno.
 - Si alguna colección falla, el resto se respalda igual. El archivo trae `incompleto: [...]` y se muestra un aviso.
 - En celular se usa «Compartir» (guardar en Archivos o Drive, o enviar por WhatsApp) porque la descarga directa no siempre funciona en iPhone con la app instalada.
+
+## 28. Corregir un gasto
+
+- **Caja → Movimientos del turno → Corregir**, en las filas de gasto. Se puede cambiar el valor, el medio, la descripción y la categoría. El motivo es obligatorio.
+- **No se borra nada:** el gasto guarda en `edits` los valores anteriores con fecha, usuario y motivo. En la lista aparece «Corregido por … · antes $X».
+- **Permisos:** el cajero corrige solo gastos del turno abierto. El administrador también corrige gastos de turnos cerrados, en la tarjeta «Gastos de turnos anteriores» (últimos 60 días). El arqueo de un turno ya cerrado no cambia, porque guarda sus cifras; Contabilidad y el Panel usan el valor corregido.
+- **Reglas de Firestore:** `cashMovements` sigue siendo de solo agregar, salvo esta actualización limitada a gastos, a esos campos, con `edits` creciendo en uno y valor mayor que 0.

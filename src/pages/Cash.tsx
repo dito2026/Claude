@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, Lock, Unlock } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, History, Lock, Pencil, Unlock } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { CashCategory, CashMovement, CashSession, Invoice, RepairOrder, Seller, Technician } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { dateTime, money } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, Stat, useAction } from '../components/ui';
-import { addMovement, closeSession, expectedByMethod, openSession, type CashState } from '../services/cash';
+import { addMovement, closeSession, editExpense, expectedByMethod, openSession, type CashState } from '../services/cash';
 import { technicianBalance } from '../services/staff';
 import { sellerBalance } from '../services/sellers';
 import { useSettings } from '../services/settings';
@@ -31,9 +31,11 @@ export function Cash() {
   const sessions = useCollection<CashSession>('cashSessions').rows;
   const invoices = useCollection<Invoice>('invoices').rows;
   const invById = useMemo(() => new Map(invoices.map((i) => [i.id, i])), [invoices]);
-  const { actor } = useAuth();
+  const { actor, can } = useAuth();
+  const isAdmin = can('settings');
   const { run, busy } = useAction();
   const [opening, setOpening] = useState(0);
+  const [editing, setEditing] = useState<CashMovement | null>(null);
   const [mov, setMov] = useState<MovKind | null>(null);
   const [closing, setClosing] = useState(false);
 
@@ -45,6 +47,13 @@ export function Cash() {
   const expected = session ? expectedByMethod(session, movements, methods) : {};
   const ins = movements.filter((m) => m.direction === 'ingreso').reduce((a, m) => a + m.amount, 0);
   const outs = movements.filter((m) => m.direction === 'egreso').reduce((a, m) => a + m.amount, 0);
+  const pastExpenses = useMemo(() => {
+    const since = Date.now() - 60 * 86400000;
+    return allMovements
+      .filter((m) => isExpense(m) && m.sessionId !== sessionId && new Date(m.createdAt ?? 0).getTime() >= since)
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+      .slice(0, 100);
+  }, [allMovements, sessionId]);
   const closed = sessions.filter((s) => s.status === 'cerrada').sort((a, b) => (b.closedAt ?? '').localeCompare(a.closedAt ?? '')).slice(0, 20);
 
   return (
@@ -85,15 +94,16 @@ export function Cash() {
               {movements.length === 0 ? <Empty>Sin movimientos todavía.</Empty> : (
                 <div className="table-wrap">
                   <table className="table">
-                    <thead><tr><th>Hora</th><th>Concepto</th><th>Categoría</th><th>Medio</th><th className="num">Valor</th></tr></thead>
+                    <thead><tr><th>Hora</th><th>Concepto</th><th>Categoría</th><th>Medio</th><th className="num">Valor</th><th /></tr></thead>
                     <tbody>
                       {movements.map((m) => (
                         <tr key={m.id}>
                           <td className="nowrap" title={dateTime(m.createdAt)}>{m.createdAt ? new Date(m.createdAt).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }) : '—'}</td>
-                          <td style={{ minWidth: 200 }}>{m.description}{m.expenseCategory && <small>{m.expenseCategory}</small>}{m.refType === 'invoice' && m.refId && invById.get(m.refId) && <small className="mov-items">{itemsText(invById.get(m.refId)!)}</small>}</td>
+                          <td style={{ minWidth: 200 }}>{m.description}{m.expenseCategory && <small>{m.expenseCategory}</small>}{m.edits?.length ? <EditedNote m={m} /> : null}{m.refType === 'invoice' && m.refId && invById.get(m.refId) && <small className="mov-items">{itemsText(invById.get(m.refId)!)}</small>}</td>
                           <td><Badge tone={m.direction === 'ingreso' ? 'ok' : 'red'}>{CAT[m.category]}</Badge></td>
                           <td>{m.method}</td>
                           <td className={`num ${m.direction === 'egreso' ? 'red' : ''}`}>{m.direction === 'egreso' ? '-' : ''}{money(m.amount)}</td>
+                          <td className="nowrap">{isExpense(m) && <button className="btn sm ghost" title="Corregir gasto" onClick={() => setEditing(m)}><Pencil size={14} />Corregir</button>}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -111,6 +121,28 @@ export function Cash() {
             </div>
           </div>
         </>
+      )}
+
+      {isAdmin && pastExpenses.length > 0 && (
+        <div className="card mt">
+          <div className="card-head"><h3>Gastos de turnos anteriores</h3><span className="faint" style={{ fontSize: 12 }}>Últimos 60 días · solo el administrador puede corregirlos</span></div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Fecha</th><th>Concepto</th><th>Medio</th><th className="num">Valor</th><th /></tr></thead>
+              <tbody>
+                {pastExpenses.map((m) => (
+                  <tr key={m.id}>
+                    <td className="nowrap">{dateTime(m.createdAt)}</td>
+                    <td style={{ minWidth: 200 }}>{m.description}{m.expenseCategory && <small>{m.expenseCategory}</small>}{m.edits?.length ? <EditedNote m={m} /> : null}</td>
+                    <td>{m.method}</td>
+                    <td className="num red">-{money(m.amount)}</td>
+                    <td className="nowrap"><button className="btn sm ghost" onClick={() => setEditing(m)}><Pencil size={14} />Corregir</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       <div className="card mt">
@@ -141,11 +173,64 @@ export function Cash() {
         )}
       </div>
 
+      {editing && <EditExpenseModal m={editing} methods={methods} categories={settings.expenseCategories} isAdmin={isAdmin} onClose={() => setEditing(null)} />}
       {mov && <MovementModal kind={mov} methods={methods} categories={settings.expenseCategories} onClose={() => setMov(null)} />}
       {closing && session && (
         <CloseModal session={session} expected={expected} methods={methods} onClose={() => setClosing(false)} />
       )}
     </>
+  );
+}
+
+const isExpense = (m: CashMovement) => m.direction === 'egreso' && m.category === 'gasto';
+
+/** «Corregido»: muestra el valor anterior; al pasar el mouse, todo el historial. */
+function EditedNote({ m }: { m: CashMovement }) {
+  const last = m.edits![m.edits!.length - 1];
+  const hist = m.edits!.map((e) => `${dateTime(e.at)} · ${e.by}: antes ${money(e.amount)} (${e.method}) «${e.description}» — ${e.reason}`).join('\n');
+  return (
+    <small className="faint" title={hist} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <History size={12} />Corregido por {last.by} · antes {money(last.amount)}
+    </small>
+  );
+}
+
+function EditExpenseModal({ m, methods, categories, isAdmin, onClose }: { m: CashMovement; methods: string[]; categories: string[]; isAdmin: boolean; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const [amount, setAmount] = useState(m.amount);
+  const [method, setMethod] = useState(m.method);
+  const [description, setDescription] = useState(m.description);
+  const [category, setCategory] = useState(m.expenseCategory || categories[0] || 'Otros');
+  const [reason, setReason] = useState('');
+  const cats = categories.includes(category) ? categories : [category, ...categories];
+  const meths = methods.includes(method) ? methods : [method, ...methods];
+  const submit = () => run(() => editExpense(actor, m.id, { amount, method, description, expenseCategory: category, reason }, isAdmin), 'Gasto corregido').then((ok) => ok && onClose());
+  return (
+    <Modal title="Corregir gasto" onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || !amount || !description.trim() || !reason.trim()} onClick={submit}>Guardar corrección</button></>}>
+      <div className="alert info" style={{ marginBottom: 14 }}>
+        Registrado el {dateTime(m.createdAt)}: {money(m.amount)} en {m.method}. El valor anterior queda guardado en el historial.
+      </div>
+      <div className="form-grid">
+        <Field label="Categoría">
+          <select className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
+            {cats.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </Field>
+        <Field label="Valor" required><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
+        <Field label="Medio">
+          <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
+            {meths.map((x) => <option key={x}>{x}</option>)}
+          </select>
+        </Field>
+        <Field label="Descripción" required><input className="input" value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
+        <Field label="Motivo de la corrección" required className="full">
+          <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: digité mal el valor" />
+        </Field>
+      </div>
+    </Modal>
   );
 }
 

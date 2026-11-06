@@ -162,10 +162,20 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Libro de caja: solo se agregan registros
+    // Libro de caja: solo se agregan registros. Única excepción: corregir un gasto,
+    // dejando los valores anteriores en `edits` (cajero: turno abierto; admin: cualquiera).
     match /cashMovements/{id} {
       allow read, create: if isCashier();
-      allow update, delete: if false;
+      allow update: if isCashier()
+        && resource.data.direction == 'egreso'
+        && resource.data.category == 'gasto'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amount', 'method', 'description', 'expenseCategory', 'edits', 'updatedAt'])
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.method != 'Crédito tienda'
+        && request.resource.data.edits.size() == resource.data.get('edits', []).size() + 1
+        && (isAdmin() || get(/databases/$(database)/documents/meta/cash).data.openSessionId == resource.data.sessionId);
+      allow delete: if false;
     }
   }
 }

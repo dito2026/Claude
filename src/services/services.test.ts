@@ -5,7 +5,7 @@ import type { LocalBackend } from '../data/local';
 import type { CashMovement, Customer, Invoice, InvoiceItem, Product, RepairOrder, StockMovement } from '../lib/types';
 import { saveProduct, adjustStock, receiveStock } from './inventory';
 import { addDeposit, addPart, createOrder, removePart, orderTotal } from './orders';
-import { closeSession, expectedByMethod, openSession, addMovement } from './cash';
+import { closeSession, editExpense, expectedByMethod, openSession, addMovement } from './cash';
 import { createInvoice, itemsFromOrder, voidInvoice } from './billing';
 import { createTicket } from './tickets';
 import { seedDemo } from './seed';
@@ -215,6 +215,37 @@ describe('facturación y caja', () => {
     });
     expect(await backend.list('cashMovements')).toHaveLength(0);
     expect((await backend.list<Invoice>('invoices'))[0].status).toBe('credito');
+  });
+});
+
+describe('corregir gastos', () => {
+  const fix = { amount: 15000, method: 'Nequi', description: 'Almuerzo equipo', expenseCategory: 'Alimentación', reason: 'Digité mal el valor' };
+  it('corrige valor y medio, guarda el historial y cuadra la caja', async () => {
+    await openSession(actor, 100000);
+    await addMovement(actor, { direction: 'egreso', category: 'gasto', expenseCategory: 'Otros', method: 'Efectivo', amount: 50000, description: 'Almuerzo' });
+    const [m] = await backend.list<CashMovement>('cashMovements');
+    await editExpense(actor, m.id, fix, false);
+    const after = (await backend.get<CashMovement>('cashMovements', m.id))!;
+    expect(after).toMatchObject({ amount: 15000, method: 'Nequi', description: 'Almuerzo equipo', expenseCategory: 'Alimentación' });
+    expect(after.edits).toHaveLength(1);
+    expect(after.edits![0]).toMatchObject({ amount: 50000, method: 'Efectivo', description: 'Almuerzo', reason: 'Digité mal el valor' });
+    expect(expectedByMethod({ openingCash: 100000 }, [after], ['Efectivo', 'Nequi'])).toMatchObject({ Efectivo: 100000, Nequi: -15000 });
+    await expect(editExpense(actor, m.id, fix, false)).rejects.toThrow(/No hay cambios/);
+  });
+
+  it('turno cerrado: solo el administrador; y solo gastos', async () => {
+    const sid = await openSession(actor, 0);
+    await addMovement(actor, { direction: 'egreso', category: 'gasto', expenseCategory: 'Otros', method: 'Efectivo', amount: 8000, description: 'Taxi' });
+    await addMovement(actor, { direction: 'ingreso', category: 'ingreso_otro', method: 'Efectivo', amount: 5000, description: 'Otro' });
+    const movs = await backend.list<CashMovement>('cashMovements');
+    const gasto = movs.find((x) => x.category === 'gasto')!;
+    const otro = movs.find((x) => x.category === 'ingreso_otro')!;
+    await expect(editExpense(actor, otro.id, fix, true)).rejects.toThrow(/Solo se pueden corregir gastos/);
+    await closeSession(actor, sid, { Efectivo: -3000 }, { Efectivo: -3000 }, '');
+    await expect(editExpense(actor, gasto.id, fix, false)).rejects.toThrow(/administrador/);
+    await editExpense(actor, gasto.id, fix, true);
+    expect((await backend.get<CashMovement>('cashMovements', gasto.id))!.amount).toBe(15000);
+    await expect(editExpense(actor, gasto.id, { ...fix, amount: 20000, reason: '' }, true)).rejects.toThrow(/motivo/);
   });
 });
 
