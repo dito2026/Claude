@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { HandCoins, PackagePlus, PenLine, Pencil, Plus, Sparkles, Trash2, Truck } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { PhoneCondition, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
@@ -73,16 +73,22 @@ export function Purchases() {
 // ---------------- Lista de compras ----------------
 function PurchaseList({ purchases }: { purchases: Purchase[] }) {
   const [q, setQ] = useState('');
-  const [filter, setFilter] = useState<'pendientes' | 'todas'>('pendientes');
+  const [filter, setFilter] = useState<'pendientes' | 'todas'>('todas');
+  const [params, setParams] = useSearchParams();
+  // Abrir una compra directo (p. ej. desde Inventario → Celulares: «Compra C-0047»)
+  const linked = params.get('compra');
   const [view, setView] = useState<Purchase | null>(null);
+  const shown = view ?? (linked ? purchases.find((x) => x.id === linked) ?? null : null);
+  const close = () => { setView(null); if (linked) setParams({}); };
   const list = purchases
-    .filter((p) => filter === 'todas' || (p.status !== 'pagada' && p.status !== 'anulada'))
+    // al buscar se busca en todas, también las ya pagadas
+    .filter((p) => filter === 'todas' || q.trim() !== '' || (p.status !== 'pagada' && p.status !== 'anulada'))
     .filter((p) => matches(q, p.number, p.supplierName, p.invoiceRef, ...p.items.map((i) => i.name)))
     .sort((a, b) => b.number - a.number);
   return (
     <>
       <div className="row" style={{ marginBottom: 14 }}>
-        <Seg value={filter} onChange={setFilter} options={[{ value: 'pendientes', label: 'Por pagar' }, { value: 'todas', label: 'Todas' }]} />
+        <Seg value={filter} onChange={setFilter} options={[{ value: 'todas', label: 'Todas' }, { value: 'pendientes', label: 'Por pagar' }]} />
         <SearchBox value={q} onChange={setQ} placeholder="N.º, proveedor, factura o producto" />
       </div>
       <div className="card">
@@ -109,7 +115,7 @@ function PurchaseList({ purchases }: { purchases: Purchase[] }) {
           </div>
         )}
       </div>
-      {view && <PurchaseModal p={purchases.find((x) => x.id === view.id) ?? view} onClose={() => setView(null)} />}
+      {shown && <PurchaseModal p={purchases.find((x) => x.id === shown.id) ?? shown} onClose={close} />}
     </>
   );
 }

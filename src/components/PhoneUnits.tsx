@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Smartphone } from 'lucide-react';
 import { useCollection } from '../data/hooks';
 import type { PhoneCondition, PhoneUnit, PhoneUnitInput, Product } from '../lib/types';
@@ -158,7 +159,9 @@ export function UnitsTab() {
                 {list.map((u) => (
                   <tr key={u.id}>
                     <td><span className="mono strong">{u.imei}</span>{u.imei2 && <small className="mono">{u.imei2}</small>}</td>
-                    <td>{u.productName}<small>{[u.color, u.supplierName && `Prov. ${u.supplierName}`, origin(u)].filter(Boolean).join(' · ')}</small></td>
+                    <td>{u.productName}<small>{[u.color, u.supplierName && `Prov. ${u.supplierName}`].filter(Boolean).join(' · ')}{(u.color || u.supplierName) ? ' · ' : ''}{u.purchaseId
+                      ? <Link className="red" to={`/compras?compra=${u.purchaseId}`} title="Abrir esta compra (para verla o anularla)">{origin(u)}</Link>
+                      : u.usedPurchaseId ? <Link className="red" to="/usados">{origin(u)}</Link> : origin(u)}</small></td>
                     <td><Badge tone={u.condition === 'NUEVO' ? 'ok' : 'warn'}>{u.condition}</Badge></td>
                     <td className="nowrap">{dateOnly(u.createdAt)}</td>
                     <td className="num">{money(u.cost)}</td>

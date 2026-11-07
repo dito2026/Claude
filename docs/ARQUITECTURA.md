@@ -464,3 +464,8 @@ el servidor reintenta con su modelo de respaldo.
 - **Compraventa usados:** casilla «No descontar de la caja» (`outsideCash`). Es para cuando el pago se hizo con dinero que no está en la caja (del dueño o de la cuenta). No exige caja abierta ni registra egreso, y el equipo entra igual al inventario con su costo. En la lista aparece «Fuera de caja».
 - Al vender el equipo, el dinero entra a la caja normalmente y la ganancia se calcula con el costo de compra.
 - **Contrato que descontó de la caja por error:** al abrir el contrato aparece «No era de la caja» (`moveUsedOutsideCash`). Registra un reintegro de «Pago a proveedor» por el mismo valor y medio, que anula el egreso, y marca el contrato «Fuera de caja». Solo funciona mientras siga abierto el turno del pago: si ya se cerró, la diferencia quedó en ese arqueo. La regla de Firestore solo permite ese cambio (`outsideCash` de false a true).
+
+## 32. Encontrar una compra
+
+- **Compras → lista:** ahora arranca en «Todas». Antes arrancaba en «Por pagar» y escondía las compras de contado ya pagadas. Al buscar se revisan todas, sin importar el filtro.
+- **Inventario → Celulares (IMEI):** «Compra C-0047» es un enlace que abre esa compra (`/compras?compra=<id>`), para verla o anularla. «Contrato compraventa N.º …» lleva a Compraventa usados.
