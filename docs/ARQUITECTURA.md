@@ -474,3 +474,12 @@ el servidor reintenta con su modelo de respaldo.
 
 - **Redmi** es ahora una marca propia en la lista de marcas, los filtros y la detección por nombre («Redmi Note 13» → Redmi). Antes se agrupaba en Xiaomi. Los registros viejos que ya decían «Xiaomi» siguen igual. Poco y Mi siguen bajo Xiaomi.
 - **Recordatorios** (`reminders`, tarjeta en el Panel para todo el personal): texto con fecha y hora opcional, y atajos «En 1 hora», «Hoy 5 p. m.» y «Mañana 9 a. m.». Se marcan como hechos (y se pueden volver a pendientes) y se eliminan uno por uno o todos los hechos a la vez. Los vencidos se resaltan en rojo y se cuentan en el título. Entran en el respaldo. Regla: cualquier usuario activo los lee, crea, marca y elimina.
+
+## 34. Remisiones (mercancía en consignación)
+
+- **Menú Finanzas → Remisiones (`/remisiones`, permiso de facturación):** registra la mercancía que se entrega a otro local o vendedor. Se escribe el destinatario (nombre, NIT/C.C., celular, dirección), los productos con su precio pactado, los celulares escogiendo el IMEI, una fecha para liquidar (opcional) y una nota.
+- **Al remisionar** (`createRemission`): consecutivo `remissions` (R-0001). El stock baja con el kardex «Remisión (consignación)» y los celulares quedan `remisionado` (R-0001 · destinatario). No se pueden vender en una venta normal.
+- **Registrar devolución** (`returnRemission`): lo devuelto vuelve al inventario («Devolución de remisión») y los celulares quedan disponibles.
+- **Facturar lo vendido:** se escoge qué vendió y el medio de pago (obligatorio). Se crea una factura normal (`createInvoice` con `remissionId`) que entra a la caja, sin descontar stock otra vez (`stockAlreadyMoved`). En la misma transacción la remisión suma lo vendido y guarda la factura. Si esa factura se anula, lo vendido vuelve a quedar pendiente con el destinatario y el celular vuelve a `remisionado`.
+- Cuando no queda nada pendiente, la remisión pasa a **Liquidada**. Las remisiones nunca se borran.
+- **Documento imprimible / PDF:** tamaño carta, con los datos, los productos y su estado (vendidas, devueltas, pendientes), la cláusula de consignación y las firmas de quien entrega y quien recibe.

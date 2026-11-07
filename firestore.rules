@@ -170,6 +170,12 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Remisiones (consignación): se crean y se actualizan al devolver o facturar; nunca se borran
+    match /remissions/{id} {
+      allow read, create, update: if isCashier();
+      allow delete: if false;
+    }
+
     // Contratos de compraventa de usados: solo se agregan
     match /usedPurchases/{id} {
       allow read, create: if isCashier();

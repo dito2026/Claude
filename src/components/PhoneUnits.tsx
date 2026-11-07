@@ -165,7 +165,7 @@ export function UnitsTab() {
                     <td><Badge tone={u.condition === 'NUEVO' ? 'ok' : 'warn'}>{u.condition}</Badge></td>
                     <td className="nowrap">{dateOnly(u.createdAt)}</td>
                     <td className="num">{money(u.cost)}</td>
-                    <td>{u.status === 'anulado' ? <Badge tone="red">Anulado</Badge> : <Badge tone={u.status === 'disponible' ? 'info' : ''}>{u.status === 'disponible' ? 'Disponible' : 'Vendido'}</Badge>}{u.status === 'anulado' && u.voidReason && <small>{u.voidReason}</small>}</td>
+                    <td>{u.status === 'anulado' ? <Badge tone="red">Anulado</Badge> : u.status === 'remisionado' ? <Badge tone="warn">Remisionado · R-{pad(u.remissionNumber, 4)}</Badge> : <Badge tone={u.status === 'disponible' ? 'info' : ''}>{u.status === 'disponible' ? 'Disponible' : 'Vendido'}</Badge>}{u.status === 'anulado' && u.voidReason && <small>{u.voidReason}</small>}</td>
                     <td>{u.status === 'vendido' ? <>{u.customerName}<small>Fact. {pad(u.invoiceNumber, 6)} · {dateOnly(u.soldAt)} · {money(u.salePrice)}</small></> : <span className="faint">—</span>}</td>
                     <td>{u.status !== 'vendido' ? <span className="faint">{u.warrantyMonths} meses</span>
                       : u.warrantyUntil ? <Badge tone={warrantyActive(u) ? 'ok' : ''}>{warrantyActive(u) ? 'Vigente' : 'Vencida'} · {dateOnly(u.warrantyUntil)}</Badge>

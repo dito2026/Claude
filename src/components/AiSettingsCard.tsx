@@ -58,7 +58,7 @@ export function AiSettingsCard() {
 
 const BACKUP_COLLECTIONS = [
   'settings', 'counters', 'users', 'technicians', 'sellers', 'customers', 'products', 'stockMovements', 'phoneUnits',
-  'imeiIndex', 'repairOrders', 'tickets', 'invoices', 'cashSessions', 'cashMovements', 'suppliers', 'purchases', 'usedPurchases', 'reminders',
+  'imeiIndex', 'repairOrders', 'tickets', 'invoices', 'cashSessions', 'cashMovements', 'suppliers', 'purchases', 'usedPurchases', 'reminders', 'remissions',
 ];
 /** «meta» no se puede listar entera (reglas de Firestore): se leen sus documentos uno por uno. */
 const META_DOCS = ['bootstrap', 'cash'];

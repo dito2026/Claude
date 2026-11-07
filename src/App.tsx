@@ -15,6 +15,7 @@ import { Billing } from './pages/Billing';
 import { Cash } from './pages/Cash';
 import { Purchases } from './pages/Purchases';
 import { UsedPhones } from './pages/UsedPhones';
+import { Remissions } from './pages/Remissions';
 import { Accounting } from './pages/Accounting';
 import { Sellers } from './pages/Sellers';
 import { Assistant } from './pages/Assistant';
@@ -52,6 +53,7 @@ function Shell() {
         <Route path="/inventario" element={<Inventory />} />
         <Route path="/facturacion" element={<Guard perm="billing"><Billing /></Guard>} />
         <Route path="/caja" element={<Guard perm="cash"><Cash /></Guard>} />
+        <Route path="/remisiones" element={<Guard perm="billing"><Remissions /></Guard>} />
         <Route path="/compras" element={<Guard perm="purchases"><Purchases /></Guard>} />
         <Route path="/usados" element={<Guard perm="purchases"><UsedPhones /></Guard>} />
         <Route path="/contabilidad" element={<Guard perm="dashboard.finance"><Accounting /></Guard>} />

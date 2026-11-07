@@ -16,7 +16,7 @@ export const created = (actor: Actor) => {
 
 export const touched = () => ({ updatedAt: nowIso() });
 
-export type CounterName = 'orders' | 'invoices' | 'tickets' | 'purchases' | 'usedPurchases';
+export type CounterName = 'orders' | 'invoices' | 'tickets' | 'purchases' | 'usedPurchases' | 'remissions';
 
 /** Lectura del siguiente consecutivo (fase de lecturas de la transacción). */
 export async function readNext(tx: Tx, name: CounterName): Promise<number> {

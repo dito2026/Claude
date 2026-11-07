@@ -99,6 +99,8 @@ export type StockReason =
   | 'ajuste'
   | 'anulacion'
   | 'anulacion_compra'
+  | 'remision'
+  | 'devolucion_remision'
   | 'inicial';
 
 export interface StockMovement extends BaseDoc {
@@ -107,7 +109,7 @@ export interface StockMovement extends BaseDoc {
   kind: 'entrada' | 'salida' | 'ajuste';
   qty: number; // con signo
   reason: StockReason;
-  refType?: 'repairOrder' | 'invoice' | 'purchase' | 'usedPurchase' | 'manual';
+  refType?: 'repairOrder' | 'invoice' | 'purchase' | 'usedPurchase' | 'remission' | 'manual';
   refId?: string;
   refNumber?: number;
   unitCost: number;
@@ -231,8 +233,10 @@ export interface InvoiceItem {
   imei?: string;
   /** celular vendido (colección phoneUnits, id = IMEI) */
   unitId?: string;
-  /** true si el stock ya fue descontado (repuestos de una OT) */
+  /** true si el stock ya fue descontado (repuestos de una OT, mercancía remisionada) */
   stockAlreadyMoved?: boolean;
+  /** línea de la remisión de la que sale esta venta */
+  remissionLineId?: string;
 }
 
 export interface Payment {
@@ -242,6 +246,9 @@ export interface Payment {
 
 export interface Invoice extends BaseDoc {
   number: number;
+  /** venta de mercancía en consignación (remisión) */
+  remissionId?: string;
+  remissionNumber?: number;
   customerId?: string;
   customer: CustomerRef;
   items: InvoiceItem[];
@@ -388,7 +395,7 @@ export interface PhoneUnit extends BaseDoc {
   purchaseId?: string;
   purchaseNumber?: number;
   /** anulado = entró por una compra que se anuló; el IMEI se puede volver a ingresar */
-  status: 'disponible' | 'vendido' | 'anulado';
+  status: 'disponible' | 'vendido' | 'anulado' | 'remisionado';
   invoiceId?: string;
   invoiceNumber?: number;
   soldAt?: string;
@@ -402,6 +409,10 @@ export interface PhoneUnit extends BaseDoc {
   /** contrato de compraventa con el que entró (usados) */
   usedPurchaseId?: string;
   usedPurchaseNumber?: number;
+  /** remisión con la que está por fuera (consignación) */
+  remissionId?: string;
+  remissionNumber?: number;
+  remissionTo?: string;
   voidReason?: string;
   voidedAt?: string;
   voidedBy?: string;
@@ -464,4 +475,33 @@ export interface Reminder extends BaseDoc {
   doneAt?: string;
   doneBy?: string;
   createdByName: string;
+}
+
+// ---------------- Remisiones (mercancía en consignación) ----------------
+export interface RemissionItem {
+  lineId: string;
+  productId: string;
+  name: string;
+  qty: number;
+  /** precio pactado de venta */
+  unitPrice: number;
+  unitCost: number;
+  unitId?: string;
+  imei?: string;
+  sold: number;
+  returned: number;
+}
+
+export interface Remission extends BaseDoc {
+  number: number;
+  customerId?: string;
+  recipient: CustomerRef & { address?: string };
+  items: RemissionItem[];
+  status: 'abierta' | 'liquidada';
+  note: string;
+  /** fecha acordada para liquidar (opcional) */
+  dueDate?: string;
+  createdByName: string;
+  invoices: { id: string; number: number; at: string; total: number }[];
+  returns: { at: string; by: string; lines: { lineId: string; qty: number }[] }[];
 }

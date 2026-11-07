@@ -8,6 +8,8 @@ import { moveStock } from './inventory';
 import { depositsTotal } from './orders';
 import { isPhone, markAvailable, markSold } from './phones';
 import { computeCommission } from './sellers';
+import { readRemissionForInvoice, revertRemissionSale, writeRemissionSale } from './remissions';
+import type { Remission } from '../lib/types';
 
 export interface InvoiceDraft {
   customerId?: string;
@@ -20,6 +22,8 @@ export interface InvoiceDraft {
   cashierName: string;
   /** vendedor que gana comisión por esta venta */
   sellerId?: string;
+  /** venta de mercancía remisionada (consignación) */
+  remissionId?: string;
 }
 
 export function computeTotals(items: InvoiceItem[], discount: number, taxRate: number) {
@@ -108,6 +112,14 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
         }
       }
     }
+    // Remisión: cada línea debe salir de la remisión y tener pendiente
+    let remission: Remission | null = null;
+    if (draft.remissionId) {
+      if (items.some((i) => !i.remissionLineId || !i.stockAlreadyMoved)) throw new BusinessError('Todas las líneas deben salir de la remisión.');
+      remission = await readRemissionForInvoice(tx, draft.remissionId, items);
+    } else if (items.some((i) => i.remissionLineId)) {
+      throw new BusinessError('Línea de remisión sin remisión.');
+    }
     // Celulares: solo con IMEI de inventario, una unidad por línea, disponible y del mismo modelo
     const units = new Map<string, PhoneUnit>();
     for (const it of items) {
@@ -120,7 +132,10 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
       if (it.qty !== 1) throw new BusinessError('Cada celular (IMEI) se vende en una línea con cantidad 1.');
       const u = await tx.get<PhoneUnit>('phoneUnits', it.unitId);
       if (!u) throw new BusinessError(`El IMEI ${it.unitId} no está en el inventario.`);
-      if (u.status !== 'disponible') throw new BusinessError(`El IMEI ${u.imei} ya fue vendido (factura ${u.invoiceNumber}).`);
+      const fromRemission = !!remission && u.status === 'remisionado' && u.remissionId === remission.id;
+      if (u.status !== 'disponible' && !fromRemission) {
+        throw new BusinessError(u.status === 'remisionado' ? `El IMEI ${u.imei} está remisionado (R-${u.remissionNumber}): véndalo desde la remisión.` : `El IMEI ${u.imei} ya fue vendido (factura ${u.invoiceNumber}).`);
+      }
       if (u.productId !== it.productId) throw new BusinessError(`El IMEI ${u.imei} no corresponde a «${it.description}».`);
       units.set(u.id, u);
     }
@@ -138,6 +153,7 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
       payments,
       repairOrderId: order?.id,
       repairOrderNumber: order?.number,
+      ...(remission ? { remissionId: remission.id, remissionNumber: remission.number } : {}),
       status: usesCredit ? 'credito' : 'pagada',
       cashSessionId: sessionId,
       cashierName: draft.cashierName,
@@ -153,6 +169,7 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
       ...created(actor),
     };
     const invoiceId = tx.create('invoices', invoice as unknown as Record<string, unknown>);
+    if (remission) writeRemissionSale(tx, remission, items, { id: invoiceId, number, total: totals.total });
 
     for (const it of items) {
       const p = it.productId ? products.get(it.productId) : undefined;
@@ -221,6 +238,7 @@ export async function voidInvoice(actor: Actor, invoiceId: string, reason: strin
       }
     }
     const order = inv.repairOrderId ? await tx.get<RepairOrder>('repairOrders', inv.repairOrderId) : null;
+    const remission = inv.remissionId ? await tx.get<Remission>('remissions', inv.remissionId) : null;
     const soldUnits: PhoneUnit[] = [];
     for (const it of inv.items) {
       if (!it.unitId) continue;
@@ -243,7 +261,13 @@ export async function voidInvoice(actor: Actor, invoiceId: string, reason: strin
         moveStock(tx, actor, p, it.qty, 'anulacion', { refType: 'invoice', refId: inv.id, refNumber: inv.number });
       }
     }
-    for (const u of soldUnits) markAvailable(tx, u);
+    for (const u of soldUnits) {
+      // vendido desde una remisión: vuelve a quedar remisionado con el destinatario
+      if (remission && u.remissionId === remission.id) {
+        tx.update('phoneUnits', u.id, { status: 'remisionado', invoiceId: null, invoiceNumber: null, soldAt: null, salePrice: null, customerName: null, warrantyUntil: null, ...touched() });
+      } else markAvailable(tx, u);
+    }
+    if (remission) revertRemissionSale(tx, remission, inv);
     for (const pay of inv.payments) {
       writeMovement(tx, actor, sessionId, {
         direction: 'egreso',

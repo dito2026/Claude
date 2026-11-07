@@ -1,2 +1,2 @@
 // Versión visible en el menú: se actualiza con cada cambio para saber qué está publicado.
-export const APP_VERSION = '2026.11.07e · recordatorios';
+export const APP_VERSION = '2026.11.07f · remisiones';

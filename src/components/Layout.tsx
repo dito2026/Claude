@@ -4,6 +4,7 @@ import {
   LayoutDashboard, Users, Wrench, LifeBuoy, Package, HardHat, ShieldCheck, Receipt, Wallet,
   Settings, LogOut, Menu, Moon, Sun, Smartphone, Truck, Calculator, BadgePercent, Sparkles,
   Handshake,
+  FileOutput,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import type { Permission } from '../auth/permissions';
@@ -37,6 +38,7 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
     items: [
       { to: '/facturacion', label: 'Facturación', icon: <Receipt size={18} />, perm: 'billing' },
       { to: '/caja', label: 'Caja', icon: <Wallet size={18} />, perm: 'cash' },
+      { to: '/remisiones', label: 'Remisiones', icon: <FileOutput size={18} />, perm: 'billing' },
       { to: '/compras', label: 'Compras y proveedores', icon: <Truck size={18} />, perm: 'purchases' },
       { to: '/usados', label: 'Compraventa usados', icon: <Handshake size={18} />, perm: 'purchases' },
       { to: '/contabilidad', label: 'Contabilidad', icon: <Calculator size={18} />, perm: 'dashboard.finance' },
