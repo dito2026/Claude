@@ -430,6 +430,8 @@ export interface UsedPurchase extends BaseDoc {
   /** precio al que se venderá (opcional) */
   salePrice: number;
   imeiVerified: boolean;
+  /** pagado con dinero que no está en la caja (no se registró egreso) */
+  outsideCash?: boolean;
   productId: string;
   productName: string;
   createdByName: string;

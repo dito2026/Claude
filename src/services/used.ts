@@ -21,6 +21,8 @@ export interface UsedDraft {
   method: string;
   salePrice: number;
   imeiVerified: boolean;
+  /** se pagó con dinero que no está en la caja: no se descuenta de la caja */
+  outsideCash?: boolean;
 }
 
 const clean = (s: string | undefined) => (s ?? '').trim().replace(/\s+/g, ' ');
@@ -59,7 +61,7 @@ export async function buyUsedPhone(actor: Actor, d: UsedDraft, products: Product
   return backend.transaction(async (tx) => {
     // ---------- LECTURAS ----------
     const number = await readNext(tx, 'usedPurchases');
-    const sessionId = await requireOpenSession(tx);
+    const sessionId = d.outsideCash ? null : await requireOpenSession(tx);
     await assertImeisFree(tx, [unit]);
     let product = existing ? await tx.get<Product>('products', existing.id) : null;
 
@@ -88,6 +90,7 @@ export async function buyUsedPhone(actor: Actor, d: UsedDraft, products: Product
       method: d.method,
       salePrice: d.salePrice || 0,
       imeiVerified: true,
+      ...(d.outsideCash ? { outsideCash: true } : {}),
       productId: product.id,
       productName: product.name,
       createdByName: actor.name,
@@ -100,7 +103,7 @@ export async function buyUsedPhone(actor: Actor, d: UsedDraft, products: Product
     moveStock(tx, actor, product, 1, 'compra', {
       refType: 'usedPurchase', refId: cid, refNumber: number, note: `Compraventa usado N.º ${number} · ${contract.seller.name}`,
     });
-    writeMovement(tx, actor, sessionId, {
+    if (sessionId) writeMovement(tx, actor, sessionId, {
       direction: 'egreso',
       category: 'pago_proveedor',
       method: d.method,

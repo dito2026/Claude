@@ -39,7 +39,7 @@ export function UsedPhones() {
   return (
     <>
       <PageHead eyebrow="Operación" title="Compraventa de usados"
-        subtitle="Cuando le compra un celular a un cliente: contrato firmado, el equipo entra al inventario por IMEI como USADO y el pago sale de caja."
+        subtitle="Cuando le compra un celular a un cliente: contrato firmado, el equipo entra al inventario por IMEI como USADO y el pago sale de caja (o por fuera, si lo indica)."
         actions={<button className="btn primary" onClick={() => setCreating(true)}><Plus size={16} />Nuevo contrato</button>} />
       <div className="grid g3" style={{ marginBottom: 16 }}>
         <Stat accent label="Comprados este mes" value={month.length} sub={`Pagado ${money(month.reduce((a, c) => a + c.price, 0))}`} icon={<Smartphone size={15} />} />
@@ -64,7 +64,7 @@ export function UsedPhones() {
                       <td><span className="strong">{c.seller.name}</span><small>C.C. {c.seller.document}</small></td>
                       <td>{c.device.brand} {c.device.model}{c.device.color && <small>{c.device.color}</small>}</td>
                       <td className="mono">{c.device.imei}</td>
-                      <td className="num">{money(c.price)}</td>
+                      <td className="num">{money(c.price)}<small>{c.outsideCash ? 'Fuera de caja' : c.method}</small></td>
                       <td>{u?.status === 'vendido' ? <Badge tone="info">Vendido{u.salePrice ? ` · ${money(u.salePrice)}` : ''}</Badge> : u?.status === 'disponible' ? <Badge tone="ok">En inventario</Badge> : <Badge>—</Badge>}</td>
                       <td><button className="btn sm" onClick={(e) => { e.stopPropagation(); setViewing(c); }}><Printer size={14} />Ver / imprimir</button></td>
                     </tr>
@@ -96,12 +96,13 @@ function UsedPurchaseModal({ s, onClose, onSaved }: { s: BusinessSettings; onClo
   const [method, setMethod] = useState('');
   const [salePrice, setSalePrice] = useState(0);
   const [verified, setVerified] = useState(false);
+  const [outsideCash, setOutsideCash] = useState(false);
   const methods = s.paymentMethods.filter((m) => m !== CREDIT_METHOD);
   const ss = (k: keyof UsedSeller, v: string) => setSeller({ ...seller, [k]: v });
   const imeiMsg = (v: string) => (normalizeImei(v).length >= 14 ? imeiError(normalizeImei(v)) : null);
   const match = device.brand && device.model ? findPhoneProduct(products, device.brand, device.model) : undefined;
 
-  const draft: UsedDraft = { date, city, seller, buyer, device, price, method, salePrice, imeiVerified: verified };
+  const draft: UsedDraft = { date, city, seller, buyer, device, price, method, salePrice, imeiVerified: verified, outsideCash };
   const ready = seller.name.trim() && seller.document.trim() && seller.address.trim() && seller.phone.trim()
     && buyer.name.trim() && buyer.document.trim() && device.brand.trim() && device.model.trim() && device.imei.trim()
     && !imeiMsg(device.imei) && !(device.imei2 && imeiMsg(device.imei2)) && price > 0 && method && verified;
@@ -174,6 +175,10 @@ function UsedPurchaseModal({ s, onClose, onSaved }: { s: BusinessSettings; onClo
           ))}
         </div>
       </div>
+      <label className="checkbox mt" style={{ alignItems: 'flex-start' }}>
+        <input type="checkbox" checked={outsideCash} onChange={(e) => setOutsideCash(e.target.checked)} />
+        <span><b>No descontar de la caja</b>: lo pagué con dinero que no está en la caja (del dueño o de la cuenta). La caja no cambia; cuando lo venda, la plata de la venta entra normal.</span>
+      </label>
       <label className="checkbox mt" style={{ alignItems: 'flex-start' }}>
         <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />
         <span>Verifiqué que el IMEI <b>no está reportado</b> como hurtado o perdido, y revisé el documento original del vendedor.</span>

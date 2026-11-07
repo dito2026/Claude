@@ -95,3 +95,13 @@ describe('anular ingreso manual de un celular', () => {
     await expect(voidUnitEntry(actor, IMEI, 'x')).rejects.toThrow(/contrato/);
   });
 });
+
+describe('compraventa pagada por fuera de la caja', () => {
+  it('no exige caja abierta ni registra egreso; el equipo entra igual', async () => {
+    const c = await buyUsedPhone(actor, draft({ outsideCash: true }), []);
+    expect(c.outsideCash).toBe(true);
+    expect(await backend.list('cashMovements')).toHaveLength(0);
+    expect((await backend.get<PhoneUnit>('phoneUnits', IMEI))!.status).toBe('disponible');
+    expect((await backend.list<Product>('products'))[0].stock).toBe(1);
+  });
+});

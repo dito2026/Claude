@@ -457,3 +457,9 @@ el servidor reintenta con su modelo de respaldo.
 - **Inventario → Celulares (IMEI)** muestra de dónde entró cada equipo: «Compra C-0011», «Contrato compraventa N.º 0001» o «Ingreso manual (sin compra)».
 - **Ingreso manual:** el botón «Ingresar» solo registra IMEI, sin compra ni caja. Por eso esos equipos no aparecen en Compras, y un aviso lo explica.
 - **Anular ingreso** (solo administrador, `voidUnitEntry`): solo aplica a ingresos manuales disponibles. Resta 1 al stock (kardex «ajuste»), deja la unidad `anulado` con motivo y libera el IMEI para registrarlo bien, con Nueva compra o con Compraventa usados. Los equipos que entraron por compra o contrato se anulan desde su origen.
+
+## 31. Comprar sin mover la caja
+
+- **Proveedor:** Nueva compra → «A crédito». No sale dinero de la caja y queda como deuda, que se paga luego con «Abonar».
+- **Compraventa usados:** casilla «No descontar de la caja» (`outsideCash`). Es para cuando el pago se hizo con dinero que no está en la caja (del dueño o de la cuenta). No exige caja abierta ni registra egreso, y el equipo entra igual al inventario con su costo. En la lista aparece «Fuera de caja».
+- Al vender el equipo, el dinero entra a la caja normalmente y la ganancia se calcula con el costo de compra.
