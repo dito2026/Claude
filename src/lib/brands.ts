@@ -4,17 +4,17 @@
 import { normalize } from './format';
 
 export const BRANDS = [
-  'Samsung', 'Apple', 'Xiaomi', 'Motorola', 'Huawei', 'Honor', 'Oppo', 'Vivo', 'Realme', 'Tecno', 'Infinix',
+  'Samsung', 'Apple', 'Xiaomi', 'Redmi', 'Motorola', 'Huawei', 'Honor', 'Oppo', 'Vivo', 'Realme', 'Tecno', 'Infinix',
   'ZTE', 'Nokia', 'Alcatel', 'OnePlus', 'Google', 'Sony', 'LG', 'Itel', 'Blu', 'Lenovo', 'Asus', 'TCL', 'Nothing',
 ];
 
 /** Sub-marcas que se agrupan bajo la marca comercial. */
 const ALIASES: Record<string, string> = {
-  iphone: 'Apple', ipad: 'Apple', redmi: 'Xiaomi', poco: 'Xiaomi', mi: 'Xiaomi', galaxy: 'Samsung',
+  iphone: 'Apple', ipad: 'Apple', poco: 'Xiaomi', mi: 'Xiaomi', galaxy: 'Samsung',
   moto: 'Motorola', 'motorola moto': 'Motorola', huwei: 'Huawei', 'one plus': 'OnePlus', pixel: 'Google',
 };
 
-/** Escribe la marca siempre igual: «samsung», «SAMSUNG» o «Redmi» → «Samsung» / «Xiaomi». */
+/** Escribe la marca siempre igual: «samsung», «SAMSUNG» o «Poco» → «Samsung» / «Xiaomi». */
 export function canonicalBrand(raw: string | undefined): string {
   const s = (raw ?? '').trim();
   if (!s) return '';

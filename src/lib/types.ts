@@ -454,3 +454,14 @@ export interface Seller extends BaseDoc {
   lines?: string[];
   userId?: string;
 }
+
+// ---------------- Recordatorios ----------------
+export interface Reminder extends BaseDoc {
+  text: string;
+  /** fecha y hora del recordatorio (ISO); vacío = sin fecha */
+  dueAt?: string;
+  done: boolean;
+  doneAt?: string;
+  doneBy?: string;
+  createdByName: string;
+}

@@ -5,6 +5,7 @@ import {
   Receipt, Smartphone, TrendingDown, TrendingUp, Wallet, Wrench,
 } from 'lucide-react';
 import { AlertsCenter } from '../components/AlertsCenter';
+import { RemindersCard } from '../components/Reminders';
 import { DailyProfitCard } from '../components/DailyProfit';
 import { ChartCard, ColumnChart, HBarChart, Legend, LineChart, compactMoney, plain, type ChartTable } from '../components/charts';
 import { dailySummaryText } from '../services/automation';
@@ -162,6 +163,7 @@ export function Dashboard() {
       />
 
       {finance && <AlertsCenter admin={can('settings')} />}
+      <RemindersCard />
 
       {finance && (
         <div className="kpis mt">

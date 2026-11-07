@@ -111,6 +111,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ---- Recordatorios: los crea, marca y elimina cualquiera del personal ----
+    match /reminders/{id} {
+      allow read, create, update, delete: if isStaff();
+    }
+
     match /tickets/{id} {
       allow read, create, update: if isStaff();
       allow delete: if isAdmin();

@@ -469,3 +469,8 @@ el servidor reintenta con su modelo de respaldo.
 
 - **Compras → lista:** ahora arranca en «Todas». Antes arrancaba en «Por pagar» y escondía las compras de contado ya pagadas. Al buscar se revisan todas, sin importar el filtro.
 - **Inventario → Celulares (IMEI):** «Compra C-0047» es un enlace que abre esa compra (`/compras?compra=<id>`), para verla o anularla. «Contrato compraventa N.º …» lleva a Compraventa usados.
+
+## 33. Redmi como marca y recordatorios
+
+- **Redmi** es ahora una marca propia en la lista de marcas, los filtros y la detección por nombre («Redmi Note 13» → Redmi). Antes se agrupaba en Xiaomi. Los registros viejos que ya decían «Xiaomi» siguen igual. Poco y Mi siguen bajo Xiaomi.
+- **Recordatorios** (`reminders`, tarjeta en el Panel para todo el personal): texto con fecha y hora opcional, y atajos «En 1 hora», «Hoy 5 p. m.» y «Mañana 9 a. m.». Se marcan como hechos (y se pueden volver a pendientes) y se eliminan uno por uno o todos los hechos a la vez. Los vencidos se resaltan en rojo y se cuentan en el título. Entran en el respaldo. Regla: cualquier usuario activo los lee, crea, marca y elimina.

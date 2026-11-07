@@ -564,3 +564,28 @@ table.table { width: 100%; border-collapse: collapse; }
   body.print-letter .contract-signs { grid-template-columns: 1fr 1fr; gap: 40px; }
 }
 .app-version { color: #525252 !important; font-size: 10px !important; margin-top: 2px; }
+
+/* ---------------- Recordatorios ---------------- */
+.rem-form { display: flex; gap: 8px; padding: 14px 20px 6px; flex-wrap: wrap; }
+.rem-form .grow { min-width: 200px; flex: 1; }
+.rem-date { width: 210px; flex-shrink: 0; }
+.rem-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 20px 12px; }
+.reminder { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-top: 1px solid var(--line); }
+.reminder.vencido { background: var(--red-soft); }
+.reminder.hecho .rem-text { text-decoration: line-through; color: var(--text-3); }
+.rem-check {
+  width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid var(--line-strong); background: var(--surface);
+  display: grid; place-items: center; cursor: pointer; flex-shrink: 0; color: #fff; padding: 0;
+}
+.rem-check:hover { border-color: var(--text); }
+.rem-check.on { background: var(--ok); border-color: var(--ok); }
+.rem-text { font-size: 14px; overflow-wrap: anywhere; }
+.rem-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--text-3); font-size: 12px; margin-top: 2px; }
+.rem-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.rem-done-bar { display: flex; justify-content: space-between; padding: 6px 12px; border-top: 1px solid var(--line); }
+@media (max-width: 520px) {
+  .rem-form { padding: 12px 14px 6px; }
+  .rem-date { width: 100%; }
+  .rem-form .btn { width: 100%; }
+  .rem-quick, .reminder { padding-left: 14px; padding-right: 14px; }
+}
