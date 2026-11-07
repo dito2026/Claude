@@ -563,3 +563,4 @@ table.table { width: 100%; border-collapse: collapse; }
   body.print-letter .contract { max-width: none; padding: 8mm 10mm; }
   body.print-letter .contract-signs { grid-template-columns: 1fr 1fr; gap: 40px; }
 }
+.app-version { color: #525252 !important; font-size: 10px !important; margin-top: 2px; }

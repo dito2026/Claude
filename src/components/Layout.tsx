@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import type { Permission } from '../auth/permissions';
+import { APP_VERSION } from '../version';
 import { backend } from '../data';
 import { ROLE_LABEL } from '../services/staff';
 import { useOnline } from './ui';
@@ -102,6 +103,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="who">
             {profile?.name}
             <small>{profile ? ROLE_LABEL[profile.role] : ''}</small>
+            <small className="app-version" title="Versión publicada">v {APP_VERSION}</small>
           </div>
           <button className="icon-btn" title="Cerrar sesión" onClick={() => void signOut()}><LogOut size={16} /></button>
         </div>
