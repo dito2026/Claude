@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { FileText, Plus, Printer, ShieldCheck, Smartphone } from 'lucide-react';
-import { useCollection } from '../data/hooks';
-import type { BusinessSettings, PhoneUnit, Product, UsedPurchase, UsedSeller } from '../lib/types';
+import { useCollection, useDocument } from '../data/hooks';
+import type { BusinessSettings, CashMovement, PhoneUnit, Product, UsedPurchase, UsedSeller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { useSettings } from '../services/settings';
-import { buyUsedPhone, findPhoneProduct, pesosInWords, type UsedDraft } from '../services/used';
+import { buyUsedPhone, findPhoneProduct, moveUsedOutsideCash, pesosInWords, type UsedDraft } from '../services/used';
+import type { CashState } from '../services/cash';
 import { imeiError, normalizeImei } from '../services/phones';
 import { BrandInput, ModelInput } from '../components/BrandModel';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Stat, printNow, useAction } from '../components/ui';
@@ -282,6 +283,13 @@ function printContract(c: UsedPurchase) {
 }
 
 function ContractModal({ c, s, onClose }: { c: UsedPurchase; s: BusinessSettings; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const movements = useCollection<CashMovement>('cashMovements').rows;
+  const cash = useDocument<CashState & { id: string }>('meta', 'cash').doc;
+  const live = useCollection<UsedPurchase>('usedPurchases').rows.find((x) => x.id === c.id) ?? c;
+  const paid = movements.find((m) => m.refId === c.id && m.direction === 'egreso');
+  const canReturn = !live.outsideCash && !!paid && paid.sessionId === cash?.openSessionId;
   return (
     <Modal wide title={`Contrato de compraventa N.º ${pad(c.number, 4)}`} onClose={onClose}
       footer={<>
@@ -289,6 +297,17 @@ function ContractModal({ c, s, onClose }: { c: UsedPurchase; s: BusinessSettings
         <button className="btn ghost" onClick={onClose}>Cerrar</button>
         <button className="btn primary" onClick={() => printContract(c)}><Printer size={16} />Imprimir / PDF</button>
       </>}>
+      {live.outsideCash ? (
+        <div className="alert info no-print" style={{ marginBottom: 14 }}><div>
+          Pagado por fuera de la caja{live.cashReversedAt ? ` · el descuento de la caja se devolvió el ${new Date(live.cashReversedAt).toLocaleString('es-CO')} (${live.cashReversedBy})` : ''}.
+        </div></div>
+      ) : paid && (
+        <div className="alert warn no-print" style={{ marginBottom: 14, alignItems: 'center' }}>
+          <div className="grow">Este contrato descontó <b>{money(paid.amount)}</b> de la caja ({paid.method}).
+            {canReturn ? ' Si lo pagó con dinero que no estaba en la caja, devuélvalo a la caja.' : ' Ese turno ya se cerró, así que el descuento ya no se puede devolver aquí.'}</div>
+          {canReturn && <button className="btn sm" disabled={busy} onClick={() => run(() => moveUsedOutsideCash(actor, c.id, paid.id), 'Devuelto a la caja · contrato marcado «Fuera de caja»')}>No era de la caja</button>}
+        </div>
+      )}
       <UsedContract c={c} s={s} />
     </Modal>
   );

@@ -105,3 +105,23 @@ describe('compraventa pagada por fuera de la caja', () => {
     expect((await backend.list<Product>('products'))[0].stock).toBe(1);
   });
 });
+
+describe('compraventa descontada de la caja por error', () => {
+  it('devuelve el dinero a la caja y marca el contrato «Fuera de caja»', async () => {
+    const { closeSession, expectedByMethod } = await import('./cash');
+    const { moveUsedOutsideCash } = await import('./used');
+    const sid = await openSession(actor, 300000);
+    const c = await buyUsedPhone(actor, draft(), []);
+    const [out] = await backend.list<CashMovement>('cashMovements');
+    await moveUsedOutsideCash(actor, c.id, out.id);
+    const movs = await backend.list<CashMovement>('cashMovements');
+    expect(expectedByMethod({ openingCash: 300000 }, movs, ['Efectivo'])).toMatchObject({ Efectivo: 300000 });
+    expect((await backend.get<UsedPurchase>('usedPurchases', c.id))!.outsideCash).toBe(true);
+    await expect(moveUsedOutsideCash(actor, c.id, out.id)).rejects.toThrow(/ya está/);
+    // con el turno cerrado ya no se puede
+    const c2 = await buyUsedPhone(actor, draft({ device: { ...draft().device, imei: '353322112233441', imei2: '' } }), await backend.list<Product>('products'));
+    const out2 = (await backend.list<CashMovement>('cashMovements')).find((m) => m.refId === c2.id)!;
+    await closeSession(actor, sid, { Efectivo: 50000 }, { Efectivo: 50000 }, '');
+    await expect(moveUsedOutsideCash(actor, c2.id, out2.id)).rejects.toThrow(/cerró/);
+  });
+});

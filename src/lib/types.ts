@@ -432,6 +432,9 @@ export interface UsedPurchase extends BaseDoc {
   imeiVerified: boolean;
   /** pagado con dinero que no está en la caja (no se registró egreso) */
   outsideCash?: boolean;
+  /** se había descontado de la caja por error y luego se devolvió */
+  cashReversedAt?: string;
+  cashReversedBy?: string;
   productId: string;
   productName: string;
   createdByName: string;

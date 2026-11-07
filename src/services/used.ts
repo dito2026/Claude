@@ -2,14 +2,14 @@
 // En una sola transacción: contrato numerado, equipo al inventario por IMEI (USADO),
 // kardex «compra» y egreso de la caja abierta.
 import { backend } from '../data';
-import type { Product, UsedPurchase, UsedSeller } from '../lib/types';
+import type { CashMovement, Product, UsedPurchase, UsedSeller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { normalize } from '../lib/format';
 import { canonicalBrand } from '../lib/brands';
-import { BusinessError, created, readNext, writeCounter, type Actor } from './common';
+import { BusinessError, created, readNext, touched, writeCounter, type Actor } from './common';
 import { moveStock, nextSku } from './inventory';
 import { assertImeisFree, cleanUnits, writeUnits } from './phones';
-import { requireOpenSession, writeMovement } from './cash';
+import { requireOpenSession, writeMovement, type CashState } from './cash';
 
 export interface UsedDraft {
   date: string;
@@ -113,6 +113,37 @@ export async function buyUsedPhone(actor: Actor, d: UsedDraft, products: Product
       refId: cid,
     });
     return { ...contract, id: cid } as UsedPurchase;
+  });
+}
+
+/**
+ * El contrato descontó de la caja, pero se pagó con dinero de afuera: devuelve ese valor a la caja
+ * (reintegro «Pago a proveedor») y deja el contrato como «Fuera de caja».
+ * Solo mientras siga abierto el turno en que se registró; si ya se cerró, la diferencia quedó en ese arqueo.
+ */
+export async function moveUsedOutsideCash(actor: Actor, contractId: string, movementId: string) {
+  return backend.transaction(async (tx) => {
+    const c = await tx.get<UsedPurchase>('usedPurchases', contractId);
+    if (!c) throw new BusinessError('Contrato no encontrado.');
+    if (c.outsideCash) throw new BusinessError('Este contrato ya está como «Fuera de caja».');
+    const m = await tx.get<CashMovement>('cashMovements', movementId);
+    if (!m || m.refId !== contractId || m.direction !== 'egreso') throw new BusinessError('No se encontró el pago de este contrato en la caja.');
+    const st = await tx.get<CashState>('meta', 'cash');
+    if (st?.openSessionId !== m.sessionId) {
+      throw new BusinessError('Ese pago es de un turno que ya se cerró: la diferencia quedó en ese arqueo y ya no se puede devolver aquí.');
+    }
+    // ---- escrituras ----
+    writeMovement(tx, actor, m.sessionId, {
+      direction: 'ingreso',
+      category: 'pago_proveedor',
+      method: m.method,
+      amount: m.amount,
+      description: `Reintegro: compraventa N.º ${c.number} pagada por fuera de la caja`,
+      refType: 'usedPurchase',
+      refId: contractId,
+    });
+    const now = new Date().toISOString();
+    tx.update('usedPurchases', contractId, { outsideCash: true, cashReversedAt: now, cashReversedBy: actor.name, ...touched() });
   });
 }
 

@@ -168,7 +168,12 @@ service cloud.firestore {
     // Contratos de compraventa de usados: solo se agregan
     match /usedPurchases/{id} {
       allow read, create: if isCashier();
-      allow update, delete: if false;
+      // solo para marcarlo «Fuera de caja» (cuando se descontó de la caja por error)
+      allow update: if isCashier()
+        && resource.data.get('outsideCash', false) == false
+        && request.resource.data.outsideCash == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['outsideCash', 'cashReversedAt', 'cashReversedBy', 'updatedAt']);
+      allow delete: if false;
     }
 
     // Libro de caja: solo se agregan registros. Única excepción: corregir un gasto,
