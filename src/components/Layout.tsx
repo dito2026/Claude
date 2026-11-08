@@ -71,10 +71,34 @@ function useTheme() {
   return [theme, toggle] as const;
 }
 
+// Tamaño de letra por equipo: Normal · Grande · Muy grande
+export const FONT_SCALES = [
+  { value: 1, label: 'Normal' },
+  { value: 1.15, label: 'Grande' },
+  { value: 1.3, label: 'Muy grande' },
+] as const;
+function useFontScale() {
+  const [scale, setScale] = useState<number>(() => {
+    try { return Number(localStorage.getItem('dcpro:fontScale')) || 1; } catch { return 1; }
+  });
+  useEffect(() => {
+    document.documentElement.style.setProperty('--fs-scale', String(scale));
+  }, [scale]);
+  const next = () => setScale((s) => {
+    const i = FONT_SCALES.findIndex((f) => f.value === s);
+    const n = FONT_SCALES[(i + 1) % FONT_SCALES.length].value;
+    try { localStorage.setItem('dcpro:fontScale', String(n)); } catch { /* sin almacenamiento */ }
+    return n;
+  });
+  return [scale, next] as const;
+}
+
 export function Layout({ children }: { children: ReactNode }) {
   const { profile, can, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const [theme, toggleTheme] = useTheme();
+  const [fontScale, nextFontScale] = useFontScale();
+  const fontLabel = FONT_SCALES.find((f) => f.value === fontScale)?.label ?? 'Normal';
   const online = useOnline();
   const aiOn = useAiEnabled();
   const loc = useLocation();
@@ -130,6 +154,11 @@ export function Layout({ children }: { children: ReactNode }) {
           ) : (
             <span className="pill cloud"><span className="dot" />Nube conectada</span>
           )}
+          <button className={`font-btn ${fontScale > 1 ? 'on' : ''}`} onClick={nextFontScale}
+            title={`Tamaño de letra: ${fontLabel} (toque para cambiar)`} aria-label={`Tamaño de letra: ${fontLabel}. Cambiar`}>
+            <span style={{ fontSize: 11 }}>A</span><span style={{ fontSize: 16 }}>A</span>
+            <small>{fontLabel}</small>
+          </button>
           <button className="icon-btn" onClick={toggleTheme} title="Cambiar tema">
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>

@@ -500,3 +500,9 @@ el servidor reintenta con su modelo de respaldo.
 - Se suman a las **sugerencias** de marca y modelo (`useBrandModels`) en órdenes, productos, compras y compraventa, junto con los modelos ya registrados (sin repetir). No crean productos. Los **filtros** siguen mostrando solo lo que hay en los datos.
 - `canonicalModel` respeta «iPhone» e «iPad» (con i minúscula).
 - Para agregar modelos nuevos, se editan las listas del archivo. Cualquier modelo escrito a mano también queda como sugerencia.
+
+## 38. Tamaño de letra
+
+- **Botón «Aa»** en la barra superior: cambia entre **Normal (100 %)**, **Grande (115 %)** y **Muy grande (130 %)**. Se guarda en cada equipo (`dcpro:fontScale`) y se aplica antes de pintar la app (`main.tsx`).
+- Todas las medidas de letra de `styles.css` y `design-system.css` usan `calc(Npx * var(--fs-scale))`. Solo crece el texto, no el diseño. Los comprobantes y contratos impresos (`.receipt`, `.contract`) no cambian.
+- Se revisaron Panel, Inventario, Facturación, Caja, Taller, Remisiones y Compraventa en computador y celular con los tres tamaños: no se sale nada de la pantalla.

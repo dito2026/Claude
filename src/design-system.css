@@ -11,14 +11,14 @@
   --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-12: 48px; --sp-16: 64px;
 
   /* Tipografía: escala modular (base 14 px) */
-  --fs-2xs: 11px;  /* solo etiquetas en MAYÚSCULAS */
-  --fs-xs: 12px;   /* ayudas, metadatos */
-  --fs-sm: 13px;   /* tablas densas, botones pequeños */
-  --fs-md: 14px;   /* texto base */
-  --fs-lg: 16px;   /* títulos de tarjeta y modal */
-  --fs-xl: 20px;   /* cifras secundarias */
-  --fs-2xl: 24px;  /* títulos de página */
-  --fs-3xl: 28px;  /* cifras principales (KPI) */
+  --fs-2xs: calc(11px * var(--fs-scale, 1));  /* solo etiquetas en MAYÚSCULAS */
+  --fs-xs: calc(12px * var(--fs-scale, 1));   /* ayudas, metadatos */
+  --fs-sm: calc(13px * var(--fs-scale, 1));   /* tablas densas, botones pequeños */
+  --fs-md: calc(14px * var(--fs-scale, 1));   /* texto base */
+  --fs-lg: calc(16px * var(--fs-scale, 1));   /* títulos de tarjeta y modal */
+  --fs-xl: calc(20px * var(--fs-scale, 1));   /* cifras secundarias */
+  --fs-2xl: calc(24px * var(--fs-scale, 1));  /* títulos de página */
+  --fs-3xl: calc(28px * var(--fs-scale, 1));  /* cifras principales (KPI) */
   --lh-tight: 1.2; --lh-snug: 1.35; --lh-normal: 1.5;
   --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 650;
 
@@ -61,6 +61,17 @@
 }
 
 /* ---------- 2. Base ---------- */
+/* Tamaño de letra (botón «Aa»): --fs-scale = 1 · 1.15 · 1.3. Los comprobantes impresos no cambian. */
+:root { --fs-scale: 1; }
+.receipt, .contract { --fs-scale: 1; }
+.font-btn {
+  display: inline-flex; align-items: center; gap: 2px; height: 36px; padding: 0 var(--sp-3);
+  border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  font-weight: var(--fw-semibold); cursor: pointer; font-family: var(--font); line-height: 1;
+}
+.font-btn small { font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--text-2); margin-left: 6px; }
+.font-btn.on { border-color: var(--red-line); background: var(--red-soft); }
+@media (max-width: 520px) { .font-btn small { display: none; } }
 body { font-size: var(--fs-md); line-height: var(--lh-normal); text-rendering: optimizeLegibility; }
 h1 { font-size: var(--fs-2xl); line-height: var(--lh-tight); }
 h2 { font-size: var(--fs-xl); line-height: var(--lh-tight); }
@@ -160,7 +171,7 @@ textarea.input { padding: var(--sp-2) var(--sp-3); }
   .btn { min-height: 44px; }
   .btn.sm { min-height: 40px; }
   .icon-btn { width: 44px; height: 44px; }
-  .input, select.input { min-height: 44px; font-size: 16px; } /* 16 px evita el zoom de iPhone */
+  .input, select.input { min-height: 44px; font-size: calc(16px * var(--fs-scale, 1)); } /* 16 px evita el zoom de iPhone */
   .seg button { min-height: 36px; }
   .cat-chip { min-height: 36px; }
   .checkbox input { width: 20px; height: 20px; }
