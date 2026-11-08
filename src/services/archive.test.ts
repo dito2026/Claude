@@ -18,7 +18,7 @@ describe('eliminar productos del inventario', () => {
     expect(p).toMatchObject({ archived: true, active: false, stock: 0, archivedBy: 'Jairo', archiveReason: 'ya no se vende' });
     expect(isLowStock(p)).toBe(false);
     const k = (await backend.list<StockMovement>('stockMovements')).filter((m) => m.productId === id);
-    expect(k.at(-1)).toMatchObject({ qty: -4, reason: 'ajuste' });
+    expect(k[k.length - 1]).toMatchObject({ qty: -4, reason: 'ajuste' });
     await expect(archiveProduct(actor, id, 'otra vez')).rejects.toThrow(/ya está/);
     await restoreProduct(id);
     expect((await backend.get<Product>('products', id))!).toMatchObject({ archived: false, active: true, stock: 0 });
