@@ -397,7 +397,7 @@ function History() {
         {list.length === 0 ? <Empty>Sin comprobantes.</Empty> : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>N.º</th><th>Fecha</th><th>Cliente</th><th>Origen</th><th>Categorías</th><th>Medios</th><th>Vendedor</th><th>Estado</th><th className="num">Total</th><th /></tr></thead>
+              <thead><tr><th>N.º</th><th>Fecha</th><th>Cliente</th><th>Origen</th><th>Productos</th><th>Medios</th><th>Vendedor</th><th>Estado</th><th className="num">Total</th><th /></tr></thead>
               <tbody>
                 {list.map((i) => (
                   <tr key={i.id} className="click" onClick={() => setView(i)}>
@@ -405,12 +405,14 @@ function History() {
                     <td className="nowrap">{dateTime(i.createdAt)}</td>
                     <td>{i.customer.name || 'Consumidor final'}</td>
                     <td>{i.repairOrderNumber ? <span className="mono">OT {pad(i.repairOrderNumber)}</span> : 'Venta directa'}</td>
-                    <td>
-                      <div className="row gap-sm" style={{ gap: 4 }}>
-                        {sortCategories(byCat.get(i.id)?.keys() ?? []).map((c) => (
-                          <span key={c} className={`badge plain ${c === cat ? 'dark' : ''}`} title={money(byCat.get(i.id)!.get(c))}>{c}</span>
-                        ))}
-                      </div>
+                    <td className="sold-items" title={i.items.map((it) => `${it.qty}× ${it.description}${it.imei ? ` (IMEI ${it.imei})` : ''} · ${money(it.qty * it.unitPrice)}`).join('\n')}>
+                      {i.items.slice(0, 3).map((it, k) => (
+                        <div key={k}>
+                          {it.qty > 1 && <b>{it.qty}× </b>}{it.description}
+                          {it.imei && <small className="mono">IMEI {it.imei}</small>}
+                        </div>
+                      ))}
+                      {i.items.length > 3 && <small>y {i.items.length - 3} más…</small>}
                     </td>
                     <td>{i.payments.map((p) => p.method).join(', ') || (i.depositsApplied ? 'Abonos' : '—')}</td>
                     <td>{i.sellerName ? <>{i.sellerName}<small>Comisión {money(i.commission)}</small></> : <span className="faint">—</span>}</td>

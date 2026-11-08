@@ -589,3 +589,5 @@ table.table { width: 100%; border-collapse: collapse; }
   .rem-form .btn { width: 100%; }
   .rem-quick, .reminder { padding-left: 14px; padding-right: 14px; }
 }
+.sold-items { min-width: 200px; max-width: 320px; font-size: 13px; line-height: 1.35; }
+.sold-items > div + div { margin-top: 3px; }

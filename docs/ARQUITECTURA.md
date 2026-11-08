@@ -489,3 +489,7 @@ el servidor reintenta con su modelo de respaldo.
 - **Inventario → Productos → papelera** (solo administrador, `archiveProduct`): pide un motivo. El producto queda `archived` e inactivo, y deja de verse en inventario, ventas, compras, remisiones y alertas. No se borra, porque facturas, órdenes y kardex lo nombran.
 - Si tenía stock, se da de baja con un **ajuste** en el kardex («Eliminado del inventario: motivo»). Un celular (EQUIPO) con IMEI en inventario no se puede eliminar: primero hay que venderlo o anular su ingreso.
 - **Eliminados (n):** lista los productos eliminados con quién y por qué, y tiene el botón **Recuperar** (`restoreProduct`, queda activo con stock 0).
+
+## 36. Productos en el historial de facturación
+
+- **Facturación → Historial:** la columna «Categorías» pasó a ser **«Productos»**. Muestra las primeras 3 líneas de cada comprobante (cantidad, nombre e IMEI) y «y N más…». Al pasar el mouse se ve el detalle completo con valores. El filtro por categoría y su total se mantienen.
