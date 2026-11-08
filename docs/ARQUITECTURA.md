@@ -493,3 +493,10 @@ el servidor reintenta con su modelo de respaldo.
 ## 36. Productos en el historial de facturación
 
 - **Facturación → Historial:** la columna «Categorías» pasó a ser **«Productos»**. Muestra las primeras 3 líneas de cada comprobante (cantidad, nombre e IMEI) y «y N más…». Al pasar el mouse se ve el detalle completo con valores. El filtro por categoría y su total se mantienen.
+
+## 37. Catálogo de modelos comerciales
+
+- `src/lib/phoneModels.ts` tiene unos 400 modelos de celulares de las marcas que se venden en Colombia: Samsung, Apple, Xiaomi/Poco, Redmi, Motorola, Honor, Huawei, Oppo, Vivo, Realme, Tecno, Infinix, ZTE, Nokia, Google y OnePlus.
+- Se suman a las **sugerencias** de marca y modelo (`useBrandModels`) en órdenes, productos, compras y compraventa, junto con los modelos ya registrados (sin repetir). No crean productos. Los **filtros** siguen mostrando solo lo que hay en los datos.
+- `canonicalModel` respeta «iPhone» e «iPad» (con i minúscula).
+- Para agregar modelos nuevos, se editan las listas del archivo. Cualquier modelo escrito a mano también queda como sugerencia.

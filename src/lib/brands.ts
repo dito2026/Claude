@@ -39,7 +39,10 @@ export function brandFromText(text: string | undefined): string {
 /** Modelo escrito de forma uniforme (espacios y mayúscula inicial). */
 export function canonicalModel(raw: string | undefined): string {
   const s = (raw ?? '').trim().replace(/\s+/g, ' ');
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+  if (!s) return '';
+  // «iPhone», «iPad»: la i minúscula es parte del nombre comercial
+  if (/^i(phone|pad)/i.test(s)) return 'i' + s.charAt(1).toUpperCase() + s.slice(2);
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export type BrandModels = Map<string, string[]>;

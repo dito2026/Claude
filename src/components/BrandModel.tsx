@@ -3,12 +3,16 @@ import { X } from 'lucide-react';
 import { useCollection } from '../data/hooks';
 import type { PhoneUnit, Product, RepairOrder } from '../lib/types';
 import { brandFromText, buildBrandModels, canonicalBrand, type BrandModels } from '../lib/brands';
+import { commercialPairs } from '../lib/phoneModels';
 
-/** Marca → modelos con lo que ya hay en órdenes, productos y celulares. */
+const COMMERCIAL = commercialPairs();
+
+/** Marca → modelos: catálogo comercial + lo que ya hay en órdenes, productos y celulares. */
 export function useBrandModels(): BrandModels {
   const orders = useCollection<RepairOrder>('repairOrders').rows;
   const products = useCollection<Product>('products').rows;
   return useMemo(() => buildBrandModels([
+    ...COMMERCIAL,
     ...orders.map((o) => ({ brand: o.device.brand, model: o.device.model })),
     ...products.filter((p) => p.type === 'EQUIPO').map((p) => ({ brand: p.brand || brandFromText(p.name), model: p.name })),
     ...products.filter((p) => p.type !== 'EQUIPO').map((p) => ({ brand: p.brand, model: p.model })),

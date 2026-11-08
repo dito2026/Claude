@@ -946,3 +946,18 @@ describe('ganancias diarias', () => {
     expect(days[1]).toMatchObject({ sales: 0, net: 0 });
   });
 });
+
+describe('modelos comerciales', () => {
+  it('sugiere modelos de cada marca aunque no estén registrados, sin repetir', async () => {
+    const { buildBrandModels, canonicalModel } = await import('../lib/brands');
+    const { commercialPairs, COMMERCIAL_MODELS } = await import('../lib/phoneModels');
+    const m = buildBrandModels([...commercialPairs(), { brand: 'samsung', model: 'galaxy a15' }, { brand: 'apple', model: 'iphone 15 pro max' }]);
+    expect(m.get('Samsung')).toContain('Galaxy A15');
+    expect(m.get('Samsung')!.filter((x) => x === 'Galaxy A15')).toHaveLength(1);
+    expect(m.get('Apple')).toContain('iPhone 15 Pro Max');
+    expect(m.get('Apple')!.filter((x) => x.toLowerCase() === 'iphone 15 pro max')).toHaveLength(1);
+    expect(m.get('Redmi')).toContain('Note 13 Pro');
+    expect(canonicalModel('iphone 13')).toBe('iPhone 13');
+    for (const b of Object.keys(COMMERCIAL_MODELS)) expect(m.has(b)).toBe(true);
+  });
+});
