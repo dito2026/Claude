@@ -120,14 +120,46 @@ export function nextSku(type: Product['type'], products: Pick<Product, 'sku'>[])
   return `${prefix}-${String(max + 1).padStart(4, '0')}`;
 }
 
-/** Tipo probable según el nombre (solo para sugerir al crear). */
+// Palabras por tipo (texto en minúsculas y sin tildes; se aceptan plurales).
+const SERVICE_RE = /\b(revision|diagnostico|software|desbloqueo|instalacion|cambio de|mano de obra|actualizacion|limpieza|reparacion|formateo|liberacion)\b/;
+/** Accesorios: lo que se vende en vitrina (sim cards, audífonos, vidrios, forros, gomas, lentes…). */
+export const ACCESSORY_RE = new RegExp('\\b(' + [
+  'sim ?cards?', 'sims?', 'chips?', 'recargas?',
+  'audifonos?', 'auriculares? inalambricos?', 'inalambricos?', 'buds', 'earbuds', 'airpods', 'manos libres', 'diademas?', 'parlantes?', 'bafles?', 'speakers?',
+  'vidrios?', 'templados?', 'blindados?', 'anti ?espias?', 'privacidad', 'hidrogel', 'micas?', 'protector(es)?', 'lentes?',
+  'forros?', 'fundas?', 'estuches?', 'silicon(a|as)?', 'gomas?', 'cases?', 'covers?', 'bumpers?',
+  'cargador(es)?', 'adaptador(es)?', 'power ?banks?', 'bateria externa', 'baterias externas',
+  'soportes?', 'holders?', 'popsockets?', 'selfie', 'tripodes?', 'relojes', 'reloj', 'smartwatch', 'correas?', 'manillas?', 'pulseras?',
+].join('|') + ')\\b');
+const REPAIR_RE = /\b(pantallas?|display|baterias?|flex|puertos?|pin de carga|tapas?|camaras?|visor|tactil|botones|boton|altavoz|auricular|parlante interno|marco|chasis|placa)\b/;
+const PHONE_RE = /\b(iphone|galaxy|redmi|poco|moto g|moto e|honor|realme|celular|telefono)\b/;
+const WEAK_ACCESSORY_RE = /\b(cables?|usb|memorias?|micro ?sd|pendrives?)\b/;
+const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/**
+ * Tipo probable según el nombre (solo para sugerir al crear). Orden:
+ * servicio («cambio de…») → accesorio (vidrio, forro, simcard, audífonos…) → repuesto (pantalla, batería…)
+ * → celular (iPhone 13 128GB) → cable/USB/memoria como accesorio.
+ */
 export function guessType(name: string): Product['type'] | null {
-  const n = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  if (/\b(pantalla|display|bateria|flex|puerto|pin de carga|tapa|camara|visor|tactil|boton|altavoz|auricular)\b/.test(n) && !/\b(cambio|instalacion|servicio)\b/.test(n)) return 'REPUESTO';
-  if (/\b(iphone|galaxy|redmi|poco|moto g|moto e|honor|realme|celular|telefono)\b/.test(n) && /\b(\d+ ?gb|pro|max|ultra|plus|lite|\d{2,3})\b/.test(n)) return 'EQUIPO';
-  if (/\b(revision|diagnostico|software|desbloqueo|instalacion|cambio de|mano de obra|actualizacion|limpieza)\b/.test(n)) return 'SERVICIO';
-  if (/\b(cargador|cable|forro|estuche|vidrio|protector|audifono|parlante|memoria|soporte|reloj|sim)\b/.test(n)) return 'ACCESORIO';
+  const n = norm(name);
+  if (SERVICE_RE.test(n)) return 'SERVICIO';
+  if (ACCESSORY_RE.test(n)) return 'ACCESORIO';
+  if (REPAIR_RE.test(n)) return 'REPUESTO';
+  if (PHONE_RE.test(n) && /\b(\d+ ?gb|pro|max|ultra|plus|lite|\d{2,3})\b/.test(n)) return 'EQUIPO';
+  if (WEAK_ACCESSORY_RE.test(n)) return 'ACCESORIO';
   return null;
+}
+
+/** Productos guardados con otro tipo que por su nombre son accesorios (para corregirlos de una vez). */
+export const looksMisclassifiedAccessory = (p: Product) =>
+  !p.archived && p.type !== 'ACCESORIO' && p.type !== 'SERVICIO' && !(p.type === 'EQUIPO' && (Number(p.stock) || 0) > 0)
+  && guessType(p.name) === 'ACCESORIO';
+
+/** Pasa productos a ACCESORIO (línea «Accesorios»). Corrige también los informes viejos, que usan el tipo del producto. */
+export async function convertToAccessory(productIds: string[]) {
+  if (productIds.length === 0) throw new BusinessError('Seleccione al menos un producto.');
+  for (const id of productIds) await backend.update('products', id, { type: 'ACCESORIO', line: 'Accesorios', trackStock: true, ...touched() });
 }
 
 /** Precio sugerido: costo + margen, redondeado hacia arriba a miles. */

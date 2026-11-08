@@ -11,7 +11,7 @@ import { DEFAULT_CATEGORIES, categoryOf, guessCategory, sortCategories } from '.
 import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
 import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
 
-import { adjustStock, archiveProduct, restoreProduct, guessType, isLowStock, nextSku, receiveStock, saveProduct, suggestedPrice, tracksStock, type ProductInput } from '../services/inventory';
+import { adjustStock, archiveProduct, convertToAccessory, looksMisclassifiedAccessory, restoreProduct, guessType, isLowStock, nextSku, receiveStock, saveProduct, suggestedPrice, tracksStock, type ProductInput } from '../services/inventory';
 import { useSettings } from '../services/settings';
 import { canonicalBrand } from '../lib/brands';
 
@@ -47,6 +47,8 @@ export function Inventory() {
   const [archiving, setArchiving] = useState<Product | null>(null);
   const { run } = useAction();
   const archivedCount = products.filter((p) => p.archived).length;
+  const misclassified = useMemo(() => products.filter(looksMisclassifiedAccessory), [products]);
+  const [fixing, setFixing] = useState(false);
   const categories = useMemo(() => sortCategories(products.map(categoryOf)), [products]);
   const pBrand = (p: Product) => p.brand || brandFromText(p.name);
   const pModel = (p: Product) => (p.type === 'EQUIPO' ? p.name : p.model);
@@ -103,6 +105,13 @@ export function Inventory() {
               </button>
             )}
           </div>
+          {!showArchived && misclassified.length > 0 && can('inventory.edit') && (
+            <div className="alert warn" style={{ marginBottom: 14, alignItems: 'center' }}>
+              <div className="grow"><b>{misclassified.length}</b> producto(s) parecen <b>accesorios</b> pero están guardados como repuesto o celular
+                (por ejemplo «{misclassified[0].name}»). Así se cuentan mal en Contabilidad y en el Panel.</div>
+              <button className="btn sm" onClick={() => setFixing(true)}>Revisar y corregir</button>
+            </div>
+          )}
           {showArchived && <div className="alert info" style={{ marginBottom: 14 }}><div>Productos eliminados: no aparecen en ventas, compras ni inventario. Se guardan por el historial y se pueden <b>recuperar</b>.</div></div>}
           <div className="card">
             {loading ? <SkeletonRows /> : list.length === 0 ? <Empty>No hay productos.</Empty> : (
@@ -196,6 +205,7 @@ export function Inventory() {
 
       {edit && <ProductModal edit={edit} onClose={() => setEdit(null)} />}
       {archiving && <ArchiveModal p={archiving} onClose={() => setArchiving(null)} />}
+      {fixing && <FixAccessoriesModal list={misclassified} onClose={() => setFixing(false)} />}
       {stockOp && <StockModal {...stockOp} onClose={() => setStockOp(null)} />}
       {registering && <RegisterUnitsModal product={registering} unregistered={Math.max(0, registering.stock - availableUnits(registering.id))} onClose={() => setRegistering(null)} />}
     </>
@@ -340,6 +350,32 @@ function ArchiveModal({ p, onClose }: { p: Product; onClose: () => void }) {
           </div></div>
         )}
         <Field label="Motivo" required><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: ya no se vende · creado por error · duplicado" /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+function FixAccessoriesModal({ list, onClose }: { list: Product[]; onClose: () => void }) {
+  const { run, busy } = useAction();
+  const [sel, setSel] = useState<Set<string>>(() => new Set(list.map((p) => p.id)));
+  const toggle = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  return (
+    <Modal title="Pasar a Accesorios" onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || sel.size === 0}
+          onClick={() => run(() => convertToAccessory([...sel]), `${sel.size} producto(s) pasados a Accesorios`).then((ok) => ok && onClose())}>
+          Pasar {sel.size} a Accesorios</button></>}>
+      <div className="stack">
+        <div className="faint" style={{ fontSize: 13 }}>Desmarque lo que sí sea repuesto. El stock no cambia; las ventas viejas pasan a contarse como accesorios en Contabilidad y el Panel.</div>
+        <div className="card" style={{ maxHeight: 380, overflowY: 'auto' }}>
+          {list.map((p) => (
+            <label key={p.id} className="list-row" style={{ cursor: 'pointer' }}>
+              <input type="checkbox" checked={sel.has(p.id)} onChange={() => toggle(p.id)} style={{ accentColor: 'var(--red)', width: 18, height: 18 }} />
+              <div className="grow min0">{p.name}<small className="faint" style={{ display: 'block' }}>{p.sku} · hoy: {p.type === 'EQUIPO' ? 'Celular' : p.type === 'REPUESTO' ? 'Repuesto' : p.type}</small></div>
+              <Badge tone="ok">→ Accesorio</Badge>
+            </label>
+          ))}
+        </div>
       </div>
     </Modal>
   );

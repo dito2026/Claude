@@ -506,3 +506,11 @@ el servidor reintenta con su modelo de respaldo.
 - **Botón «Aa»** en la barra superior: cambia entre **Normal (100 %)**, **Grande (115 %)** y **Muy grande (130 %)**. Se guarda en cada equipo (`dcpro:fontScale`) y se aplica antes de pintar la app (`main.tsx`).
 - Todas las medidas de letra de `styles.css` y `design-system.css` usan `calc(Npx * var(--fs-scale))`. Solo crece el texto, no el diseño. Los comprobantes y contratos impresos (`.receipt`, `.contract`) no cambian.
 - Se revisaron Panel, Inventario, Facturación, Caja, Taller, Remisiones y Compraventa en computador y celular con los tres tamaños: no se sale nada de la pantalla.
+
+## 39. Accesorios bien clasificados
+
+- `guessType` revisa en este orden: servicio («cambio de…») → **accesorio** → repuesto (pantalla, batería, puerto…) → celular → cable/USB/memoria. Se aceptan plurales y tildes.
+- Son accesorios: sim card/simcard/chip/recarga, audífonos (también inalámbricos), buds/airpods/manos libres, vidrio/templado/blindado/antiespía/hidrogel/mica/protector/lentes, forro/funda/estuche/silicona/goma/case, cargador/adaptador/power bank, soporte/holder/popsocket, reloj/correa/manilla.
+- Antes «Silicona iPhone 13» quedaba como Celular, y «Lentes», «Protector de pantalla» o «Vidrio pantalla» como Repuesto. Simcard, audífonos, gomas, forros, recargas y antiespía no se reconocían y quedaban como Repuesto (el tipo por defecto).
+- **Inventario → aviso «parecen accesorios» → Revisar y corregir** (`looksMisclassifiedAccessory`, `convertToAccessory`): pasa los productos marcados a ACCESORIO (línea Accesorios) sin tocar el stock. Como Contabilidad y el Panel clasifican por el tipo actual del producto, las ventas viejas también pasan a contarse como accesorios.
+- Las categorías (Sim cards y recargas, Audífonos y parlantes, Vidrios y protectores, Forros y estuches) reconocen las mismas palabras.

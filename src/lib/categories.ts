@@ -14,15 +14,15 @@ export const DEFAULT_CATEGORIES = [
 ];
 
 const RULES: [RegExp, string][] = [
-  [/\b(cargador|cargadores|adaptador|power ?bank|bateria externa)\b/, 'Cargadores'],
-  [/\b(cable|cables|usb ?c|tipo c|lightning|micro ?usb)\b/, 'Cables'],
-  [/\b(forro|forros|estuche|silicona|case|funda|cover|carcasa)\b/, 'Forros y estuches'],
-  [/\b(vidrio|vidrios|blindado|protector|templado|lente|lentes|hidrogel|mica)\b/, 'Vidrios y protectores'],
-  [/\b(audifono|audifonos|buds|airpods|manos libres|diadema|parlante|parlantes|bafle|speaker)\b/, 'Audífonos y parlantes'],
-  [/\b(memoria|micro ?sd|sd|usb|pendrive)\b/, 'Memorias y USB'],
-  [/\b(reloj|smartwatch|watch|banda|manilla|pulsera)\b/, 'Relojes y bandas'],
-  [/\b(soporte|holder|base|tripode|selfie)\b/, 'Soportes y holders'],
-  [/\b(sim|simcard|recarga|chip)\b/, 'Sim cards y recargas'],
+  [/\b(cargador(es)?|adaptador(es)?|power ?banks?|baterias? externas?)\b/, 'Cargadores'],
+  [/\b(cables?|usb ?c|tipo c|lightning|micro ?usb)\b/, 'Cables'],
+  [/\b(forros?|estuches?|silicon(a|as)?|gomas?|cases?|fundas?|covers?|bumpers?|carcasas?)\b/, 'Forros y estuches'],
+  [/\b(vidrios?|blindados?|anti ?espias?|privacidad|protector(es)?|templados?|lentes?|hidrogel|micas?)\b/, 'Vidrios y protectores'],
+  [/\b(audifonos?|auriculares? inalambricos?|inalambricos?|buds|earbuds|airpods|manos libres|diademas?|parlantes?|bafles?|speakers?)\b/, 'Audífonos y parlantes'],
+  [/\b(memorias?|micro ?sd|sd|usb|pendrives?)\b/, 'Memorias y USB'],
+  [/\b(relojes|reloj|smartwatch|watch|bandas?|manillas?|pulseras?|correas?)\b/, 'Relojes y bandas'],
+  [/\b(soportes?|holders?|base|tripodes?|selfie|popsockets?)\b/, 'Soportes y holders'],
+  [/\b(sim ?cards?|sims?|recargas?|chips?)\b/, 'Sim cards y recargas'],
 ];
 
 /** Categoría que se le asigna a un producto según su nombre y tipo. */
