@@ -533,3 +533,11 @@ el servidor reintenta con su modelo de respaldo.
   - **Servicio técnico**: órdenes por estado, atrasadas, tickets abiertos, repuestos por pedir y reparaciones terminadas. El técnico solo ve sus órdenes.
   - Accesos rápidos: Vender, Comprar, Comprar usado, Remisión, Nueva orden.
 - Ninguna pantalla se quitó. Todas siguen en el menú.
+
+## 41. Contabilidad por módulo
+
+- **Contabilidad → pestaña «Por módulo»** (`moduleReport`): estado de resultados de Celulares, Accesorios y Servicio técnico lado a lado, más el total. Muestra ventas, costo, utilidad bruta, comisiones, gastos generales repartidos, utilidad neta, margen neto, participación en ventas y unidades vendidas. Abajo, los más vendidos de cada módulo con su ganancia.
+- Ventas y costo usan la misma regla que el resto de Contabilidad (`lineOf`, descuentos repartidos en proporción).
+- **Comisiones:** se reparten dentro de cada factura según lo que vendió cada módulo.
+- **Gastos generales:** se reparten según la participación en ventas. La última línea absorbe el redondeo, así los tres módulos suman exactamente el total.
+- **Exportar a Excel** (CSV) con la tabla y los más vendidos. Respeta el periodo elegido (hoy, 7 días, mes, mes anterior, año o rango).

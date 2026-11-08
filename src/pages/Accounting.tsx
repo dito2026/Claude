@@ -6,7 +6,7 @@ import { dateOnly, dateTime, money } from '../lib/format';
 import { Badge, Empty, Field, PageHead, Seg, Stat } from '../components/ui';
 import { useSettings } from '../services/settings';
 import {
-  balanceToday, buildReport, dayKey, downloadCsv, fiscalBook, fiscalSign, inPeriod, periodRange, yearSales, type PeriodKind,
+  balanceToday, buildReport, dayKey, moduleReport, downloadCsv, fiscalBook, fiscalSign, inPeriod, periodRange, yearSales, type PeriodKind,
 } from '../services/accounting';
 
 const PERIODS: { value: PeriodKind; label: string }[] = [
@@ -27,7 +27,9 @@ const pct = (v: number, total: number) => (total > 0 ? `${Math.round((v / total)
 const fmtDay = (k: string) => k.split('-').reverse().join('/');
 const isoDate = (d: Date) => dayKey(d.toISOString());
 
-type Tab = 'resultados' | 'fiscal' | 'caja' | 'balance';
+type Tab = 'resultados' | 'modulos' | 'fiscal' | 'caja' | 'balance';
+
+const MODULE_NAME: Record<string, string> = { Equipos: 'Celulares', Accesorios: 'Accesorios', 'Servicio técnico': 'Servicio técnico' };
 
 export function Accounting() {
   const invoices = useCollection<Invoice>('invoices').rows;
@@ -49,6 +51,7 @@ export function Accounting() {
 
   const report = useMemo(() => buildReport(period, { invoices, movements, products }), [period, invoices, movements, products]);
   const fiscal = useMemo(() => fiscalBook(period, movements), [period, movements]);
+  const modules = useMemo(() => moduleReport(period, { invoices, movements, products }).lines, [period, invoices, movements, products]);
   const book = useMemo(
     () => movements.filter((m) => inPeriod(m.createdAt, period)).sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
     [movements, period],
@@ -78,6 +81,25 @@ export function Accounting() {
     ['Gastos por categoría', 'Valor', '% del total'],
     ...report.expensesByCategory.map((g) => [g.category, g.amount, pct(g.amount, report.expenses)]),
     ['Total gastos', report.expenses, '100%'],
+  ]);
+
+  const MODULE_ROWS: [string, (m: (typeof modules)[number]) => number | string, number | string][] = [
+    ['Ventas', (m) => m.sales, report.income],
+    ['(−) Costo de lo vendido', (m) => -m.cost, -report.cost],
+    ['Utilidad bruta', (m) => m.gross, report.grossProfit],
+    ['(−) Comisiones de vendedores', (m) => -m.commissions, -report.commissions],
+    ['(−) Gastos generales repartidos', (m) => -m.expenses, -report.expenses],
+    ['Utilidad neta', (m) => m.net, report.netProfit],
+  ];
+  const exportModules = () => downloadCsv(`contabilidad-por-modulo_${fileTag}.csv`, [
+    ['Digital Cell · Contabilidad por módulo', label],
+    [],
+    ['Concepto', ...modules.map((m) => MODULE_NAME[m.line]), 'Total'],
+    ...MODULE_ROWS.map(([name, f, total]) => [name, ...modules.map(f), total]),
+    ['Margen neto', ...modules.map((m) => pct(m.net, m.sales)), pct(report.netProfit, report.income)],
+    ['Unidades vendidas', ...modules.map((m) => m.units), modules.reduce((a, m) => a + m.units, 0)],
+    [],
+    ...modules.flatMap((m) => [[`Más vendidos · ${MODULE_NAME[m.line]}`, 'Cantidad', 'Ventas', 'Ganancia'], ...m.top.map((t) => [t.name, t.qty, t.sales, t.profit]), []]),
   ]);
 
   const exportFiscal = () => downloadCsv(`libro-fiscal_${fileTag}.csv`, [
@@ -119,6 +141,7 @@ export function Accounting() {
 
       <div className="tabs mt">
         <button className={tab === 'resultados' ? 'active' : ''} onClick={() => setTab('resultados')}>Estado de resultados</button>
+        <button className={tab === 'modulos' ? 'active' : ''} onClick={() => setTab('modulos')}>Por módulo</button>
         <button className={tab === 'fiscal' ? 'active' : ''} onClick={() => setTab('fiscal')}>Libro fiscal diario</button>
         <button className={tab === 'caja' ? 'active' : ''} onClick={() => setTab('caja')}>Libro de caja</button>
         <button className={tab === 'balance' ? 'active' : ''} onClick={() => setTab('balance')}>Resumen del negocio</button>
@@ -190,6 +213,61 @@ export function Accounting() {
             </div>
           </div>
         </div>
+      )}
+
+      {tab === 'modulos' && (
+        <>
+          <div className="grid g3">
+            {modules.map((m) => (
+              <Stat key={m.line} label={MODULE_NAME[m.line]} value={<span className={m.net < 0 ? 'red' : ''}>{money(m.net)}</span>}
+                sub={`Utilidad neta · ventas ${money(m.sales)} · ${pct(m.net, m.sales)} de margen`} />
+            ))}
+          </div>
+          <div className="card mt">
+            <div className="card-head"><h3>Estado de resultados por módulo</h3><button className="btn sm" onClick={exportModules}><Download size={15} />Excel</button></div>
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Concepto</th>{modules.map((m) => <th key={m.line} className="num">{MODULE_NAME[m.line]}</th>)}<th className="num">Total</th></tr></thead>
+                <tbody>
+                  {MODULE_ROWS.map(([name, f, total]) => {
+                    const strong = name.startsWith('Utilidad');
+                    return (
+                      <tr key={name}>
+                        <td className={strong ? 'strong' : ''}>{name}</td>
+                        {modules.map((m) => { const v = f(m) as number; return <td key={m.line} className={`num ${strong ? 'strong' : ''} ${v < 0 ? 'red' : ''}`}>{v < 0 ? `−${money(-v)}` : money(v)}</td>; })}
+                        <td className={`num strong ${(total as number) < 0 ? 'red' : ''}`}>{(total as number) < 0 ? `−${money(-(total as number))}` : money(total as number)}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr><td>Margen neto</td>{modules.map((m) => <td key={m.line} className="num">{pct(m.net, m.sales)}</td>)}<td className="num">{pct(report.netProfit, report.income)}</td></tr>
+                  <tr><td>Participación en ventas</td>{modules.map((m) => <td key={m.line} className="num faint">{pct(m.sales, report.income)}</td>)}<td className="num faint">100%</td></tr>
+                  <tr><td>Unidades vendidas</td>{modules.map((m) => <td key={m.line} className="num">{m.units}</td>)}<td className="num">{modules.reduce((a, m) => a + m.units, 0)}</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="card-pad faint" style={{ fontSize: 12 }}>
+              Las comisiones se reparten según lo que vendió cada módulo en cada factura. Los gastos generales (arriendo, servicios…) se reparten según la participación de cada módulo en las ventas. La suma de los tres módulos da el total de Contabilidad.
+            </div>
+          </div>
+          <div className="grid g3 mt">
+            {modules.map((m) => (
+              <div key={m.line} className="card">
+                <div className="card-head"><h3>Más vendidos · {MODULE_NAME[m.line]}</h3></div>
+                {m.top.length === 0 ? <Empty>Sin ventas en el período.</Empty> : (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <tbody>
+                        {m.top.map((t) => (
+                          <tr key={t.name}><td>{t.qty > 1 ? <b>{t.qty}× </b> : null}{t.name}<small>Ganancia {money(t.profit)}</small></td><td className="num">{money(t.sales)}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {tab === 'fiscal' && (

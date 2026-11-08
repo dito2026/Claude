@@ -158,6 +158,76 @@ export function buildReport(
   };
 }
 
+// ---------------- Contabilidad por módulo (Celulares · Accesorios · Servicio técnico) ----------------
+export interface ModuleResult {
+  line: Line;
+  sales: number;
+  cost: number;
+  gross: number;
+  /** comisiones de vendedores repartidas según lo que vendió cada línea en cada factura */
+  commissions: number;
+  /** gastos generales del periodo repartidos según la participación en ventas */
+  expenses: number;
+  net: number;
+  margin: number | null;
+  units: number;
+  invoices: number;
+  top: { name: string; qty: number; sales: number; profit: number }[];
+}
+
+/**
+ * Estado de resultados por línea de negocio. Ventas y costo salen igual que en buildReport;
+ * las comisiones se reparten dentro de cada factura y los gastos generales según la participación en ventas.
+ */
+export function moduleReport(
+  p: Period,
+  data: { invoices: Invoice[]; movements: CashMovement[]; products: Product[] },
+): { lines: ModuleResult[]; report: Report } {
+  const report = buildReport(p, data);
+  const products = new Map(data.products.map((x) => [x.id, x]));
+  const acc = new Map<Line, { commissions: number; units: number; invoices: Set<string>; top: Map<string, { name: string; qty: number; sales: number; profit: number }> }>(
+    LINES.map((l) => [l, { commissions: 0, units: 0, invoices: new Set(), top: new Map() }]),
+  );
+  for (const inv of data.invoices) {
+    if (inv.status === 'anulada' || !inPeriod(inv.createdAt, p)) continue;
+    const factor = inv.subtotal > 0 ? (inv.subtotal - (inv.discount || 0)) / inv.subtotal : 1;
+    const value = new Map<Line, number>();
+    for (const it of inv.items) {
+      const l = lineOf(it, products);
+      const v = it.qty * it.unitPrice * factor;
+      value.set(l, (value.get(l) ?? 0) + v);
+      const a = acc.get(l)!;
+      a.units += it.qty;
+      a.invoices.add(inv.id);
+      const key = (it.productId || it.description).toLowerCase();
+      const t = a.top.get(key) ?? { name: it.description, qty: 0, sales: 0, profit: 0 };
+      t.qty += it.qty;
+      t.sales += v;
+      t.profit += v - it.qty * it.unitCost;
+      a.top.set(key, t);
+    }
+    const total = [...value.values()].reduce((x, y) => x + y, 0);
+    if (inv.commission && total > 0) for (const [l, v] of value) acc.get(l)!.commissions += (inv.commission * v) / total;
+  }
+  // redondeo al peso; la última línea con ventas absorbe la diferencia para que todo sume exacto
+  const withSales = report.byLine.filter((b) => b.sales > 0 || acc.get(b.line)!.commissions > 0);
+  const last = withSales[withSales.length - 1]?.line;
+  let comRest = report.commissions;
+  let expRest = report.income > 0 ? report.expenses : 0;
+  const lines = report.byLine.map((b) => {
+    const a = acc.get(b.line)!;
+    let commissions = Math.round(a.commissions);
+    let expenses = report.income > 0 ? Math.round((report.expenses * b.sales) / report.income) : 0;
+    if (b.line === last) { commissions = comRest; expenses = expRest; } else { comRest -= commissions; expRest -= expenses; }
+    return {
+      line: b.line, sales: b.sales, cost: b.cost, gross: b.profit, commissions, expenses,
+      net: b.profit - commissions - expenses, margin: b.margin, units: a.units, invoices: a.invoices.size,
+      top: [...a.top.values()].map((t) => ({ ...t, sales: Math.round(t.sales), profit: Math.round(t.profit) })).sort((x, y) => y.sales - x.sales).slice(0, 8),
+    };
+  });
+  return { lines, report };
+}
+
 // ---------------- Libro fiscal y libro de caja ----------------
 const INCOME = new Set(['venta', 'abono_cliente', 'ingreso_otro']);
 const OUTFLOW = new Set(['gasto', 'pago_proveedor', 'pago_tecnico', 'pago_vendedor']);
