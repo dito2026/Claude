@@ -483,3 +483,9 @@ el servidor reintenta con su modelo de respaldo.
 - **Facturar lo vendido:** se escoge qué vendió y el medio de pago (obligatorio). Se crea una factura normal (`createInvoice` con `remissionId`) que entra a la caja, sin descontar stock otra vez (`stockAlreadyMoved`). En la misma transacción la remisión suma lo vendido y guarda la factura. Si esa factura se anula, lo vendido vuelve a quedar pendiente con el destinatario y el celular vuelve a `remisionado`.
 - Cuando no queda nada pendiente, la remisión pasa a **Liquidada**. Las remisiones nunca se borran.
 - **Documento imprimible / PDF:** tamaño carta, con los datos, los productos y su estado (vendidas, devueltas, pendientes), la cláusula de consignación y las firmas de quien entrega y quien recibe.
+
+## 35. Eliminar productos del inventario
+
+- **Inventario → Productos → papelera** (solo administrador, `archiveProduct`): pide un motivo. El producto queda `archived` e inactivo, y deja de verse en inventario, ventas, compras, remisiones y alertas. No se borra, porque facturas, órdenes y kardex lo nombran.
+- Si tenía stock, se da de baja con un **ajuste** en el kardex («Eliminado del inventario: motivo»). Un celular (EQUIPO) con IMEI en inventario no se puede eliminar: primero hay que venderlo o anular su ingreso.
+- **Eliminados (n):** lista los productos eliminados con quién y por qué, y tiene el botón **Recuperar** (`restoreProduct`, queda activo con stock 0).

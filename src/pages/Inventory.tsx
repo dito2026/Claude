@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowDownToLine, Pencil, Plus, SlidersHorizontal, Smartphone } from 'lucide-react';
+import { ArchiveRestore, ArrowDownToLine, Pencil, Plus, SlidersHorizontal, Smartphone, Trash2 } from 'lucide-react';
 import { useCollection } from '../data/hooks';
 import type { PhoneUnit, Product, ProductType, StockMovement } from '../lib/types';
 import { dateTime, matches, money, pad } from '../lib/format';
@@ -11,7 +11,7 @@ import { DEFAULT_CATEGORIES, categoryOf, guessCategory, sortCategories } from '.
 import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
 import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
 
-import { adjustStock, guessType, isLowStock, nextSku, receiveStock, saveProduct, suggestedPrice, tracksStock, type ProductInput } from '../services/inventory';
+import { adjustStock, archiveProduct, restoreProduct, guessType, isLowStock, nextSku, receiveStock, saveProduct, suggestedPrice, tracksStock, type ProductInput } from '../services/inventory';
 import { useSettings } from '../services/settings';
 import { canonicalBrand } from '../lib/brands';
 
@@ -43,12 +43,17 @@ export function Inventory() {
   const [kardexFor, setKardexFor] = useState('');
   const [bm, setBm] = useState<BrandModelValue>({ brand: '', model: '' });
   const [cat, setCat] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiving, setArchiving] = useState<Product | null>(null);
+  const { run } = useAction();
+  const archivedCount = products.filter((p) => p.archived).length;
   const categories = useMemo(() => sortCategories(products.map(categoryOf)), [products]);
   const pBrand = (p: Product) => p.brand || brandFromText(p.name);
   const pModel = (p: Product) => (p.type === 'EQUIPO' ? p.name : p.model);
   const brandOptions = useMemo(() => brandModelsOf(products.map((p) => ({ brand: pBrand(p), model: pModel(p) }))), [products]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const list = products
+    .filter((p) => (showArchived ? !!p.archived : !p.archived))
     .filter((p) => (type === 'TODOS' ? true : type === 'BAJO' ? isLowStock(p) : p.type === type))
     .filter((p) => matchesBrand(bm.brand, pBrand(p)) && matchesModel(bm.model, pModel(p)) && (!cat || categoryOf(p) === cat))
     .filter((p) => matches(q, p.sku, p.name, p.brand, p.model))
@@ -66,7 +71,7 @@ export function Inventory() {
       <PageHead
         eyebrow="Inventario"
         title="Productos y repuestos"
-        subtitle={`${products.length} referencias · valor a costo ${money(value)}`}
+        subtitle={`${products.length - archivedCount} referencias · valor a costo ${money(value)}`}
         actions={
           <>
             <SearchBox value={q} onChange={setQ} placeholder="SKU, nombre, marca o modelo" />
@@ -92,7 +97,13 @@ export function Inventory() {
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
             <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />
+            {(archivedCount > 0 || showArchived) && (
+              <button className={`btn sm ${showArchived ? 'dark' : 'ghost'}`} onClick={() => setShowArchived((v) => !v)}>
+                <Trash2 size={14} />{showArchived ? 'Volver a productos' : `Eliminados (${archivedCount})`}
+              </button>
+            )}
           </div>
+          {showArchived && <div className="alert info" style={{ marginBottom: 14 }}><div>Productos eliminados: no aparecen en ventas, compras ni inventario. Se guardan por el historial y se pueden <b>recuperar</b>.</div></div>}
           <div className="card">
             {loading ? <Empty>Cargando…</Empty> : list.length === 0 ? <Empty>No hay productos.</Empty> : (
               <div className="table-wrap">
@@ -123,7 +134,15 @@ export function Inventory() {
                             {tracksStock(p) && can('inventory.edit') && (
                               <button className="btn sm ghost" title="Ajuste por conteo" onClick={() => setStockOp({ p, kind: 'ajuste' })}><SlidersHorizontal size={15} /></button>
                             )}
+                            {p.archived ? (
+                              <>
+                                <small className="faint" style={{ display: 'inline', marginRight: 8 }}>Eliminado por {p.archivedBy}{p.archiveReason ? ` · ${p.archiveReason}` : ''}</small>
+                                {can('settings') && <button className="btn sm" onClick={() => run(() => restoreProduct(p.id), 'Producto recuperado')}><ArchiveRestore size={15} />Recuperar</button>}
+                              </>
+                            ) : <>
                             {can('inventory.edit') && <button className="btn sm ghost" title="Editar" onClick={() => setEdit({ id: p.id, data: { ...EMPTY_PRODUCT, ...p } })}><Pencil size={15} /></button>}
+                            {can('settings') && <button className="btn sm ghost" title="Eliminar del inventario" aria-label="Eliminar" onClick={() => setArchiving(p)}><Trash2 size={15} className="red" /></button>}
+                            </>}
                             <button className="btn sm ghost" onClick={() => { setKardexFor(p.id); setTab('kardex'); }}>Kardex</button>
                           </td>
                         </tr>
@@ -176,6 +195,7 @@ export function Inventory() {
       )}
 
       {edit && <ProductModal edit={edit} onClose={() => setEdit(null)} />}
+      {archiving && <ArchiveModal p={archiving} onClose={() => setArchiving(null)} />}
       {stockOp && <StockModal {...stockOp} onClose={() => setStockOp(null)} />}
       {registering && <RegisterUnitsModal product={registering} unregistered={Math.max(0, registering.stock - availableUnits(registering.id))} onClose={() => setRegistering(null)} />}
     </>
@@ -293,6 +313,33 @@ function StockModal({ p, kind, onClose }: { p: Product; kind: 'entrada' | 'ajust
         <Field label={kind === 'entrada' ? 'Proveedor / factura (nota)' : 'Motivo del ajuste'} required={kind === 'ajuste'} className="full">
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
+      </div>
+    </Modal>
+  );
+}
+
+function ArchiveModal({ p, onClose }: { p: Product; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const [reason, setReason] = useState('');
+  const stock = tracksStock(p) ? Number(p.stock) || 0 : 0;
+  const phoneBlocked = p.type === 'EQUIPO' && stock > 0;
+  return (
+    <Modal title={`Eliminar «${p.name}»`} onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || !reason.trim() || phoneBlocked}
+          onClick={() => run(() => archiveProduct(actor, p.id, reason), 'Producto eliminado del inventario').then((ok) => ok && onClose())}><Trash2 size={16} />Eliminar</button></>}>
+      <div className="stack">
+        {phoneBlocked ? (
+          <div className="alert error"><div>Tiene <b>{stock}</b> celular(es) en inventario. Véndalos, o anule su ingreso en <b>Inventario → Celulares (IMEI)</b>, antes de eliminarlo.</div></div>
+        ) : (
+          <div className="alert warn"><div>
+            Deja de aparecer en el inventario, las ventas y las compras.
+            {stock > 0 && <> Las <b>{stock}</b> unidades en stock se dan de baja con un ajuste en el kardex.</>}
+            {' '}Las facturas y el historial que lo nombran no cambian, y lo puede <b>recuperar</b> en «Eliminados».
+          </div></div>
+        )}
+        <Field label="Motivo" required><input className="input" autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: ya no se vende · creado por error · duplicado" /></Field>
       </div>
     </Modal>
   );

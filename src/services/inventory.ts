@@ -133,3 +133,33 @@ export function guessType(name: string): Product['type'] | null {
 /** Precio sugerido: costo + margen, redondeado hacia arriba a miles. */
 export const suggestedPrice = (cost: number, marginPct: number) =>
   cost > 0 ? Math.ceil((cost * (1 + marginPct / 100)) / 1000) * 1000 : 0;
+
+/**
+ * «Eliminar» un producto: sale del inventario y de las ventas, pero no se borra
+ * (facturas, órdenes y kardex lo siguen nombrando). Si tenía stock, se da de baja con un ajuste en el kardex.
+ * Los celulares con IMEI en el local deben venderse o anularse primero.
+ */
+export async function archiveProduct(actor: Actor, productId: string, reason: string) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo.');
+  return backend.transaction(async (tx) => {
+    const p = await tx.get<Product>('products', productId);
+    if (!p) throw new BusinessError('Producto no encontrado.');
+    if (p.archived) throw new BusinessError('El producto ya está eliminado.');
+    const stock = Number(p.stock) || 0;
+    if (p.type === 'EQUIPO' && stock > 0) {
+      throw new BusinessError(`«${p.name}» tiene ${stock} celular(es) en inventario. Véndalos o anule su ingreso (Inventario → Celulares) antes de eliminarlo.`);
+    }
+    // ---- escrituras ----
+    if (tracksStock(p) && stock > 0) {
+      moveStock(tx, actor, p, -stock, 'ajuste', { refType: 'manual', note: `Eliminado del inventario: ${reason.trim()}` });
+    }
+    tx.update('products', p.id, {
+      active: false, archived: true, archivedAt: new Date().toISOString(), archivedBy: actor.name, archiveReason: reason.trim(), ...touched(),
+    });
+  });
+}
+
+/** Recupera un producto eliminado (queda activo con stock 0). */
+export async function restoreProduct(productId: string) {
+  await backend.update('products', productId, { active: true, archived: false, archivedAt: null, archivedBy: null, archiveReason: null, ...touched() });
+}

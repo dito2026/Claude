@@ -89,6 +89,11 @@ export interface Product extends BaseDoc {
   trackStock?: boolean;
   /** categoría de venta (Cargadores, Forros…). Vacía = se adivina por el nombre */
   category?: string;
+  /** eliminado del inventario (se conserva por el historial; se puede recuperar) */
+  archived?: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
+  archiveReason?: string;
 }
 
 export type StockReason =
