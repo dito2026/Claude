@@ -6,7 +6,7 @@ import type { Customer, Device, Priority, RepairOrder, Technician } from '../lib
 import { OPEN_STATUSES } from '../lib/types';
 import { dateTime, fromLocalInput, matches, money, pad, toLocalInput } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
-import { Badge, Empty, Field, Modal, MoneyInput, PageHead, QuickChips, SearchBox, Seg, useAction } from '../components/ui';
+import { Badge, Empty, Field, Modal, MoneyInput, PageHead, QuickChips, SearchBox, Seg, useAction , SkeletonRows } from '../components/ui';
 import { CustomerPicker } from '../components/CustomerPicker';
 import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
 import { matchesBrand, matchesModel } from '../lib/brands';
@@ -78,7 +78,7 @@ export function Orders() {
         <span className="faint">{list.length} órdenes</span>
       </div>
       <div className="card">
-        {loading ? <Empty>Cargando…</Empty> : list.length === 0 ? <Empty>No hay órdenes en esta vista.</Empty> : (
+        {loading ? <SkeletonRows /> : list.length === 0 ? <Empty>No hay órdenes en esta vista.</Empty> : (
           <div className="table-wrap">
             <table className="table">
               <thead>

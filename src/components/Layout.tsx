@@ -57,13 +57,18 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
 
 function useTheme() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    try { return (localStorage.getItem('dcpro:theme') as 'light' | 'dark') || 'light'; } catch { return 'light'; }
+    try { return (localStorage.getItem('dcpro:theme') as 'light' | 'dark') || (document.documentElement.dataset.theme as 'light' | 'dark') || 'light'; } catch { return 'light'; }
   });
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('dcpro:theme', theme); } catch { /* sin almacenamiento */ }
   }, [theme]);
-  return [theme, () => setTheme((t) => (t === 'light' ? 'dark' : 'light'))] as const;
+  // Solo se guarda cuando la persona elige; si no, sigue el tema del sistema
+  const toggle = () => setTheme((t) => {
+    const next = t === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem('dcpro:theme', next); } catch { /* sin almacenamiento */ }
+    return next;
+  });
+  return [theme, toggle] as const;
 }
 
 export function Layout({ children }: { children: ReactNode }) {

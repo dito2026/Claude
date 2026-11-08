@@ -5,7 +5,7 @@ import { useCollection } from '../data/hooks';
 import type { Customer, Priority, RepairOrder, Ticket, TicketStatus, TicketType, UserProfile } from '../lib/types';
 import { dateTime, matches, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
-import { Badge, Empty, Field, Modal, PageHead, SearchBox, Seg, useAction } from '../components/ui';
+import { Badge, Empty, Field, Modal, PageHead, SearchBox, Seg, useAction , SkeletonRows } from '../components/ui';
 import { CustomerPicker } from '../components/CustomerPicker';
 import { PRIORITIES, priorityTone, ticketTone } from '../components/status';
 import { createTicket, TICKET_STATUSES, TICKET_TYPES, updateTicket } from '../services/tickets';
@@ -38,7 +38,7 @@ export function Tickets() {
         <Seg value={filter} onChange={setFilter} options={[{ value: 'activos', label: 'Activos' }, { value: 'resueltos', label: 'Resueltos' }, { value: 'todos', label: 'Todos' }]} />
       </div>
       <div className="card">
-        {loading ? <Empty>Cargando…</Empty> : list.length === 0 ? <Empty>No hay tickets en esta vista.</Empty> : (
+        {loading ? <SkeletonRows /> : list.length === 0 ? <Empty>No hay tickets en esta vista.</Empty> : (
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>N.º</th><th>Asunto</th><th>Tipo</th><th>Cliente</th><th>Prioridad</th><th>Estado</th><th>Responsable</th><th>Actualizado</th></tr></thead>

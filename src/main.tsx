@@ -2,9 +2,13 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import './styles.css';
+import './design-system.css';
 
 try {
-  document.documentElement.dataset.theme = localStorage.getItem('dcpro:theme') || 'light';
+  // Sin preferencia guardada, sigue el tema del celular o computador
+  const saved = localStorage.getItem('dcpro:theme');
+  const system = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.dataset.theme = saved || system;
 } catch {
   /* sin almacenamiento */
 }

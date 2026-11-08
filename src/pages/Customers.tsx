@@ -5,7 +5,7 @@ import { useCollection } from '../data/hooks';
 import type { Customer, Invoice, RepairOrder } from '../lib/types';
 import { dateOnly, matches, money, pad, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
-import { Badge, Empty, Field, Modal, PageHead, SearchBox, useAction } from '../components/ui';
+import { Badge, Empty, Field, Modal, PageHead, SearchBox, useAction , SkeletonRows } from '../components/ui';
 import { orderTone } from '../components/status';
 import { deleteCustomer, saveCustomer, type CustomerInput } from '../services/customers';
 
@@ -70,7 +70,7 @@ export function Customers() {
         }
       />
       <div className="card">
-        {loading ? <Empty>Cargando…</Empty> : list.length === 0 ? <Empty>No hay clientes que coincidan.</Empty> : (
+        {loading ? <SkeletonRows /> : list.length === 0 ? <Empty>No hay clientes que coincidan.</Empty> : (
           <div className="table-wrap">
             <table className="table">
               <thead>

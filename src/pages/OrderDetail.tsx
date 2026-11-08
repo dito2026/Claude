@@ -6,7 +6,7 @@ import type { OrderStatus, Product, RepairOrder, Technician } from '../lib/types
 import { ORDER_STATUSES } from '../lib/types';
 import { dateTime, matches, money, pad, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
-import { Badge, CommitMoney, Empty, Field, Modal, MoneyInput, Seg, useAction } from '../components/ui';
+import { Badge, CommitMoney, Empty, Field, Modal, MoneyInput, Seg, useAction , SkeletonRows } from '../components/ui';
 import { tracksStock } from '../services/inventory';
 import { buyFreeItem } from '../services/purchases';
 import { BuyFromSupplierFields, EMPTY_BUY, useSuppliers, type BuyFromSupplierValue } from '../components/BuyFromSupplier';
@@ -32,7 +32,7 @@ export function OrderDetail() {
   const [diagnosis, setDiagnosis] = useState<string | null>(null);
   const [note, setNote] = useState('');
 
-  if (loading) return <Empty>Cargando…</Empty>;
+  if (loading) return <SkeletonRows />;
   if (!o) return <Empty>La orden no existe.</Empty>;
 
   const closed = o.status === 'Entregado' || o.status === 'No reparado';

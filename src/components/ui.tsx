@@ -188,6 +188,21 @@ export function Stat({ label, value, sub, icon, accent, delta, className = '', s
   );
 }
 
+/** Estado de carga: filas «esqueleto» con la forma de una tabla (mejor que «Cargando…»). */
+export function SkeletonRows({ rows = 5 }: { rows?: number }) {
+  return (
+    <div className="skeleton-rows" role="status" aria-live="polite" aria-label="Cargando">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="skeleton-row" style={{ opacity: 1 - i * 0.12 }}>
+          <span className="skeleton" />
+          <span className="skeleton lg" style={{ width: `${85 - (i % 3) * 15}%` }} />
+          <span className="skeleton" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Empty({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
   return <div className="empty">{icon ?? <Inbox size={36} />}<div>{children}</div></div>;
 }

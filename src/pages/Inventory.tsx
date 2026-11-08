@@ -5,7 +5,7 @@ import { useCollection } from '../data/hooks';
 import type { PhoneUnit, Product, ProductType, StockMovement } from '../lib/types';
 import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
-import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
+import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction , SkeletonRows } from '../components/ui';
 import { RegisterUnitsModal, UnitsTab } from '../components/PhoneUnits';
 import { DEFAULT_CATEGORIES, categoryOf, guessCategory, sortCategories } from '../lib/categories';
 import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
@@ -105,7 +105,7 @@ export function Inventory() {
           </div>
           {showArchived && <div className="alert info" style={{ marginBottom: 14 }}><div>Productos eliminados: no aparecen en ventas, compras ni inventario. Se guardan por el historial y se pueden <b>recuperar</b>.</div></div>}
           <div className="card">
-            {loading ? <Empty>Cargando…</Empty> : list.length === 0 ? <Empty>No hay productos.</Empty> : (
+            {loading ? <SkeletonRows /> : list.length === 0 ? <Empty>No hay productos.</Empty> : (
               <div className="table-wrap">
                 <table className="table">
                   <thead><tr><th>SKU</th><th>Producto</th><th>Tipo</th><th className="num">Stock</th><th className="num">Costo</th><th className="num">Precio</th><th className="num">Margen</th><th /></tr></thead>
