@@ -514,3 +514,22 @@ el servidor reintenta con su modelo de respaldo.
 - Antes «Silicona iPhone 13» quedaba como Celular, y «Lentes», «Protector de pantalla» o «Vidrio pantalla» como Repuesto. Simcard, audífonos, gomas, forros, recargas y antiespía no se reconocían y quedaban como Repuesto (el tipo por defecto).
 - **Inventario → aviso «parecen accesorios» → Revisar y corregir** (`looksMisclassifiedAccessory`, `convertToAccessory`): pasa los productos marcados a ACCESORIO (línea Accesorios) sin tocar el stock. Como Contabilidad y el Panel clasifican por el tipo actual del producto, las ventas viejas también pasan a contarse como accesorios.
 - Las categorías (Sim cards y recargas, Audífonos y parlantes, Vidrios y protectores, Forros y estuches) reconocen las mismas palabras.
+
+## 40. Tres módulos: Celulares · Accesorios · Servicio técnico
+
+- **Menú** organizado por línea de negocio:
+  - General: Panel.
+  - **Celulares**: Celulares y Compraventa usados.
+  - **Accesorios**: Accesorios y Remisiones.
+  - **Servicio técnico**: Servicio técnico, Órdenes y Tickets.
+  - **Ventas e inventario**: Facturación, Caja, Clientes, Inventario, Compras y Contabilidad.
+  - Administración.
+- **Pantalla de cada módulo** (`/celulares`, `/accesorios`, `/servicio`, `LineModule.tsx`):
+  - Filtro Hoy / 7 días / Mes / Año.
+  - Ventas, costo, ganancia y margen de esa línea, con la misma regla de Contabilidad (`lineOf`). Solo con permiso de finanzas.
+  - Últimas ventas de la línea.
+  - **Celulares**: equipos en el local por modelo (nuevos y usados, costo), cuántos hay en remisión y compraventas del periodo.
+  - **Accesorios**: existencias por categoría, «por pedir» y participación en las ventas.
+  - **Servicio técnico**: órdenes por estado, atrasadas, tickets abiertos, repuestos por pedir y reparaciones terminadas. El técnico solo ve sus órdenes.
+  - Accesos rápidos: Vender, Comprar, Comprar usado, Remisión, Nueva orden.
+- Ninguna pantalla se quitó. Todas siguen en el menú.

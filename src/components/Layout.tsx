@@ -5,6 +5,8 @@ import {
   Settings, LogOut, Menu, Moon, Sun, Smartphone, Truck, Calculator, BadgePercent, Sparkles,
   Handshake,
   FileOutput,
+  Headphones,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import type { Permission } from '../auth/permissions';
@@ -25,22 +27,35 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: 'Operación',
+    label: 'Celulares',
     items: [
-      { to: '/taller', label: 'Órdenes de reparación', icon: <Wrench size={18} /> },
-      { to: '/tickets', label: 'Tickets de soporte', icon: <LifeBuoy size={18} /> },
-      { to: '/clientes', label: 'Clientes', icon: <Users size={18} /> },
-      { to: '/inventario', label: 'Inventario', icon: <Package size={18} /> },
+      { to: '/celulares', label: 'Celulares', icon: <Smartphone size={18} />, perm: 'billing' },
+      { to: '/usados', label: 'Compraventa usados', icon: <Handshake size={18} />, perm: 'purchases' },
     ],
   },
   {
-    label: 'Finanzas',
+    label: 'Accesorios',
+    items: [
+      { to: '/accesorios', label: 'Accesorios', icon: <Headphones size={18} />, perm: 'billing' },
+      { to: '/remisiones', label: 'Remisiones', icon: <FileOutput size={18} />, perm: 'billing' },
+    ],
+  },
+  {
+    label: 'Servicio técnico',
+    items: [
+      { to: '/servicio', label: 'Servicio técnico', icon: <Wrench size={18} /> },
+      { to: '/taller', label: 'Órdenes de reparación', icon: <ClipboardList size={18} /> },
+      { to: '/tickets', label: 'Tickets de soporte', icon: <LifeBuoy size={18} /> },
+    ],
+  },
+  {
+    label: 'Ventas e inventario',
     items: [
       { to: '/facturacion', label: 'Facturación', icon: <Receipt size={18} />, perm: 'billing' },
       { to: '/caja', label: 'Caja', icon: <Wallet size={18} />, perm: 'cash' },
-      { to: '/remisiones', label: 'Remisiones', icon: <FileOutput size={18} />, perm: 'billing' },
+      { to: '/clientes', label: 'Clientes', icon: <Users size={18} /> },
+      { to: '/inventario', label: 'Inventario', icon: <Package size={18} /> },
       { to: '/compras', label: 'Compras y proveedores', icon: <Truck size={18} />, perm: 'purchases' },
-      { to: '/usados', label: 'Compraventa usados', icon: <Handshake size={18} />, perm: 'purchases' },
       { to: '/contabilidad', label: 'Contabilidad', icon: <Calculator size={18} />, perm: 'dashboard.finance' },
     ],
   },
