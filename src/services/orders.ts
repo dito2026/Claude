@@ -10,6 +10,7 @@ import type {
 } from '../lib/types';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
 import { requireOpenSession, writeMovement } from './cash';
+import { CREDIT_METHOD } from '../lib/types';
 import { moveStock } from './inventory';
 
 export const partsTotal = (o: Pick<RepairOrder, 'parts'>) => sum(o.parts.map((p) => p.qty * p.unitPrice));
@@ -257,6 +258,50 @@ export async function addDeposit(actor: Actor, orderId: string, amount: number, 
       description: `Abono OT ${o.number} · ${o.customer.name}`,
       refType: 'repairOrder',
       refId: o.id,
+    });
+  });
+}
+
+/**
+ * Corrige (o elimina, con valor 0) un abono de una orden. La caja se cuadra sola en el turno abierto:
+ * si baja el valor o cambia el medio, sale como «Anulación» (resta del ingreso);
+ * si sube, entra la diferencia como «Abono de cliente». Queda el historial en la orden.
+ */
+export async function editDeposit(actor: Actor, orderId: string, index: number, next: { amount: number; method: string }, reason: string) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo de la corrección.');
+  if (next.amount < 0) throw new BusinessError('El valor no puede ser negativo.');
+  if (next.amount > 0 && (!next.method || next.method === CREDIT_METHOD)) throw new BusinessError('Elija el medio de pago.');
+  return backend.transaction(async (tx) => {
+    const o = await tx.get<RepairOrder>('repairOrders', orderId);
+    if (!o) throw new BusinessError('Orden no encontrada.');
+    if (o.status === 'Entregado' || o.invoiceId) throw new BusinessError('La orden ya fue facturada: anule primero la factura para corregir sus abonos.');
+    const d = o.deposits[index];
+    if (!d) throw new BusinessError('Abono no encontrado.');
+    if (d.amount === next.amount && d.method === next.method) throw new BusinessError('No hay cambios para guardar.');
+    const sid = await requireOpenSession(tx);
+    // ---- escrituras ----
+    const why = reason.trim();
+    const desc = `Corrección abono OT ${o.number} · ${o.customer.name}: ${why}`;
+    const out = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'egreso', category: 'anulacion', method, amount, description: desc, refType: 'repairOrder', refId: o.id });
+    const inn = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'ingreso', category: 'abono_cliente', method, amount, description: desc, refType: 'repairOrder', refId: o.id });
+    if (d.method === next.method) {
+      const diff = next.amount - d.amount;
+      if (diff > 0) inn(diff, d.method); else out(-diff, d.method);
+    } else {
+      out(d.amount, d.method);
+      if (next.amount > 0) inn(next.amount, next.method);
+    }
+    const at = new Date().toISOString();
+    const deposits = next.amount === 0
+      ? o.deposits.filter((_, i) => i !== index)
+      : o.deposits.map((x, i) => (i === index ? { amount: next.amount, method: next.method, at: x.at, editedAt: at, editedBy: actor.name, editReason: why, previous: { amount: d.amount, method: d.method } } : x));
+    const fmt = (n: number) => `$${n.toLocaleString('es-CO')}`;
+    tx.update('repairOrders', o.id, {
+      deposits,
+      timeline: [...o.timeline, { at, by: actor.name, note: next.amount === 0
+        ? `Abono eliminado (${fmt(d.amount)} ${d.method}): ${why}`
+        : `Abono corregido de ${fmt(d.amount)} ${d.method} a ${fmt(next.amount)} ${next.method}: ${why}` }],
+      ...touched(),
     });
   });
 }

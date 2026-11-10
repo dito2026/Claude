@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, LifeBuoy, MessageCircle, PackagePlus, Printer, Receipt, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, LifeBuoy, MessageCircle, PackagePlus, Pencil, Printer, Receipt, Sparkles, Trash2 } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { OrderStatus, Product, RepairOrder, Technician } from '../lib/types';
 import { ORDER_STATUSES } from '../lib/types';
@@ -13,7 +13,7 @@ import { BuyFromSupplierFields, EMPTY_BUY, useSuppliers, type BuyFromSupplierVal
 import { orderTone, priorityTone } from '../components/status';
 import { OrderReceiptModal } from '../components/Receipts';
 import {
-  addDeposit, addFreePart, addPart, depositsTotal, isOverdue, orderTotal, partsTotal, removePart, setStatus, updateOrder,
+  addDeposit, editDeposit, addFreePart, addPart, depositsTotal, isOverdue, orderTotal, partsTotal, removePart, setStatus, updateOrder,
 } from '../services/orders';
 import { useSettings } from '../services/settings';
 import { readyMessage } from '../services/automation';
@@ -28,6 +28,7 @@ export function OrderDetail() {
   const aiOn = useAiEnabled();
   const techs = useCollection<Technician>('technicians').rows;
   const { run, busy } = useAction();
+  const [editingDeposit, setEditingDeposit] = useState<number | null>(null);
   const [modal, setModal] = useState<'part' | 'deposit' | 'status' | 'receipt' | 'ai' | 'notify' | null>(null);
   const [diagnosis, setDiagnosis] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -153,7 +154,12 @@ export function OrderDetail() {
                 <div style={{ fontWeight: 600 }}><span>Saldo pendiente</span><span className="red">{money(Math.max(0, total - deposits))}</span></div>
                 {canMoney && <button className="btn sm mt" onClick={() => setModal('deposit')}>Registrar abono</button>}
                 {o.deposits.map((d, i) => (
-                  <div key={i} className="faint" style={{ fontSize: 12 }}><span>{dateTime(d.at)} · {d.method}</span><span>{money(d.amount)}</span></div>
+                  <div key={i} className="faint deposit-row" style={{ fontSize: 12 }}>
+                    <span>{dateTime(d.at)} · {d.method}{d.editedAt && <em className="deposit-edited" title={`Antes ${money(d.previous?.amount)} ${d.previous?.method ?? ''} · ${d.editReason ?? ''}`}> · corregido por {d.editedBy}</em>}</span>
+                    <span className="row gap-sm" style={{ flexWrap: 'nowrap' }}>{money(d.amount)}
+                      {canMoney && <button type="button" className="btn sm ghost" style={{ height: 24, padding: '0 6px' }} title="Corregir o eliminar este abono" onClick={() => setEditingDeposit(i)}><Pencil size={13} /></button>}
+                    </span>
+                  </div>
                 ))}
                 {o.warrantyUntil && <div className="mt"><Badge tone="ok">Garantía hasta {dateTime(o.warrantyUntil)}</Badge></div>}
               </div>
@@ -206,6 +212,7 @@ export function OrderDetail() {
       </div>
 
       {modal === 'part' && <AddPartModal order={o} onClose={() => setModal(null)} />}
+      {editingDeposit !== null && o.deposits[editingDeposit] && <EditDepositModal order={o} index={editingDeposit} methods={settings.paymentMethods} onClose={() => setEditingDeposit(null)} />}
       {modal === 'deposit' && <DepositModal order={o} methods={settings.paymentMethods} onClose={() => setModal(null)} />}
       {modal === 'status' && <StatusModal order={o} onClose={() => setModal(null)} onReady={() => setModal('notify')} />}
       {modal === 'ai' && <AiDiagnosisModal order={o} onClose={() => setModal(null)}
@@ -333,18 +340,61 @@ function DepositModal({ order, methods, onClose }: { order: RepairOrder; methods
   const { actor } = useAuth();
   const { run, busy } = useAction();
   const [amount, setAmount] = useState(0);
-  const [method, setMethod] = useState('Efectivo');
+  const [method, setMethod] = useState('');
   return (
     <Modal title="Registrar abono" onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy || !amount} onClick={() => run(() => addDeposit(actor, order.id, amount, method), 'Abono registrado en caja').then((ok) => ok && onClose())}>Registrar</button></>}>
-      <div className="form-grid">
+        <button className="btn primary" disabled={busy || !amount || !method} onClick={() => run(() => addDeposit(actor, order.id, amount, method), 'Abono registrado en caja').then((ok) => ok && onClose())}>Registrar</button></>}>
+      <div className="stack">
         <Field label="Valor"><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
-        <Field label="Medio de pago">
-          <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
-            {methods.filter((m) => m !== 'Crédito tienda').map((m) => <option key={m}>{m}</option>)}
-          </select>
-        </Field>
+        <PayMethods methods={methods} value={method} onChange={setMethod} missing={amount > 0 && !method} />
+      </div>
+    </Modal>
+  );
+}
+
+function PayMethods({ methods, value, onChange, missing }: { methods: string[]; value: string; onChange: (m: string) => void; missing?: boolean }) {
+  return (
+    <div className="field">
+      <span>Medio de pago <em>*</em></span>
+      <div className={`pay-methods ${missing ? 'missing' : ''}`}>
+        {methods.filter((m) => m !== 'Crédito tienda').map((m) => (
+          <button key={m} type="button" className={`cat-chip ${value === m ? 'active' : ''}`} onClick={() => onChange(m)}>{m}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EditDepositModal({ order, index, methods, onClose }: { order: RepairOrder; index: number; methods: string[]; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const d = order.deposits[index];
+  const [amount, setAmount] = useState(d.amount);
+  const [method, setMethod] = useState(d.method);
+  const [reason, setReason] = useState('');
+  const save = (value: number) => run(() => editDeposit(actor, order.id, index, { amount: value, method }, reason),
+    value === 0 ? 'Abono eliminado · caja ajustada' : 'Abono corregido · caja ajustada').then((ok) => ok && onClose());
+  const diff = amount - d.amount;
+  return (
+    <Modal title={`Corregir abono · OT ${order.number}`} onClose={onClose}
+      footer={<>
+        <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy || !reason.trim()} onClick={() => { if (confirm(`¿Eliminar el abono de ${money(d.amount)}? Ese dinero sale de la caja.`)) void save(0); }}><Trash2 size={15} />Eliminar abono</button>
+        <button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || !amount || !method || !reason.trim() || (amount === d.amount && method === d.method)} onClick={() => void save(amount)}>Guardar corrección</button>
+      </>}>
+      <div className="stack">
+        <div className="alert info"><div>Abono registrado el {dateTime(d.at)}: <b>{money(d.amount)}</b> en {d.method}. La caja abierta se ajusta sola con la diferencia.</div></div>
+        <Field label="Valor correcto"><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
+        <PayMethods methods={methods} value={method} onChange={setMethod} />
+        {(diff !== 0 || method !== d.method) && (
+          <div className="faint" style={{ fontSize: 13 }}>
+            {method !== d.method
+              ? <>En caja: sale {money(d.amount)} de {d.method} y entra {money(amount)} en {method}.</>
+              : diff > 0 ? <>En caja: entran {money(diff)} más en {method}.</> : <>En caja: salen {money(-diff)} de {method}.</>}
+          </div>
+        )}
+        <Field label="Motivo" required><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: digité mal el valor · era transferencia" /></Field>
       </div>
     </Modal>
   );

@@ -156,6 +156,11 @@ export interface Deposit {
   amount: number;
   method: string;
   at: string;
+  /** corrección: quién, cuándo, por qué y los valores anteriores */
+  editedAt?: string;
+  editedBy?: string;
+  editReason?: string;
+  previous?: { amount: number; method: string };
 }
 
 export interface TimelineEntry {

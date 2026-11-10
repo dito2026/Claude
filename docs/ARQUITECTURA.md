@@ -541,3 +541,10 @@ el servidor reintenta con su modelo de respaldo.
 - **Comisiones:** se reparten dentro de cada factura según lo que vendió cada módulo.
 - **Gastos generales:** se reparten según la participación en ventas. La última línea absorbe el redondeo, así los tres módulos suman exactamente el total.
 - **Exportar a Excel** (CSV) con la tabla y los más vendidos. Respeta el periodo elegido (hoy, 7 días, mes, mes anterior, año o rango).
+
+## 42. Corregir o eliminar un abono de orden
+
+- **Orden de reparación → Abonos → lápiz** (`editDeposit`): se cambia el valor, el medio, o ambos, o se **elimina** el abono. El motivo es obligatorio. Solo se puede mientras la orden no esté facturada (si ya lo está, primero se anula la factura).
+- **La caja se cuadra sola en el turno abierto:** si baja el valor, sale la diferencia como «Anulación»; si sube, entra la diferencia como «Abono de cliente»; si cambia el medio, sale el valor viejo del medio viejo y entra el nuevo en el medio nuevo. El libro fiscal queda correcto, porque una anulación de egreso resta ingreso.
+- **Historial:** el abono guarda `previous`, `editedBy`, `editedAt` y `editReason`, se muestra «corregido por …» y queda una nota en la línea de tiempo de la orden.
+- **Registrar abono:** el medio de pago ahora es obligatorio, con botones (antes venía Efectivo por defecto).
