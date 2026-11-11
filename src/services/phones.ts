@@ -130,7 +130,7 @@ export async function registerUnits(
   });
 }
 
-const addMonths = (iso: string, months: number) => {
+export const addMonths = (iso: string, months: number) => {
   const d = new Date(iso);
   d.setMonth(d.getMonth() + months);
   return d.toISOString();
@@ -140,8 +140,9 @@ const addMonths = (iso: string, months: number) => {
 export function markSold(
   tx: Tx,
   unit: PhoneUnit,
-  sale: { invoiceId: string; invoiceNumber: number; at: string; price: number; customerName: string },
+  sale: { invoiceId: string; invoiceNumber: number; at: string; price: number; customerName: string; warrantyMonths?: number },
 ) {
+  const months = sale.warrantyMonths ?? unit.warrantyMonths ?? 0;
   tx.update('phoneUnits', unit.id, {
     status: 'vendido',
     invoiceId: sale.invoiceId,
@@ -149,7 +150,8 @@ export function markSold(
     soldAt: sale.at,
     salePrice: sale.price,
     customerName: sale.customerName,
-    warrantyUntil: unit.warrantyMonths > 0 ? addMonths(sale.at, unit.warrantyMonths) : null,
+    warrantyMonths: months,
+    warrantyUntil: months > 0 ? addMonths(sale.at, months) : null,
     ...touched(),
   });
 }

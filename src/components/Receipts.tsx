@@ -34,7 +34,8 @@ export function InvoiceReceipt({ inv, s }: { inv: Invoice; s: BusinessSettings }
         <tbody>
           {inv.items.map((it, i) => (
             <tr key={i}>
-              <td>{it.qty} × {it.description}{it.imei ? <><br />IMEI {it.imei}</> : null}</td>
+              <td>{it.qty} × {it.description}{it.imei ? <><br />IMEI {it.imei}</> : null}
+                {it.unitId && <><br />{warrantyLine(it)}</>}</td>
               <td className="r">{money(it.qty * it.unitPrice)}</td>
             </tr>
           ))}
@@ -53,10 +54,23 @@ export function InvoiceReceipt({ inv, s }: { inv: Invoice; s: BusinessSettings }
           ))}
         </tbody>
       </table>
+      {inv.items.some((it) => it.unitId && (it.warrantyMonths ?? 0) > 0) && s.phoneWarrantyTerms && (
+        <>
+          <hr />
+          <div style={{ fontSize: 10.5, lineHeight: 1.35 }}>{s.phoneWarrantyTerms}</div>
+        </>
+      )}
       <hr />
       <div className="c">{s.ticketFooter}</div>
     </div>
   );
+}
+
+/** «Garantía 6 meses · hasta 11/05/2027» o «Sin garantía». */
+export function warrantyLine(it: Pick<Invoice['items'][number], 'warrantyMonths' | 'warrantyUntil'>) {
+  if (it.warrantyMonths == null) return '';
+  if (it.warrantyMonths <= 0) return 'Sin garantía';
+  return `Garantía ${it.warrantyMonths} ${it.warrantyMonths === 1 ? 'mes' : 'meses'}${it.warrantyUntil ? ` · hasta ${dateOnly(it.warrantyUntil)}` : ''}`;
 }
 
 export function OrderReceipt({ o, s }: { o: RepairOrder; s: BusinessSettings }) {
@@ -104,7 +118,7 @@ const invoiceText = (inv: Invoice, s: BusinessSettings) =>
   [
     `*${s.name}* · Comprobante N.º ${pad(inv.number, 6)}`,
     dateOnly(inv.createdAt),
-    ...inv.items.map((i) => `• ${i.qty} × ${i.description}: ${money(i.qty * i.unitPrice)}`),
+    ...inv.items.map((i) => `• ${i.qty} × ${i.description}: ${money(i.qty * i.unitPrice)}${i.imei ? `\n   IMEI ${i.imei}` : ''}${i.unitId && i.warrantyMonths != null ? `\n   ${warrantyLine(i)}` : ''}`),
     `*Total: ${money(inv.total)}*`,
     s.ticketFooter,
   ].join('\n');

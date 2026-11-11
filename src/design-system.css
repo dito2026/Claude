@@ -199,3 +199,6 @@ textarea.input { padding: var(--sp-2) var(--sp-3); }
 
 /* textos de <summary> largos en modales angostos */
 .modal-body summary { white-space: normal; overflow-wrap: anywhere; }
+
+.warranty-pick { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--text-2); margin-top: 4px; }
+.warranty-pick .input { height: 30px; width: auto; min-height: 0; padding: 0 8px; font-size: var(--fs-xs); }

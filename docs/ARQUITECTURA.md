@@ -556,3 +556,10 @@ el servidor reintenta con su modelo de respaldo.
 - **Saldo y estado** de la compra (pendiente, parcial o pagada) se recalculan, y por eso la deuda con el proveedor queda al día.
 - **Historial:** el pago guarda `previous`, `editedBy`, `editedAt` y `editReason`, y se muestra «Corregido por … · antes $X».
 - Si un abono se repartió entre varias compras, cada compra guarda su parte y se corrige en cada una.
+
+## 44. Garantía de celulares en la factura
+
+- **Al vender un celular** (Facturación), cada línea con IMEI tiene un selector **Garantía**: Sin garantía, o 1, 2, 3, 6, 12, 18 o 24 meses. Viene con los meses del producto (Inventario → editar → garantía), y se puede bajar o subir en esa venta. Por ejemplo, un usado con 1 mes.
+- `createInvoice` guarda en la línea `warrantyMonths` y `warrantyUntil` (fecha de la venta + meses). La unidad (`phoneUnits`) guarda lo mismo, así se ve en Inventario → Celulares si la garantía sigue vigente.
+- **Comprobante** (impreso, PDF, WhatsApp y correo): debajo del IMEI sale «Garantía 6 meses · hasta dd/mm/aaaa» o «Sin garantía». Si algún celular tiene garantía, sale también el texto de **condiciones**, editable en Configuración → «Condiciones de garantía de celulares».
+- Las facturas anteriores a este cambio no tienen esos datos guardados y no muestran la línea.

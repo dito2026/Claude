@@ -1,2 +1,2 @@
 // Versión visible en el menú: se actualiza con cada cambio para saber qué está publicado.
-export const APP_VERSION = '2026.11.11 · corregir pagos a proveedor';
+export const APP_VERSION = '2026.11.11b · garantía en factura';

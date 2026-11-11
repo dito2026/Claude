@@ -38,6 +38,8 @@ export interface BusinessSettings {
   ivaCapUvt?: number;
   /** margen para el precio sugerido de productos nuevos (%) */
   suggestedMarginPct?: number;
+  /** condiciones de garantía de celulares que salen en el comprobante */
+  phoneWarrantyTerms?: string;
   /** comprador que firma los contratos de compraventa de usados */
   ownerName?: string;
   ownerDocument?: string;
@@ -247,6 +249,9 @@ export interface InvoiceItem {
   stockAlreadyMoved?: boolean;
   /** línea de la remisión de la que sale esta venta */
   remissionLineId?: string;
+  /** celulares: meses de garantía dados en esta venta y fecha en que vence */
+  warrantyMonths?: number;
+  warrantyUntil?: string;
 }
 
 export interface Payment {

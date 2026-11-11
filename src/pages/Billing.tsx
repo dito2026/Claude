@@ -15,7 +15,7 @@ import { customerRef } from '../services/orders';
 import { useSettings } from '../services/settings';
 import { tracksStock } from '../services/inventory';
 import { categoryOf, itemCategory, sortCategories } from '../lib/categories';
-import { isPhone, normalizeImei } from '../services/phones';
+import { addMonths, isPhone, normalizeImei } from '../services/phones';
 import { UnitPickerModal } from '../components/PhoneUnits';
 import { BrandModelFilter, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
 import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
@@ -111,7 +111,7 @@ function Pos() {
     const p = products.find((x) => x.id === u.productId);
     setItems((xs) => xs.some((x) => x.unitId === u.id) ? xs : [...xs, {
       productId: u.productId, description: `${u.productName}${u.condition === 'USADO' ? ' (usado)' : ''}`, kind: 'producto',
-      qty: 1, unitPrice: u.price || p?.price || 0, unitCost: u.cost, imei: u.imei, unitId: u.id,
+      qty: 1, unitPrice: u.price || p?.price || 0, unitCost: u.cost, imei: u.imei, unitId: u.id, warrantyMonths: u.warrantyMonths ?? 0,
     }]);
   };
   const imeiQuery = normalizeImei(q);
@@ -169,7 +169,7 @@ function Pos() {
       });
       const inv: Invoice = {
         id: r.id, number: r.number, customerId: customer?.id, customer: customer ? customerRef(customer) : { name: 'Consumidor final', phone: '', document: '' },
-        items, ...totals, depositsApplied: deposits, payments: payments.filter((p) => p.amount > 0), repairOrderId: order?.id,
+        items: items.map((it) => (it.unitId && (it.warrantyMonths ?? 0) > 0 ? { ...it, warrantyUntil: addMonths(new Date().toISOString(), it.warrantyMonths!) } : it)), ...totals, depositsApplied: deposits, payments: payments.filter((p) => p.amount > 0), repairOrderId: order?.id,
         repairOrderNumber: order?.number, status: payments.some((p) => p.method === CREDIT_METHOD && p.amount > 0) ? 'credito' : 'pagada',
         cashSessionId: '', cashierName: profile?.name ?? '', createdAt: new Date().toISOString(),
         sellerName: seller?.name,
@@ -274,6 +274,14 @@ function Pos() {
                     <div className="grow">
                       <div style={{ fontWeight: 500 }}>{it.description}</div>
                       {it.imei && <small className="mono red" style={{ display: 'block' }}>IMEI {it.imei}</small>}
+                      {it.unitId && (
+                        <label className="warranty-pick">
+                          Garantía
+                          <select className="input" value={it.warrantyMonths ?? 0} onChange={(e) => setItems((xs) => xs.map((x, k) => (k === i ? { ...x, warrantyMonths: Number(e.target.value) } : x)))}>
+                            {[0, 1, 2, 3, 6, 12, 18, 24].map((m) => <option key={m} value={m}>{m === 0 ? 'Sin garantía' : `${m} ${m === 1 ? 'mes' : 'meses'}`}</option>)}
+                          </select>
+                        </label>
+                      )}
                       <small className="faint">{it.kind === 'repuesto' ? 'Repuesto de la OT' : it.kind === 'mano_obra' ? 'Mano de obra' : money(it.unitPrice) + ' c/u'}</small>
                       {over && <div className="red" style={{ fontSize: 12 }}>Solo hay {p!.stock} en stock</div>}
                     </div>

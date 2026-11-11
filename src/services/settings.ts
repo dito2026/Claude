@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
   phone: '',
   email: '',
   ticketFooter: 'Gracias por su compra',
+  phoneWarrantyTerms: 'Garantía de celulares: cubre defectos de fábrica o de funcionamiento. No cubre golpes, pantalla o tapa rota, humedad, equipos abiertos o manipulados por terceros, sellos rotos ni bloqueos por cuenta o por reporte. Para hacerla válida presente este comprobante y el equipo con sus accesorios.',
   paymentMethods: ['Efectivo', 'Transferencia', 'Nequi', 'Daviplata', 'Tarjeta', 'Crédito tienda'],
   expenseCategories: [
     'Arriendo',

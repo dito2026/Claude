@@ -6,7 +6,7 @@ import { BusinessError, created, readNext, sum, touched, writeCounter, type Acto
 import { requireOpenSession, writeMovement } from './cash';
 import { moveStock } from './inventory';
 import { depositsTotal } from './orders';
-import { isPhone, markAvailable, markSold } from './phones';
+import { addMonths, isPhone, markAvailable, markSold } from './phones';
 import { computeCommission } from './sellers';
 import { readRemissionForInvoice, revertRemissionSale, writeRemissionSale } from './remissions';
 import type { Remission } from '../lib/types';
@@ -143,11 +143,18 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
     // ---------- ESCRITURAS ----------
     writeCounter(tx, 'invoices', number);
     const now = new Date().toISOString();
+    // Celulares: la garantía (meses y vencimiento) queda escrita en la línea del comprobante
+    const saleItems = items.map((it) => {
+      const u = it.unitId ? units.get(it.unitId) : undefined;
+      if (!u) return it;
+      const months = Math.max(0, Math.round(it.warrantyMonths ?? u.warrantyMonths ?? 0));
+      return { ...it, warrantyMonths: months, ...(months > 0 ? { warrantyUntil: addMonths(now, months) } : {}) };
+    });
     const invoice: Omit<Invoice, 'id'> = {
       number,
       customerId: draft.customerId,
       customer: draft.customer,
-      items,
+      items: saleItems,
       ...totals,
       depositsApplied,
       payments,
@@ -188,6 +195,7 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
         markSold(tx, u, {
           invoiceId, invoiceNumber: number, at: now,
           price: it.unitPrice, customerName: draft.customer.name || 'Consumidor final',
+          warrantyMonths: saleItems.find((x) => x.unitId === u.id)?.warrantyMonths,
         });
       }
     }
