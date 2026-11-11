@@ -8,7 +8,7 @@ import { dateOnly, dateTime, fromLocalInput, matches, money, pad, toLocalInput, 
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction } from '../components/ui';
 import {
-  changePurchaseSupplier, createPurchase, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
+  changePurchaseSupplier, createPurchase, editSupplierPayment, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
 } from '../services/purchases';
 import { useSettings } from '../services/settings';
 import type { CashState } from '../services/cash';
@@ -128,6 +128,7 @@ function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
   const [newSupplier, setNewSupplier] = useState('');
   const [reason, setReason] = useState('');
   const voided = p.status === 'anulada';
+  const [editingPay, setEditingPay] = useState<number | null>(null);
   return (
     <Modal title={<><span className="mono">C-{pad(p.number, 4)}</span> · {p.supplierName}</>} wide onClose={onClose}
       footer={voided ? undefined : (
@@ -197,9 +198,59 @@ function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
         <div>
           <div className="eyebrow">Pagos</div>
           {(p.payments ?? []).length === 0 ? <div className="faint">Sin pagos todavía.</div> : p.payments.map((x, i) => (
-            <div key={i} className="row between" style={{ fontSize: 13 }}><span>{dateTime(x.at)} · {x.method} · {x.by}</span><b>{money(x.amount)}</b></div>
+            <div key={i} className="row between" style={{ fontSize: 13, flexWrap: 'nowrap' }}>
+              <span>{dateTime(x.at)} · {x.method} · {x.by}
+                {x.editedAt && <small className="faint" style={{ display: 'block' }} title={x.editReason}>Corregido por {x.editedBy} · antes {money(x.previous?.amount)} {x.previous?.method}</small>}
+              </span>
+              <span className="row gap-sm" style={{ flexWrap: 'nowrap' }}><b>{money(x.amount)}</b>
+                {!voided && <button type="button" className="btn sm ghost" style={{ height: 24, padding: '0 6px' }} title="Corregir o eliminar este pago" onClick={() => setEditingPay(i)}><Pencil size={13} /></button>}
+              </span>
+            </div>
           ))}
         </div>
+      </div>
+      {editingPay !== null && p.payments[editingPay] && <EditSupplierPaymentModal p={p} index={editingPay} onClose={() => setEditingPay(null)} />}
+    </Modal>
+  );
+}
+
+function EditSupplierPaymentModal({ p, index, onClose }: { p: Purchase; index: number; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const settings = useSettings();
+  const pay = p.payments[index];
+  const [amount, setAmount] = useState(pay.amount);
+  const [method, setMethod] = useState(pay.method);
+  const [reason, setReason] = useState('');
+  const methods = settings.paymentMethods.filter((m) => m !== CREDIT_METHOD);
+  const diff = amount - pay.amount;
+  const save = (value: number) => run(() => editSupplierPayment(actor, p.id, index, { amount: value, method }, reason),
+    value === 0 ? 'Pago eliminado · el dinero volvió a la caja' : 'Pago corregido · caja ajustada').then((ok) => ok && onClose());
+  return (
+    <Modal title={`Corregir pago · compra C-${pad(p.number, 4)}`} onClose={onClose}
+      footer={<>
+        <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy || !reason.trim()} onClick={() => { if (confirm(`¿Eliminar el pago de ${money(pay.amount)} a ${p.supplierName}? Ese dinero vuelve a la caja.`)) void save(0); }}><Trash2 size={15} />Eliminar pago</button>
+        <button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || !amount || !method || !reason.trim() || (amount === pay.amount && method === pay.method)} onClick={() => void save(amount)}>Guardar corrección</button>
+      </>}>
+      <div className="stack">
+        <div className="alert info"><div>Pago del {dateTime(pay.at)} a <b>{p.supplierName}</b>: <b>{money(pay.amount)}</b> en {pay.method}. Total de la compra {money(p.total)}. La caja abierta se ajusta sola.</div></div>
+        <Field label="Valor correcto"><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
+        <div className="field">
+          <span>Medio de pago <em>*</em></span>
+          <div className="pay-methods">
+            {methods.map((m) => <button key={m} type="button" className={`cat-chip ${method === m ? 'active' : ''}`} onClick={() => setMethod(m)}>{m}</button>)}
+          </div>
+        </div>
+        {(diff !== 0 || method !== pay.method) && (
+          <div className="faint" style={{ fontSize: 13 }}>
+            {method !== pay.method
+              ? <>En caja: vuelven {money(pay.amount)} a {pay.method} y salen {money(amount)} de {method}.</>
+              : diff > 0 ? <>En caja: salen {money(diff)} más de {method}.</> : <>En caja: vuelven {money(-diff)} a {method}.</>}
+            {' '}Saldo de la compra: {money(Math.max(0, p.total - ((p.paid || 0) - pay.amount + amount)))}.
+          </div>
+        )}
+        <Field label="Motivo" required><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: digité mal el valor · fue por transferencia" /></Field>
       </div>
     </Modal>
   );

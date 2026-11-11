@@ -322,3 +322,45 @@ export async function voidPurchase(actor: Actor, purchaseId: string, reason: str
     tx.update('purchases', p.id, { status: 'anulada', voidReason: reason.trim(), voidedAt: at, voidedBy: actor.name, ...touched() });
   });
 }
+
+/**
+ * Corrige (o elimina, con valor 0) un pago hecho a un proveedor en una compra.
+ * La caja abierta se cuadra sola: si el pago baja o cambia de medio, el dinero vuelve a la caja
+ * (reintegro de «Pago a proveedor», resta de los egresos); si sube, sale la diferencia.
+ * El saldo y el estado de la compra se recalculan, y queda el historial.
+ */
+export async function editSupplierPayment(actor: Actor, purchaseId: string, index: number, next: { amount: number; method: string }, reason: string) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo de la corrección.');
+  if (next.amount < 0) throw new BusinessError('El valor no puede ser negativo.');
+  if (next.amount > 0 && (!next.method || next.method === CREDIT_METHOD)) throw new BusinessError('Elija el medio de pago.');
+  return backend.transaction(async (tx) => {
+    const p = await tx.get<Purchase>('purchases', purchaseId);
+    if (!p) throw new BusinessError('Compra no encontrada.');
+    if (p.status === 'anulada') throw new BusinessError('La compra está anulada.');
+    const pay = (p.payments ?? [])[index];
+    if (!pay) throw new BusinessError('Pago no encontrado.');
+    if (pay.amount === next.amount && pay.method === next.method) throw new BusinessError('No hay cambios para guardar.');
+    const paid = (p.paid || 0) - pay.amount + next.amount;
+    if (paid > p.total) throw new BusinessError(`Con ese valor se le pagaría más que el total de la compra (${p.total.toLocaleString('es-CO')}).`);
+    const sid = await requireOpenSession(tx);
+    // ---------- ESCRITURAS ----------
+    const why = reason.trim();
+    const desc = `Corrección pago compra ${p.number} · ${p.supplierName}: ${why}`;
+    const back = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'ingreso', category: 'pago_proveedor', method, amount, description: desc, refType: 'purchase', refId: p.id });
+    const out = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'egreso', category: 'pago_proveedor', method, amount, description: desc, refType: 'purchase', refId: p.id });
+    if (pay.method === next.method) {
+      const diff = next.amount - pay.amount;
+      if (diff > 0) out(diff, pay.method); else back(-diff, pay.method);
+    } else {
+      back(pay.amount, pay.method);
+      if (next.amount > 0) out(next.amount, next.method);
+    }
+    const at = new Date().toISOString();
+    const payments = next.amount === 0
+      ? p.payments.filter((_, i) => i !== index)
+      : p.payments.map((x, i) => (i === index
+        ? { ...x, amount: next.amount, method: next.method, editedAt: at, editedBy: actor.name, editReason: why, previous: { amount: pay.amount, method: pay.method } }
+        : x));
+    tx.update('purchases', p.id, { paid, payments, status: statusFor(p.total, paid), ...touched() });
+  });
+}

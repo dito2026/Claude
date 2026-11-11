@@ -360,6 +360,11 @@ export interface SupplierPayment {
   amount: number;
   method: string;
   by: string;
+  /** corrección: quién, cuándo, por qué y los valores anteriores */
+  editedAt?: string;
+  editedBy?: string;
+  editReason?: string;
+  previous?: { amount: number; method: string };
 }
 
 export interface Purchase extends BaseDoc {

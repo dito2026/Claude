@@ -548,3 +548,11 @@ el servidor reintenta con su modelo de respaldo.
 - **La caja se cuadra sola en el turno abierto:** si baja el valor, sale la diferencia como «Anulación»; si sube, entra la diferencia como «Abono de cliente»; si cambia el medio, sale el valor viejo del medio viejo y entra el nuevo en el medio nuevo. El libro fiscal queda correcto, porque una anulación de egreso resta ingreso.
 - **Historial:** el abono guarda `previous`, `editedBy`, `editedAt` y `editReason`, se muestra «corregido por …» y queda una nota en la línea de tiempo de la orden.
 - **Registrar abono:** el medio de pago ahora es obligatorio, con botones (antes venía Efectivo por defecto).
+
+## 43. Corregir o eliminar un pago a proveedor
+
+- **Compras → abrir la compra → Pagos → lápiz** (`editSupplierPayment`): se cambia el valor o el medio de un pago (abono o pago de contado), o se **elimina**. El motivo es obligatorio y no se puede pagar más que el total de la compra.
+- **La caja abierta se cuadra sola.** Si el pago baja o cambia de medio, el dinero vuelve a la caja como reintegro de «Pago a proveedor» (resta de los egresos en el libro fiscal). Si sube, sale la diferencia.
+- **Saldo y estado** de la compra (pendiente, parcial o pagada) se recalculan, y por eso la deuda con el proveedor queda al día.
+- **Historial:** el pago guarda `previous`, `editedBy`, `editedAt` y `editReason`, y se muestra «Corregido por … · antes $X».
+- Si un abono se repartió entre varias compras, cada compra guarda su parte y se corrige en cada una.
