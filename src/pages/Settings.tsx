@@ -32,7 +32,7 @@ export function SettingsPage() {
             <Field label="Ciudad"><input className="input" value={d.city} onChange={(e) => set('city', e.target.value)} /></Field>
             <Field label="Correo" className="full"><input className="input" value={d.email} onChange={(e) => set('email', e.target.value)} /></Field>
             <Field label="Pie del comprobante" className="full"><input className="input" value={d.ticketFooter} onChange={(e) => set('ticketFooter', e.target.value)} /></Field>
-            <Field label="Condiciones de garantía de celulares (salen en la factura)" className="full"><textarea className="input" rows={4} value={d.phoneWarrantyTerms ?? ''} onChange={(e) => set('phoneWarrantyTerms', e.target.value)} /></Field>
+            <Field label="Condiciones de garantía (salen al final de todas las facturas; vacío = no sale)" className="full"><textarea className="input" rows={5} value={d.warrantyTerms ?? ''} onChange={(e) => set('warrantyTerms', e.target.value)} /></Field>
           </div>
         </div>
         <div className="card card-pad">

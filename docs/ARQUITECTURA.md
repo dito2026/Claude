@@ -563,3 +563,9 @@ el servidor reintenta con su modelo de respaldo.
 - `createInvoice` guarda en la línea `warrantyMonths` y `warrantyUntil` (fecha de la venta + meses). La unidad (`phoneUnits`) guarda lo mismo, así se ve en Inventario → Celulares si la garantía sigue vigente.
 - **Comprobante** (impreso, PDF, WhatsApp y correo): debajo del IMEI sale «Garantía 6 meses · hasta dd/mm/aaaa» o «Sin garantía». Si algún celular tiene garantía, sale también el texto de **condiciones**, editable en Configuración → «Condiciones de garantía de celulares».
 - Las facturas anteriores a este cambio no tienen esos datos guardados y no muestran la línea.
+
+## 45. Condiciones de garantía en todas las facturas
+
+- `warrantyTerms` reemplaza a `phoneWarrantyTerms`. Sale centrado y en mayúsculas al final de **todas** las facturas (impreso, PDF, WhatsApp y correo), antes del pie. Si se deja vacío, no sale.
+- Texto por defecto, tomado del comprobante de la tienda: «CONSERVE SU FACTURA PARA SU GARANTÍA. NO TIENEN GARANTÍA EQUIPOS APAGADOS, CON GOLPES, MOJADOS, SULFATADOS, INDICIOS DE CAÍDAS, BATERÍAS SOPLADAS, MANIPULACIÓN Y/O ALTERACIÓN Y/O USO INDEBIDO (SOFTWARE, ACTUALIZACIÓN, APLICACIONES MAL DESCARGADAS Y PARÁMETROS DE CONFIGURACIÓN BÁSICOS). GARANTÍA POR SOFTWARE 2 MESES (60 DÍAS).»
+- Se edita en Configuración → «Condiciones de garantía».

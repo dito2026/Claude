@@ -38,8 +38,8 @@ export interface BusinessSettings {
   ivaCapUvt?: number;
   /** margen para el precio sugerido de productos nuevos (%) */
   suggestedMarginPct?: number;
-  /** condiciones de garantía de celulares que salen en el comprobante */
-  phoneWarrantyTerms?: string;
+  /** condiciones de garantía que salen al final de TODAS las facturas */
+  warrantyTerms?: string;
   /** comprador que firma los contratos de compraventa de usados */
   ownerName?: string;
   ownerDocument?: string;

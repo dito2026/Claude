@@ -54,10 +54,10 @@ export function InvoiceReceipt({ inv, s }: { inv: Invoice; s: BusinessSettings }
           ))}
         </tbody>
       </table>
-      {inv.items.some((it) => it.unitId && (it.warrantyMonths ?? 0) > 0) && s.phoneWarrantyTerms && (
+      {s.warrantyTerms?.trim() && (
         <>
           <hr />
-          <div style={{ fontSize: 10.5, lineHeight: 1.35 }}>{s.phoneWarrantyTerms}</div>
+          <div className="c receipt-terms">{s.warrantyTerms}</div>
         </>
       )}
       <hr />
@@ -121,6 +121,7 @@ const invoiceText = (inv: Invoice, s: BusinessSettings) =>
     ...inv.items.map((i) => `• ${i.qty} × ${i.description}: ${money(i.qty * i.unitPrice)}${i.imei ? `\n   IMEI ${i.imei}` : ''}${i.unitId && i.warrantyMonths != null ? `\n   ${warrantyLine(i)}` : ''}`),
     `*Total: ${money(inv.total)}*`,
     s.ticketFooter,
+    ...(s.warrantyTerms?.trim() ? ['', s.warrantyTerms.trim()] : []),
   ].join('\n');
 
 const orderText = (o: RepairOrder, s: BusinessSettings) =>
