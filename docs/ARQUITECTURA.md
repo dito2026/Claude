@@ -569,3 +569,10 @@ el servidor reintenta con su modelo de respaldo.
 - `warrantyTerms` reemplaza a `phoneWarrantyTerms`. Sale centrado y en mayúsculas al final de **todas** las facturas (impreso, PDF, WhatsApp y correo), antes del pie. Si se deja vacío, no sale.
 - Texto por defecto, tomado del comprobante de la tienda: «CONSERVE SU FACTURA PARA SU GARANTÍA. NO TIENEN GARANTÍA EQUIPOS APAGADOS, CON GOLPES, MOJADOS, SULFATADOS, INDICIOS DE CAÍDAS, BATERÍAS SOPLADAS, MANIPULACIÓN Y/O ALTERACIÓN Y/O USO INDEBIDO (SOFTWARE, ACTUALIZACIÓN, APLICACIONES MAL DESCARGADAS Y PARÁMETROS DE CONFIGURACIÓN BÁSICOS). GARANTÍA POR SOFTWARE 2 MESES (60 DÍAS).»
 - Se edita en Configuración → «Condiciones de garantía».
+
+## 46. Historial de pagos a proveedores
+
+- **Compras y proveedores → pestaña «Pagos a proveedores»**: todos los pagos y abonos, del más reciente al más viejo, con filtro por proveedor, total y total del mes. Cada fila muestra la fecha, el proveedor, las compras a las que se aplicó, el medio, quién lo registró y el valor. Marca «Corregido» y «Compra anulada» (esta última no suma).
+- **Proveedores y saldos → botón «Pagos»** en cada proveedor: el mismo historial, solo de ese proveedor.
+- Un abono repartido entre varias compras sale como **un solo pago** con sus partes (`supplierPayments`, agrupa por proveedor, fecha, medio y usuario).
+- Tocando la compra (C-0001) se abre, y ahí se puede corregir o eliminar el pago con el lápiz.

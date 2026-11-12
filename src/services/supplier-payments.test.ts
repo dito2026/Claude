@@ -51,3 +51,21 @@ describe('corregir abonos a proveedores', () => {
     expect(f.outflow).toBe(0);
   });
 });
+
+describe('historial de pagos a proveedores', () => {
+  it('un abono repartido en dos compras sale como un solo pago con sus partes', async () => {
+    const { supplierPayments } = await import('./purchases');
+    await openSession(actor, 500000);
+    const sid = String(await saveSupplier(actor, { name: 'Nano', nit: '', phone: '', termDays: 30, notes: '', active: true }));
+    const supplier = { ...(await backend.get<Supplier>('suppliers', sid))!, id: sid };
+    const mk = (cost: number) => createPurchase(actor, { supplier, paymentType: 'credito', method: '', invoiceRef: '', note: '', updateCost: false, items: [{ productId: '', name: 'X', qty: 1, unitCost: cost }] });
+    const a = await mk(100000);
+    const b = await mk(80000);
+    await paySupplier(actor, supplier, [a.id, b.id], 150000, 'Efectivo');
+    const rows = supplierPayments(await backend.list<Purchase>('purchases'), sid);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ amount: 150000, method: 'Efectivo', supplierName: 'Nano' });
+    expect(rows[0].parts.map((x) => x.amount).sort((x, y) => x - y)).toEqual([50000, 100000]);
+    expect(supplierPayments(await backend.list<Purchase>('purchases'), 'otro')).toHaveLength(0);
+  });
+});

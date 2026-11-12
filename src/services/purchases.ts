@@ -364,3 +364,35 @@ export async function editSupplierPayment(actor: Actor, purchaseId: string, inde
     tx.update('purchases', p.id, { paid, payments, status: statusFor(p.total, paid), ...touched() });
   });
 }
+
+export interface SupplierPaymentRow {
+  key: string;
+  at: string;
+  supplierId: string;
+  supplierName: string;
+  method: string;
+  by: string;
+  amount: number;
+  /** compras a las que se aplicó (un abono puede repartirse entre varias) */
+  parts: { purchaseId: string; number: number; amount: number; index: number }[];
+  edited: boolean;
+  voided: boolean;
+}
+
+/** Pagos hechos a proveedores, agrupados por abono (misma fecha, medio y usuario), del más reciente al más viejo. */
+export function supplierPayments(purchases: Purchase[], supplierId?: string): SupplierPaymentRow[] {
+  const map = new Map<string, SupplierPaymentRow>();
+  for (const p of purchases) {
+    if (supplierId && p.supplierId !== supplierId) continue;
+    (p.payments ?? []).forEach((x, index) => {
+      const key = `${p.supplierId}|${x.at}|${x.method}|${x.by}`;
+      const row = map.get(key) ?? { key, at: x.at, supplierId: p.supplierId, supplierName: p.supplierName, method: x.method, by: x.by, amount: 0, parts: [], edited: false, voided: false };
+      row.amount += x.amount;
+      row.parts.push({ purchaseId: p.id, number: p.number, amount: x.amount, index });
+      row.edited = row.edited || !!x.editedAt;
+      row.voided = row.voided || p.status === 'anulada';
+      map.set(key, row);
+    });
+  }
+  return [...map.values()].sort((a, b) => b.at.localeCompare(a.at));
+}

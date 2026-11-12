@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { HandCoins, PackagePlus, PenLine, Pencil, Plus, Sparkles, Trash2, Truck } from 'lucide-react';
+import { HandCoins, History, PackagePlus, PenLine, Pencil, Plus, Sparkles, Trash2, Truck } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { PhoneCondition, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
@@ -8,7 +8,7 @@ import { dateOnly, dateTime, fromLocalInput, matches, money, pad, toLocalInput, 
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction } from '../components/ui';
 import {
-  changePurchaseSupplier, createPurchase, editSupplierPayment, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
+  changePurchaseSupplier, createPurchase, editSupplierPayment, supplierPayments, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
 } from '../services/purchases';
 import { useSettings } from '../services/settings';
 import type { CashState } from '../services/cash';
@@ -27,7 +27,7 @@ const statusLabel = (p: Purchase) =>
 export function Purchases() {
   const suppliers = useCollection<Supplier>('suppliers').rows;
   const purchases = useCollection<Purchase>('purchases').rows;
-  const [tab, setTab] = useState<'compras' | 'proveedores' | 'reposicion'>('compras');
+  const [tab, setTab] = useState<'compras' | 'proveedores' | 'pagos' | 'reposicion'>('compras');
   const [buying, setBuying] = useState<PurchasePrefill | false>(false);
   const [readingAi, setReadingAi] = useState(false);
   const aiOn = useAiEnabled();
@@ -59,10 +59,12 @@ export function Purchases() {
       <div className="tabs">
         <button className={tab === 'compras' ? 'active' : ''} onClick={() => setTab('compras')}>Compras</button>
         <button className={tab === 'proveedores' ? 'active' : ''} onClick={() => setTab('proveedores')}>Proveedores y saldos</button>
+        <button className={tab === 'pagos' ? 'active' : ''} onClick={() => setTab('pagos')}>Pagos a proveedores</button>
         <button className={tab === 'reposicion' ? 'active' : ''} onClick={() => setTab('reposicion')}>Reposición sugerida</button>
       </div>
       {tab === 'compras' && <PurchaseList purchases={purchases} />}
       {tab === 'proveedores' && <SupplierList suppliers={suppliers} purchases={purchases} />}
+      {tab === 'pagos' && <PaymentsTab suppliers={suppliers} purchases={purchases} />}
       {tab === 'reposicion' && <RestockTab onBuy={(p) => setBuying(p)} />}
       {buying && <NewPurchaseModal suppliers={suppliers} prefill={buying} onClose={() => setBuying(false)} />}
       {readingAi && <AiInvoiceModal suppliers={suppliers} onClose={() => setReadingAi(false)} onReady={(p) => { setReadingAi(false); setBuying(p); }} />}
@@ -256,11 +258,75 @@ function EditSupplierPaymentModal({ p, index, onClose }: { p: Purchase; index: n
   );
 }
 
+// ---------------- Pagos a proveedores ----------------
+function PaymentsTab({ suppliers, purchases }: { suppliers: Supplier[]; purchases: Purchase[] }) {
+  const [sid, setSid] = useState('');
+  return (
+    <>
+      <div className="row" style={{ marginBottom: 14 }}>
+        <select className="input" style={{ maxWidth: 320 }} value={sid} onChange={(e) => setSid(e.target.value)} aria-label="Proveedor">
+          <option value="">Todos los proveedores</option>
+          {[...suppliers].sort((a, b) => a.name.localeCompare(b.name)).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </div>
+      <div className="card"><PaymentsList purchases={purchases} supplierId={sid || undefined} showSupplier={!sid} /></div>
+    </>
+  );
+}
+
+/** Lista de pagos y abonos a proveedores; tocando una compra se abre para verla o corregir el pago. */
+function PaymentsList({ purchases, supplierId, showSupplier }: { purchases: Purchase[]; supplierId?: string; showSupplier?: boolean }) {
+  const rows = useMemo(() => supplierPayments(purchases, supplierId), [purchases, supplierId]);
+  const [open, setOpen] = useState<string | null>(null);
+  const valid = rows.filter((r) => !r.voided);
+  const total = valid.reduce((a, r) => a + r.amount, 0);
+  const month = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+  const thisMonth = valid.filter((r) => new Date(r.at).getTime() >= month).reduce((a, r) => a + r.amount, 0);
+  const openP = open ? purchases.find((p) => p.id === open) : undefined;
+  return (
+    <>
+      <div className="row" style={{ padding: '12px 16px', gap: 24 }}>
+        <span className="muted">{valid.length} pago(s) · total <b>{money(total)}</b></span>
+        <span className="muted">Este mes: <b>{money(thisMonth)}</b></span>
+      </div>
+      {rows.length === 0 ? <Empty icon={<HandCoins size={30} />}>No hay pagos a proveedores todavía.</Empty> : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Fecha</th>{showSupplier && <th>Proveedor</th>}<th>Compras</th><th>Medio</th><th>Registró</th><th className="num">Valor</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.key} style={{ opacity: r.voided ? 0.5 : 1 }}>
+                  <td className="nowrap">{dateTime(r.at)}{r.edited && <small className="faint">Corregido</small>}{r.voided && <small className="red">Compra anulada</small>}</td>
+                  {showSupplier && <td className="strong">{r.supplierName}</td>}
+                  <td>
+                    <div className="row gap-sm" style={{ gap: 4 }}>
+                      {r.parts.map((x) => (
+                        <button key={x.purchaseId + x.index} type="button" className="badge plain" style={{ cursor: 'pointer' }} title="Abrir la compra (ver o corregir este pago)" onClick={() => setOpen(x.purchaseId)}>
+                          C-{pad(x.number, 4)}{r.parts.length > 1 ? ` · ${money(x.amount)}` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </td>
+                  <td>{r.method}</td>
+                  <td>{r.by}</td>
+                  <td className="num strong">{money(r.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {openP && <PurchaseModal p={openP} onClose={() => setOpen(null)} />}
+    </>
+  );
+}
+
 // ---------------- Proveedores ----------------
 function SupplierList({ suppliers, purchases }: { suppliers: Supplier[]; purchases: Purchase[] }) {
   const [q, setQ] = useState('');
   const [edit, setEdit] = useState<{ id?: string; data: SupplierInput } | null>(null);
   const [paying, setPaying] = useState<Supplier | null>(null);
+  const [history, setHistory] = useState<Supplier | null>(null);
   const list = suppliers
     .filter((s) => matches(q, s.name, s.nit, s.phone))
     .map((s) => ({ s, sum: supplierSummary(s, purchases) }))
@@ -288,6 +354,7 @@ function SupplierList({ suppliers, purchases }: { suppliers: Supplier[]; purchas
                     <td className="num">{sum.owed ? <span className="red strong">{money(sum.owed)}</span> : <Badge tone="ok">Al día</Badge>}{sum.overdue > 0 && <small className="red">{sum.overdue} vencida(s)</small>}</td>
                     <td className="right nowrap">
                       {sum.owed > 0 && <button className="btn sm" onClick={() => setPaying(s)}><HandCoins size={15} />Abonar</button>}
+                      <button className="btn sm ghost" title="Ver los pagos y abonos hechos a este proveedor" onClick={() => setHistory(s)}><History size={15} />Pagos</button>
                       <button className="btn sm ghost" title="Editar" onClick={() => setEdit({ id: s.id, data: { ...EMPTY_SUPPLIER, ...s } })}><Pencil size={15} /></button>
                     </td>
                   </tr>
@@ -299,6 +366,11 @@ function SupplierList({ suppliers, purchases }: { suppliers: Supplier[]; purchas
       </div>
       {edit && <SupplierModal edit={edit} onClose={() => setEdit(null)} />}
       {paying && <PayModal supplier={paying} purchases={purchases} onClose={() => setPaying(null)} />}
+      {history && (
+        <Modal wide title={`Pagos a ${history.name}`} onClose={() => setHistory(null)}>
+          <PaymentsList purchases={purchases} supplierId={history.id} />
+        </Modal>
+      )}
     </>
   );
 }
