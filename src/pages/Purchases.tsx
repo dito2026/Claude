@@ -85,7 +85,7 @@ function PurchaseList({ purchases }: { purchases: Purchase[] }) {
   const list = purchases
     // al buscar se busca en todas, también las ya pagadas
     .filter((p) => filter === 'todas' || q.trim() !== '' || (p.status !== 'pagada' && p.status !== 'anulada'))
-    .filter((p) => matches(q, p.number, p.supplierName, p.invoiceRef, ...p.items.map((i) => i.name)))
+    .filter((p) => matches(q, p.number, p.supplierName, p.invoiceRef, ...p.items.map((i) => i.name), ...p.items.flatMap((i) => (i.units ?? []).map((u) => u.imei))))
     .sort((a, b) => b.number - a.number);
   return (
     <>
@@ -104,7 +104,17 @@ function PurchaseList({ purchases }: { purchases: Purchase[] }) {
                     <td className="mono strong">C-{pad(p.number, 4)}</td>
                     <td className="nowrap">{dateOnly(p.createdAt)}</td>
                     <td className="strong">{p.supplierName}</td>
-                    <td>{p.kind === 'saldo_inicial' ? <span className="muted">Saldo anterior</span> : `${p.items.length} producto${p.items.length === 1 ? '' : 's'}`}{p.invoiceRef && <small>Fact. {p.invoiceRef}</small>}</td>
+                    <td className="sold-items" title={p.items.map((it) => `${it.qty}× ${it.name} · ${money(it.qty * it.unitCost)}`).join('\n')}>
+                      {p.kind === 'saldo_inicial' ? <span className="muted">Saldo anterior</span> : (
+                        <>
+                          {p.items.slice(0, 3).map((it, k) => (
+                            <div key={k}>{it.qty > 1 && <b>{it.qty}× </b>}{it.name}{it.units?.length ? <small className="mono">IMEI {it.units.map((u) => u.imei).join(', ')}</small> : null}</div>
+                          ))}
+                          {p.items.length > 3 && <small>y {p.items.length - 3} más…</small>}
+                        </>
+                      )}
+                      {p.invoiceRef && <small>Fact. {p.invoiceRef}</small>}
+                    </td>
                     <td><Badge tone={p.paymentType === 'credito' ? 'warn' : ''}>{p.paymentType === 'credito' ? 'Crédito' : 'Contado'}</Badge></td>
                     <td className={`nowrap ${isOverduePurchase(p) ? 'red' : ''}`}>{p.paymentType === 'credito' ? dateOnly(p.dueDate) : '—'}</td>
                     <td><Badge tone={statusTone(p)}>{statusLabel(p)}</Badge></td>

@@ -582,3 +582,8 @@ el servidor reintenta con su modelo de respaldo.
 - En el cierre de caja **solo se cuenta el efectivo**. Transferencia, Nequi, Daviplata y Tarjeta vienen con lo esperado; se toca «Cambiar» si en la cuenta o en la app del banco no aparece ese valor. Antes venían en $0 y mostraban diferencias falsas.
 - Si un medio digital quedó negativo (salió más de lo que entró en el turno, por ejemplo pagos a proveedores por Nequi), se muestra la nota «Salió más de lo que entró» y se confirma tal cual.
 - Si hay faltante o sobrante de efectivo, un aviso explica qué revisar antes de cerrar: gasto o retiro sin registrar, venta por Nequi que quedó como efectivo, cambio mal dado.
+
+## 48. Productos en la lista de compras
+
+- **Compras → columna «Detalle»:** muestra los nombres de los productos comprados (hasta 3 y «y N más…»), con la cantidad y los IMEI de los celulares. Antes decía «1 producto». Al pasar el mouse se ve el detalle completo con sus costos.
+- El buscador de compras también encuentra por IMEI.
