@@ -389,6 +389,8 @@ export interface Purchase extends BaseDoc {
   voidReason?: string;
   voidedAt?: string;
   voidedBy?: string;
+  /** correcciones de productos, cantidades o costos: valores ANTERIORES */
+  edits?: { at: string; by: string; reason: string; total: number; items: PurchaseItem[] }[];
 }
 
 // ---------------- Celulares por IMEI ----------------

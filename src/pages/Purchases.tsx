@@ -8,7 +8,7 @@ import { dateOnly, dateTime, fromLocalInput, matches, money, pad, toLocalInput, 
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction } from '../components/ui';
 import {
-  changePurchaseSupplier, createPurchase, editSupplierPayment, supplierPayments, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
+  changePurchaseSupplier, createPurchase, editPurchase, editSupplierPayment, supplierPayments, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
 } from '../services/purchases';
 import { useSettings } from '../services/settings';
 import type { CashState } from '../services/cash';
@@ -141,16 +141,23 @@ function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
   const [reason, setReason] = useState('');
   const voided = p.status === 'anulada';
   const [editingPay, setEditingPay] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
   return (
     <Modal title={<><span className="mono">C-{pad(p.number, 4)}</span> · {p.supplierName}</>} wide onClose={onClose}
       footer={voided ? undefined : (
         <>
           {can('settings') && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={() => setMode(mode === 'anular' ? '' : 'anular')}>Anular compra</button>}
+          {can('settings') && p.kind !== 'saldo_inicial' && <button className="btn" onClick={() => setEditing(true)}><Pencil size={15} />Editar compra</button>}
           <button className="btn" onClick={() => setMode(mode === 'proveedor' ? '' : 'proveedor')}>Cambiar proveedor</button>
           <button className="btn ghost" onClick={onClose}>Cerrar</button>
         </>
       )}>
       {voided && <div className="alert warn" style={{ marginBottom: 14 }}>Compra anulada el {dateTime(p.voidedAt)} por {p.voidedBy}: {p.voidReason}</div>}
+      {(p.edits ?? []).length > 0 && (
+        <div className="faint" style={{ fontSize: 12, marginBottom: 10 }}>
+          {p.edits!.map((e, k) => <div key={k}>Corregida el {dateTime(e.at)} por {e.by} · antes {money(e.total)} · {e.reason}</div>)}
+        </div>
+      )}
       {mode === 'proveedor' && (
         <div className="card card-pad stack" style={{ marginBottom: 14 }}>
           <b>¿Cuál es el proveedor correcto?</b>
@@ -222,6 +229,66 @@ function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
         </div>
       </div>
       {editingPay !== null && p.payments[editingPay] && <EditSupplierPaymentModal p={p} index={editingPay} onClose={() => setEditingPay(null)} />}
+      {editing && <EditPurchaseModal p={p} onClose={() => setEditing(false)} />}
+    </Modal>
+  );
+}
+
+function EditPurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const [lines, setLines] = useState(() => p.items.map((it, index) => ({ index, name: it.name, qty: it.qty, unitCost: it.unitCost })));
+  const [invoiceRef, setInvoiceRef] = useState(p.invoiceRef ?? '');
+  const [note, setNote] = useState(p.note ?? '');
+  const [due, setDue] = useState(p.dueDate ? toLocalInput(p.dueDate) : '');
+  const [updateCost, setUpdateCost] = useState(true);
+  const [reason, setReason] = useState('');
+  const set = (i: number, patch: Partial<(typeof lines)[number]>) => setLines((xs) => xs.map((x) => (x.index === i ? { ...x, ...patch } : x)));
+  const total = lines.reduce((a, l) => a + l.qty * l.unitCost, 0);
+  const paid = p.paid || 0;
+  const save = () => run(() => editPurchase(actor, p.id, { lines, invoiceRef, note, dueDate: due ? fromLocalInput(due) : undefined, updateCost }, reason),
+    'Compra corregida').then((ok) => ok && onClose());
+  return (
+    <Modal wide title={`Editar compra C-${pad(p.number, 4)} · ${p.supplierName}`} onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || !reason.trim() || total < paid} onClick={save}>Guardar cambios</button></>}>
+      <div className="stack">
+        <div className="alert info"><div>
+          Corrija nombre, cantidad o costo. Si cambia la cantidad de un producto con inventario, la diferencia entra o sale del stock.
+          Ponga <b>0</b> para quitar una línea. En los celulares la cantidad la dan los IMEI.
+        </div></div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Producto</th><th className="num" style={{ width: 100 }}>Cantidad</th><th className="num" style={{ width: 160 }}>Costo unitario</th><th className="num">Subtotal</th></tr></thead>
+            <tbody>
+              {lines.map((l) => {
+                const old = p.items[l.index];
+                return (
+                  <tr key={l.index} style={{ opacity: l.qty === 0 ? 0.5 : 1 }}>
+                    <td><input className="input" value={l.name} onChange={(e) => set(l.index, { name: e.target.value })} />
+                      {old.units?.length ? <small className="mono">IMEI {old.units.map((u) => u.imei).join(', ')}</small> : !old.productId ? <small>Artículo libre (sin inventario)</small> : null}</td>
+                    <td>{old.units?.length ? <div className="num">{l.qty}</div>
+                      : <input className="input num" type="number" min={0} value={l.qty} onChange={(e) => set(l.index, { qty: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} />}</td>
+                    <td><MoneyInput value={l.unitCost} onChange={(v) => set(l.index, { unitCost: v })} /></td>
+                    <td className="num">{money(l.qty * l.unitCost)}{l.qty !== old.qty && <small className={l.qty < old.qty ? 'red' : ''}>{l.qty > old.qty ? '+' : ''}{l.qty - old.qty} al stock</small>}</td>
+                  </tr>
+                );
+              })}
+              <tr><td className="strong">Total</td><td /><td className="num faint">antes {money(p.total)}</td><td className="num strong">{money(total)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        {total < paid
+          ? <div className="alert error"><div>Ya se le pagaron {money(paid)} a {p.supplierName} y el nuevo total sería {money(total)}. Corrija primero el pago (lápiz en «Pagos») y luego la compra.</div></div>
+          : <div className="faint" style={{ fontSize: 13 }}>Pagado {money(paid)} · saldo después del cambio: <b>{money(total - paid)}</b></div>}
+        <div className="form-grid">
+          <Field label="Factura o nota del proveedor"><input className="input" value={invoiceRef} onChange={(e) => setInvoiceRef(e.target.value)} /></Field>
+          {p.paymentType === 'credito' && <Field label="Fecha límite de pago"><input className="input" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} /></Field>}
+          <Field label="Nota" className="full"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+        </div>
+        <label className="checkbox"><input type="checkbox" checked={updateCost} onChange={(e) => setUpdateCost(e.target.checked)} />Actualizar el costo de los productos con el corregido</label>
+        <Field label="Motivo" required><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: el costo era otro · eran 5 y no 3" /></Field>
+      </div>
     </Modal>
   );
 }

@@ -166,7 +166,13 @@ service cloud.firestore {
           && request.resource.data.status != 'anulada')
         || (isAdmin()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'voidReason', 'voidedAt', 'voidedBy', 'updatedAt'])
-          && request.resource.data.status == 'anulada');
+          && request.resource.data.status == 'anulada')
+        // Editar productos, cantidades y costos: solo admin, guardando el historial en `edits`
+        || (isAdmin()
+          && resource.data.status != 'anulada'
+          && request.resource.data.status != 'anulada'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items', 'total', 'status', 'invoiceRef', 'note', 'dueDate', 'edits', 'updatedAt'])
+          && request.resource.data.edits.size() == resource.data.get('edits', []).size() + 1);
       allow delete: if false;
     }
 

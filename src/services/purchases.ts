@@ -7,7 +7,7 @@ import { CREDIT_METHOD } from '../lib/types';
 import { addDays } from '../lib/format';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
 import { requireOpenSession, writeMovement } from './cash';
-import { moveStock } from './inventory';
+import { moveStock, tracksStock } from './inventory';
 import { assertImeisFree, cleanUnits, isPhone, writeUnits } from './phones';
 
 export type SupplierInput = Omit<Supplier, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>;
@@ -395,4 +395,107 @@ export function supplierPayments(purchases: Purchase[], supplierId?: string): Su
     });
   }
   return [...map.values()].sort((a, b) => b.at.localeCompare(a.at));
+}
+
+export interface PurchaseLineFix {
+  /** posición de la línea en la compra */
+  index: number;
+  name: string;
+  qty: number;
+  unitCost: number;
+}
+
+/**
+ * Corrige una compra (solo administrador): nombre, cantidad y costo de cada línea, factura, vencimiento y nota.
+ * - Productos con inventario: la diferencia de cantidad entra o sale del stock (kardex).
+ * - Celulares: la cantidad la dan los IMEI (no se cambia aquí); el costo nuevo pasa a los equipos aún disponibles.
+ * - Cantidad 0 quita la línea. El total y el saldo se recalculan; lo ya pagado no cambia
+ *   (si queda pagado de más, primero se corrige el pago).
+ * Guarda los valores anteriores en `edits`.
+ */
+export async function editPurchase(
+  actor: Actor,
+  purchaseId: string,
+  fix: { lines: PurchaseLineFix[]; invoiceRef: string; note: string; dueDate?: string; updateCost: boolean },
+  reason: string,
+) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo de la corrección.');
+  return backend.transaction(async (tx) => {
+    // ---------- LECTURAS ----------
+    const p = await tx.get<Purchase>('purchases', purchaseId);
+    if (!p) throw new BusinessError('Compra no encontrada.');
+    if (p.status === 'anulada') throw new BusinessError('La compra está anulada.');
+    if (p.kind === 'saldo_inicial') throw new BusinessError('Un saldo anterior no tiene productos para editar.');
+    const items: PurchaseItem[] = [];
+    const deltas: { product: Product; delta: number; name: string }[] = [];
+    const products = new Map<string, Product>();
+    const unitsToReprice: { id: string; cost: number }[] = [];
+    for (const f of fix.lines) {
+      const old = p.items[f.index];
+      if (!old) throw new BusinessError('Línea de compra no encontrada.');
+      if (!Number.isInteger(f.qty) || f.qty < 0 || f.unitCost < 0) throw new BusinessError(`«${old.name}»: revise cantidad y costo.`);
+      if (!f.name.trim()) throw new BusinessError('El nombre del producto no puede quedar vacío.');
+      if (old.units?.length) {
+        if (f.qty !== old.qty) throw new BusinessError(`«${old.name}» es un celular con IMEI: la cantidad no se cambia aquí (anule la compra o el ingreso).`);
+        if (f.unitCost !== old.unitCost) {
+          for (const u of old.units) {
+            const unit = await tx.get<PhoneUnit>('phoneUnits', u.imei);
+            if (unit && unit.purchaseId === p.id && unit.status === 'disponible') unitsToReprice.push({ id: unit.id, cost: f.unitCost });
+          }
+        }
+      } else if (old.productId && f.qty !== old.qty) {
+        let prod = products.get(old.productId);
+        if (!prod) {
+          prod = (await tx.get<Product>('products', old.productId)) ?? undefined;
+          if (!prod) throw new BusinessError(`Producto no encontrado: ${old.name}`);
+          products.set(prod.id, prod);
+        }
+        const delta = f.qty - old.qty;
+        if (delta < 0 && tracksStock(prod) && (Number(prod.stock) || 0) + delta < 0) {
+          throw new BusinessError(`«${prod.name}»: solo hay ${prod.stock} en inventario, no se pueden quitar ${-delta}.`);
+        }
+        deltas.push({ product: prod, delta, name: old.name });
+      }
+      if (f.qty > 0) items.push({ ...old, name: f.name.trim(), qty: f.qty, unitCost: f.unitCost });
+    }
+    if (items.length === 0) throw new BusinessError('La compra quedaría vacía: mejor anúlela.');
+    if (fix.updateCost) {
+      for (const it of items) {
+        if (it.productId && !products.has(it.productId)) {
+          const prod = await tx.get<Product>('products', it.productId);
+          if (prod) products.set(prod.id, prod);
+        }
+      }
+    }
+    const total = sum(items.map((i) => i.qty * i.unitCost));
+    const paid = p.paid || 0;
+    if (paid > total) {
+      throw new BusinessError(`Ya se le pagaron ${paid.toLocaleString('es-CO')} y el nuevo total sería ${total.toLocaleString('es-CO')}. Corrija primero el pago (lápiz en Pagos).`);
+    }
+    // ---------- ESCRITURAS ----------
+    const at = new Date().toISOString();
+    for (const d of deltas) {
+      moveStock(tx, actor, d.product, d.delta, d.delta > 0 ? 'compra' : 'anulacion_compra', {
+        refType: 'purchase', refId: p.id, refNumber: p.number, note: `Corrección compra ${p.number}: ${reason.trim()}`,
+      });
+    }
+    for (const u of unitsToReprice) tx.update('phoneUnits', u.id, { cost: u.cost, ...touched() });
+    if (fix.updateCost) {
+      for (const it of items) {
+        const prod = it.productId ? products.get(it.productId) : undefined;
+        if (prod && it.unitCost > 0 && it.unitCost !== prod.cost) tx.update('products', prod.id, { cost: it.unitCost, ...touched() });
+      }
+    }
+    tx.update('purchases', p.id, {
+      items,
+      total,
+      status: statusFor(total, paid),
+      invoiceRef: fix.invoiceRef.trim(),
+      note: fix.note.trim(),
+      ...(p.paymentType === 'credito' && fix.dueDate ? { dueDate: fix.dueDate } : {}),
+      edits: [...(p.edits ?? []), { at, by: actor.name, reason: reason.trim(), total: p.total, items: p.items }],
+      ...touched(),
+    });
+    return { total };
+  });
 }

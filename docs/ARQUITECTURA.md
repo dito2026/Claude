@@ -587,3 +587,13 @@ el servidor reintenta con su modelo de respaldo.
 
 - **Compras → columna «Detalle»:** muestra los nombres de los productos comprados (hasta 3 y «y N más…»), con la cantidad y los IMEI de los celulares. Antes decía «1 producto». Al pasar el mouse se ve el detalle completo con sus costos.
 - El buscador de compras también encuentra por IMEI.
+
+## 49. Editar una compra
+
+- **Compras → abrir la compra → Editar compra** (solo administrador, `editPurchase`): se corrige el nombre, la cantidad y el costo de cada línea, la factura del proveedor, la fecha límite (si es a crédito) y la nota. El motivo es obligatorio.
+- **Cantidad:** en productos con inventario, la diferencia entra al stock (kardex «compra») o sale (kardex «anulación de compra»), con la nota de la corrección. No deja quitar más de lo que hay en stock. Con 0 se quita la línea; si la compra queda vacía, hay que anularla.
+- **Celulares:** la cantidad la dan los IMEI y no se cambia aquí. El costo nuevo pasa a los equipos de esa compra que siguen disponibles.
+- **Costo:** con «Actualizar el costo de los productos» el producto toma el costo corregido.
+- **Total y saldo** se recalculan y lo pagado no cambia. Si lo pagado quedara por encima del nuevo total, primero hay que corregir el pago.
+- **Historial:** `edits` guarda el total y las líneas anteriores, con quién y por qué. En la compra se ve «Corregida el … por … · antes $X».
+- **Regla de Firestore:** solo el admin, solo esos campos, compra no anulada, y `edits` crece en uno.
