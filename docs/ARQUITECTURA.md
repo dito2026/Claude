@@ -576,3 +576,9 @@ el servidor reintenta con su modelo de respaldo.
 - **Proveedores y saldos → botón «Pagos»** en cada proveedor: el mismo historial, solo de ese proveedor.
 - Un abono repartido entre varias compras sale como **un solo pago** con sus partes (`supplierPayments`, agrupa por proveedor, fecha, medio y usuario).
 - Tocando la compra (C-0001) se abre, y ahí se puede corregir o eliminar el pago con el lápiz.
+
+## 47. Arqueo más claro
+
+- En el cierre de caja **solo se cuenta el efectivo**. Transferencia, Nequi, Daviplata y Tarjeta vienen con lo esperado; se toca «Cambiar» si en la cuenta o en la app del banco no aparece ese valor. Antes venían en $0 y mostraban diferencias falsas.
+- Si un medio digital quedó negativo (salió más de lo que entró en el turno, por ejemplo pagos a proveedores por Nequi), se muestra la nota «Salió más de lo que entró» y se confirma tal cual.
+- Si hay faltante o sobrante de efectivo, un aviso explica qué revisar antes de cerrar: gasto o retiro sin registrar, venta por Nequi que quedó como efectivo, cambio mal dado.

@@ -307,33 +307,59 @@ function MovementModal({ kind, methods, categories, onClose }: { kind: MovKind; 
 function CloseModal({ session, expected, methods, onClose }: { session: CashSession; expected: Record<string, number>; methods: string[]; onClose: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
-  const [counted, setCounted] = useState<Record<string, number>>(() => Object.fromEntries(methods.map((m) => [m, 0])));
+  // Solo el efectivo se cuenta a mano. Transferencias, Nequi, tarjeta… vienen con lo esperado;
+  // se cambian solo si en la cuenta no aparece lo que dice la app.
+  const [counted, setCounted] = useState<Record<string, number>>(() => Object.fromEntries(methods.map((m) => [m, m === 'Efectivo' ? 0 : expected[m] ?? 0])));
+  const [editing, setEditing] = useState<Record<string, boolean>>({});
   const [notes, setNotes] = useState('');
   const te = Object.values(expected).reduce((a, b) => a + b, 0);
-  const tc = Object.values(counted).reduce((a, b) => a + b, 0);
+  const tc = methods.reduce((a, m) => a + (counted[m] ?? 0), 0);
+  const cashDiff = (counted['Efectivo'] ?? 0) - (expected['Efectivo'] ?? 0);
   return (
     <Modal title="Cierre de caja · arqueo" onClose={onClose} wide
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
         <button className="btn primary" disabled={busy} onClick={() => run(() => closeSession(actor, session.id, expected, counted, notes), 'Caja cerrada').then((ok) => ok && onClose())}>Cerrar caja</button></>}>
-      <table className="table">
-        <thead><tr><th>Medio</th><th className="num">Esperado</th><th className="num" style={{ width: 200 }}>Contado</th><th className="num">Diferencia</th></tr></thead>
-        <tbody>
-          {methods.map((m) => {
-            const d = (counted[m] ?? 0) - (expected[m] ?? 0);
-            return (
-              <tr key={m}>
-                <td className="strong">{m}</td>
-                <td className="num">{money(expected[m] ?? 0)}</td>
-                <td><MoneyInput value={counted[m] ?? 0} onChange={(v) => setCounted({ ...counted, [m]: v })} /></td>
-                <td className={`num ${d ? 'red' : ''}`}>{money(d)}</td>
-              </tr>
-            );
-          })}
-          <tr><td className="strong">Total</td><td className="num strong">{money(te)}</td><td className="num strong">{money(tc)}</td><td className={`num strong ${tc - te ? 'red' : ''}`}>{money(tc - te)}</td></tr>
-        </tbody>
-      </table>
+      <div className="alert info" style={{ marginBottom: 12 }}><div>
+        <b>Cuente solo el efectivo</b> que hay en el cajón (incluida la base) y escríbalo. Transferencia, Nequi y los demás medios ya vienen llenos con lo que registró la app;
+        toque «Cambiar» solo si en la cuenta o en la app del banco no aparece ese valor.
+      </div></div>
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>Medio</th><th className="num">Esperado</th><th className="num" style={{ width: 210 }}>Contado / confirmado</th><th className="num">Diferencia</th></tr></thead>
+          <tbody>
+            {methods.map((m) => {
+              const d = (counted[m] ?? 0) - (expected[m] ?? 0);
+              const cash = m === 'Efectivo';
+              const neg = (expected[m] ?? 0) < 0;
+              return (
+                <tr key={m}>
+                  <td className="strong">{m}{!cash && neg && <small className="faint">Salió más de lo que entró en este turno</small>}</td>
+                  <td className="num">{money(expected[m] ?? 0)}</td>
+                  <td>
+                    {cash || editing[m]
+                      ? <MoneyInput value={counted[m] ?? 0} onChange={(v) => setCounted({ ...counted, [m]: v })} autoFocus={cash} />
+                      : <div className="row gap-sm" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
+                          <span className="mono">{money(counted[m] ?? 0)}</span>
+                          {!neg && <button type="button" className="btn sm ghost" onClick={() => setEditing({ ...editing, [m]: true })}>Cambiar</button>}
+                        </div>}
+                  </td>
+                  <td className={`num ${d ? 'red strong' : ''}`}>{d > 0 ? '+' : ''}{money(d)}</td>
+                </tr>
+              );
+            })}
+            <tr><td className="strong">Total</td><td className="num strong">{money(te)}</td><td className="num strong">{money(tc)}</td><td className={`num strong ${tc - te ? 'red' : ''}`}>{tc - te > 0 ? '+' : ''}{money(tc - te)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {cashDiff !== 0 && (counted['Efectivo'] ?? 0) > 0 && (
+        <div className={`alert ${cashDiff < 0 ? 'error' : 'warn'} mt`}><div>
+          {cashDiff < 0
+            ? <>En efectivo <b>faltan {money(-cashDiff)}</b>. Antes de cerrar revise: ¿un gasto, pago o retiro que no se registró en Caja? ¿una venta cobrada por Nequi o transferencia que quedó como efectivo? ¿un cambio mal dado? Si encuentra el error, cancele, regístrelo o corríjalo, y vuelva a cerrar.</>
+            : <>En efectivo <b>sobran {money(cashDiff)}</b>. Revise si una venta o abono no se registró, o si un pago quedó como efectivo y fue por otro medio.</>}
+        </div></div>
+      )}
       <Field label={`Justificación ${tc !== te ? '(obligatoria: hay diferencia)' : ''}`} className="mt">
-        <textarea className="input" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <textarea className="input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={tc !== te ? 'Ej.: faltante de $20.500 por cambio mal dado' : ''} />
       </Field>
     </Modal>
   );
