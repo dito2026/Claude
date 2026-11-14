@@ -202,3 +202,6 @@ textarea.input { padding: var(--sp-2) var(--sp-3); }
 
 .warranty-pick { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--text-2); margin-top: 4px; }
 .warranty-pick .input { height: 30px; width: auto; min-height: 0; padding: 0 8px; font-size: var(--fs-xs); }
+
+/* Caja: tarjetas del turno en una fila (5 con ganancia) */
+.cash-kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }

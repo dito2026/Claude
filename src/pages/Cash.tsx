@@ -10,11 +10,27 @@ import { addMovement, closeSession, editExpense, expectedByMethod, openSession, 
 import { technicianBalance } from '../services/staff';
 import { sellerBalance } from '../services/sellers';
 import { useSettings } from '../services/settings';
+import { invoiceCost } from '../services/billing';
 
 const CAT: Record<CashCategory, string> = {
   venta: 'Venta', abono_cliente: 'Abono de cliente', gasto: 'Gasto', pago_proveedor: 'Pago a proveedor',
   pago_tecnico: 'Pago a técnico', pago_vendedor: 'Pago a vendedor', retiro: 'Retiro / consignación', ingreso_otro: 'Otro ingreso', anulacion: 'Anulación',
 };
+
+/**
+ * Ganancia que corresponde a un movimiento de caja: la de su factura (venta − costo, sin IVA),
+ * repartida según lo que se pagó con ese movimiento (una venta pagada con dos medios se reparte).
+ * Las anulaciones restan. Abonos, gastos y pagos no son ganancia (null).
+ */
+export function movementProfit(m: CashMovement, inv: Invoice | undefined): number | null {
+  if (!inv || m.refType !== 'invoice') return null;
+  if (m.category !== 'venta' && m.category !== 'anulacion') return null;
+  const profit = inv.total - (inv.tax || 0) - invoiceCost(inv);
+  const paid = (inv.payments ?? []).reduce((a, x) => a + x.amount, 0);
+  if (paid <= 0) return null;
+  const share = Math.round((profit * m.amount) / paid);
+  return m.direction === 'egreso' ? -share : share;
+}
 
 /** Productos de una factura en una línea: «2× Cable USB C · Vidrio templado A15». */
 export const itemsText = (inv: Pick<Invoice, 'items'>) =>
@@ -32,6 +48,7 @@ export function Cash() {
   const invoices = useCollection<Invoice>('invoices').rows;
   const invById = useMemo(() => new Map(invoices.map((i) => [i.id, i])), [invoices]);
   const { actor, can } = useAuth();
+  const finance = can('dashboard.finance');
   const isAdmin = can('settings');
   const { run, busy } = useAction();
   const [opening, setOpening] = useState(0);
@@ -47,6 +64,7 @@ export function Cash() {
   const expected = session ? expectedByMethod(session, movements, methods) : {};
   const ins = movements.filter((m) => m.direction === 'ingreso').reduce((a, m) => a + m.amount, 0);
   const outs = movements.filter((m) => m.direction === 'egreso').reduce((a, m) => a + m.amount, 0);
+  const turnProfit = movements.reduce((a, m) => a + (movementProfit(m, m.refId ? invById.get(m.refId) : undefined) ?? 0), 0);
   const pastExpenses = useMemo(() => {
     const since = Date.now() - 60 * 86400000;
     return allMovements
@@ -82,11 +100,12 @@ export function Cash() {
         </div>
       ) : (
         <>
-          <div className="grid g4">
+          <div className="grid cash-kpis">
             <Stat accent label="Efectivo esperado" value={money(expected['Efectivo'])} sub={`Base ${money(session.openingCash)}`} />
             <Stat label="Entradas del turno" value={money(ins)} sub={`${movements.filter((m) => m.direction === 'ingreso').length} movimientos`} />
             <Stat label="Salidas del turno" value={money(outs)} sub={`${movements.filter((m) => m.direction === 'egreso').length} movimientos`} />
             <Stat label="Neto" value={money(ins - outs)} />
+            {finance && <Stat label="Ganancia del turno" value={<span className={turnProfit < 0 ? 'red' : ''}>{money(turnProfit)}</span>} sub="Ventas − costo de lo vendido" />}
           </div>
           <div className="grid g-main mt">
             <div className="card">
@@ -94,15 +113,18 @@ export function Cash() {
               {movements.length === 0 ? <Empty>Sin movimientos todavía.</Empty> : (
                 <div className="table-wrap">
                   <table className="table">
-                    <thead><tr><th>Hora</th><th>Concepto</th><th>Categoría</th><th>Medio</th><th className="num">Valor</th><th /></tr></thead>
+                    <thead><tr><th>Hora</th><th>Concepto</th><th>Tipo · medio</th><th className="num">Valor</th>{finance && <th className="num">Ganancia</th>}<th /></tr></thead>
                     <tbody>
                       {movements.map((m) => (
                         <tr key={m.id}>
                           <td className="nowrap" title={dateTime(m.createdAt)}>{m.createdAt ? new Date(m.createdAt).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }) : '—'}</td>
-                          <td style={{ minWidth: 200 }}>{m.description}{m.expenseCategory && <small>{m.expenseCategory}</small>}{m.edits?.length ? <EditedNote m={m} /> : null}{m.refType === 'invoice' && m.refId && invById.get(m.refId) && <small className="mov-items">{itemsText(invById.get(m.refId)!)}</small>}</td>
-                          <td><Badge tone={m.direction === 'ingreso' ? 'ok' : 'red'}>{CAT[m.category]}</Badge></td>
-                          <td>{m.method}</td>
+                          <td style={{ minWidth: 180 }}>{m.description}{m.expenseCategory && <small>{m.expenseCategory}</small>}{m.edits?.length ? <EditedNote m={m} /> : null}{m.refType === 'invoice' && m.refId && invById.get(m.refId) && <small className="mov-items">{itemsText(invById.get(m.refId)!)}</small>}</td>
+                          <td><Badge tone={m.direction === 'ingreso' ? 'ok' : 'red'}>{CAT[m.category]}</Badge><small>{m.method}</small></td>
                           <td className={`num ${m.direction === 'egreso' ? 'red' : ''}`}>{m.direction === 'egreso' ? '-' : ''}{money(m.amount)}</td>
+                          {finance && (() => {
+                            const g = movementProfit(m, m.refId ? invById.get(m.refId) : undefined);
+                            return <td className={`num ${g != null && g < 0 ? 'red' : 'strong'}`}>{g == null ? <span className="faint">—</span> : money(g)}</td>;
+                          })()}
                           <td className="nowrap">{isExpense(m) && <button className="btn sm ghost" title="Corregir gasto" onClick={() => setEditing(m)}><Pencil size={14} />Corregir</button>}</td>
                         </tr>
                       ))}

@@ -604,3 +604,9 @@ el servidor reintenta con su modelo de respaldo.
 - Filtro: hoy, 7 días, este mes, mes anterior, este año, todo, o un rango de fechas. Totales de vendido, costo, ganancia con margen y comisión. Botón **Excel**.
 - Las facturas anuladas no se cuentan. La ganancia es antes de la comisión.
 - **Clientes → tocar el cliente → Compras:** ahora muestra los productos de cada compra (con IMEI) y, para quien ve finanzas, la ganancia de cada factura y el total.
+
+## 51. Ganancia en los movimientos de caja
+
+- **Caja → Movimientos del turno:** columna **Ganancia** en cada venta (venta sin IVA − costo de lo vendido). Si la factura se pagó con varios medios, la ganancia se reparte entre sus movimientos según lo pagado. Las anulaciones restan. Abonos, gastos y pagos muestran «—», porque no son ganancia; la de una OT aparece cuando se factura. Usa `movementProfit`.
+- Tarjeta **Ganancia del turno**: la suma de esa columna. Solo la ve quien tiene permiso de finanzas.
+- La tabla quedó más compacta: el tipo y el medio de pago van juntos en una columna, y las 5 tarjetas del turno en una sola fila.

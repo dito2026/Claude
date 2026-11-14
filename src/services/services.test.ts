@@ -980,3 +980,16 @@ describe('detalle de ventas por vendedor', () => {
     expect(rows[1]).toMatchObject({ description: 'Forro', sales: 45000, cost: 20000, profit: 25000, commission: 4500 });
   });
 });
+
+describe('ganancia en los movimientos de caja', () => {
+  it('reparte la ganancia de la factura entre sus pagos y la anulación la resta', async () => {
+    const { movementProfit } = await import('../pages/Cash');
+    const inv = { id: 'f', total: 100000, tax: 0, payments: [{ method: 'Efectivo', amount: 60000 }, { method: 'Nequi', amount: 40000 }],
+      items: [{ description: 'A', kind: 'producto', qty: 1, unitPrice: 100000, unitCost: 30000 }] } as unknown as Invoice;
+    const mv = (o: Partial<CashMovement>) => ({ refType: 'invoice', refId: 'f', category: 'venta', direction: 'ingreso', amount: 0, ...o }) as CashMovement;
+    expect(movementProfit(mv({ amount: 60000 }), inv)).toBe(42000);
+    expect(movementProfit(mv({ amount: 40000 }), inv)).toBe(28000);
+    expect(movementProfit(mv({ amount: 60000, category: 'anulacion', direction: 'egreso' }), inv)).toBe(-42000);
+    expect(movementProfit(mv({ amount: 5000, category: 'abono_cliente', refType: 'repairOrder' }), inv)).toBeNull();
+  });
+});
