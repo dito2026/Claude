@@ -9,7 +9,7 @@ import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
 import { CustomerPicker } from '../components/CustomerPicker';
 import { InvoiceModal } from '../components/Receipts';
-import { computeTotals, createInvoice, itemsFromOrder, voidInvoice } from '../services/billing';
+import { computeTotals, createInvoice, invoiceCost, itemsFromOrder, voidInvoice } from '../services/billing';
 import { depositsTotal } from '../services/orders';
 import { customerRef } from '../services/orders';
 import { useSettings } from '../services/settings';
@@ -390,6 +390,14 @@ function History() {
     .sort((a, b) => b.number - a.number);
   const valid = list.filter((i) => i.status !== 'anulada');
   const catTotal = cat ? valid.reduce((a, i) => a + (byCat.get(i.id)?.get(cat) ?? 0), 0) : valid.reduce((a, i) => a + i.total, 0);
+  // Ganancia = venta sin IVA − costo de lo vendido; con categoría, solo la de esa categoría (descuento repartido)
+  const finance = can('dashboard.finance');
+  const profitOf = (i: Invoice) => i.total - (i.tax || 0) - invoiceCost(i);
+  const catProfitOf = (i: Invoice) => {
+    const factor = i.subtotal > 0 ? (i.subtotal - (i.discount || 0)) / i.subtotal : 1;
+    return Math.round(i.items.filter((it) => itemCategory(it, productMap) === cat).reduce((a, it) => a + it.qty * (it.unitPrice * factor - (it.unitCost || 0)), 0));
+  };
+  const profitTotal = valid.reduce((a, i) => a + (cat ? catProfitOf(i) : profitOf(i)), 0);
 
   return (
     <>
@@ -399,20 +407,19 @@ function History() {
           <option value="">Todas las categorías</option>
           {allCats.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <span className="muted">{valid.length} comprobantes · {cat ? `vendido en ${cat}` : 'total'}: <b>{money(catTotal)}</b></span>
+        <span className="muted">{valid.length} comprobantes · {cat ? `vendido en ${cat}` : 'total'}: <b>{money(catTotal)}</b>{finance && <> · ganancia <b className={profitTotal < 0 ? 'red' : ''}>{money(profitTotal)}</b>{catTotal > 0 && ` (${Math.round((profitTotal / (cat ? catTotal : valid.reduce((a, i) => a + i.total - (i.tax || 0), 0) || 1)) * 100)}%)`}</>}</span>
       </div>
       <div className="card">
         {list.length === 0 ? <Empty>Sin comprobantes.</Empty> : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>N.º</th><th>Fecha</th><th>Cliente</th><th>Origen</th><th>Productos</th><th>Medios</th><th>Vendedor</th><th>Estado</th><th className="num">Total</th><th /></tr></thead>
+              <thead><tr><th>N.º</th><th>Fecha</th><th>Cliente</th><th>Productos</th><th>Pago</th><th>Estado</th><th className="num">Total</th>{finance && <th className="num">Ganancia</th>}<th /></tr></thead>
               <tbody>
                 {list.map((i) => (
                   <tr key={i.id} className="click" onClick={() => setView(i)}>
                     <td className="mono strong">{pad(i.number, 6)}</td>
-                    <td className="nowrap">{dateTime(i.createdAt)}</td>
-                    <td>{i.customer.name || 'Consumidor final'}</td>
-                    <td>{i.repairOrderNumber ? <span className="mono">OT {pad(i.repairOrderNumber)}</span> : 'Venta directa'}</td>
+                    <td>{dateTime(i.createdAt)}</td>
+                    <td>{i.customer.name || 'Consumidor final'}<small>{i.repairOrderNumber ? `OT ${pad(i.repairOrderNumber)}` : i.remissionNumber ? `Remisión R-${pad(i.remissionNumber, 4)}` : 'Venta directa'}</small></td>
                     <td className="sold-items" title={i.items.map((it) => `${it.qty}× ${it.description}${it.imei ? ` (IMEI ${it.imei})` : ''} · ${money(it.qty * it.unitPrice)}`).join('\n')}>
                       {i.items.slice(0, 3).map((it, k) => (
                         <div key={k}>
@@ -422,10 +429,13 @@ function History() {
                       ))}
                       {i.items.length > 3 && <small>y {i.items.length - 3} más…</small>}
                     </td>
-                    <td>{i.payments.map((p) => p.method).join(', ') || (i.depositsApplied ? 'Abonos' : '—')}</td>
-                    <td>{i.sellerName ? <>{i.sellerName}<small>Comisión {money(i.commission)}</small></> : <span className="faint">—</span>}</td>
+                    <td>{i.payments.map((p) => p.method).join(', ') || (i.depositsApplied ? 'Abonos' : '—')}{i.sellerName && <small>Vend. {i.sellerName} · {money(i.commission)}</small>}</td>
                     <td><Badge tone={i.status === 'anulada' ? 'red' : i.status === 'credito' ? 'warn' : 'ok'}>{i.status}</Badge></td>
                     <td className="num">{money(i.total)}</td>
+                    {finance && (() => {
+                      const g = profitOf(i);
+                      return <td className={`num ${i.status === 'anulada' ? 'faint' : g < 0 ? 'red strong' : 'strong'}`}>{i.status === 'anulada' ? '—' : money(g)}{i.status !== 'anulada' && i.total > 0 && <small>{Math.round((g / Math.max(1, i.total - (i.tax || 0))) * 100)}%</small>}</td>;
+                    })()}
                     <td className="right" onClick={(e) => e.stopPropagation()}>
                       {can('billing.void') && i.status !== 'anulada' && (
                         <button className="btn sm ghost" title="Anular" onClick={() => { setVoiding(i); setReason(''); }}><Ban size={15} /></button>

@@ -1,2 +1,2 @@
 // Versión visible en el menú: se actualiza con cada cambio para saber qué está publicado.
-export const APP_VERSION = '2026.11.14b · ganancia en caja';
+export const APP_VERSION = '2026.11.14c · ganancia en historial';

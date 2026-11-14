@@ -610,3 +610,9 @@ el servidor reintenta con su modelo de respaldo.
 - **Caja → Movimientos del turno:** columna **Ganancia** en cada venta (venta sin IVA − costo de lo vendido). Si la factura se pagó con varios medios, la ganancia se reparte entre sus movimientos según lo pagado. Las anulaciones restan. Abonos, gastos y pagos muestran «—», porque no son ganancia; la de una OT aparece cuando se factura. Usa `movementProfit`.
 - Tarjeta **Ganancia del turno**: la suma de esa columna. Solo la ve quien tiene permiso de finanzas.
 - La tabla quedó más compacta: el tipo y el medio de pago van juntos en una columna, y las 5 tarjetas del turno en una sola fila.
+
+## 52. Ganancia en el historial de facturación
+
+- **Facturación → Historial:** columna **Ganancia** en cada comprobante (total sin IVA − costo de lo vendido) con su porcentaje. Las anuladas muestran «—». Solo la ve quien tiene permiso de finanzas.
+- **Resumen de arriba:** ganancia total y margen de lo que se está viendo. Respeta el buscador y el filtro de categoría; con una categoría elegida, muestra solo la ganancia de esa categoría (con el descuento repartido).
+- La tabla quedó más compacta: el origen (venta directa, OT o remisión) va debajo del cliente, y el vendedor con su comisión va debajo del medio de pago.
