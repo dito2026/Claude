@@ -623,3 +623,12 @@ el servidor reintenta con su modelo de respaldo.
 - `downloadCsv` ahora entrega `.xlsx` en todas las descargas: ventas por vendedor, estado de resultados, contabilidad por módulo, libro fiscal y libro de caja. Antes era un .csv, que en algunos equipos se abría mal.
 - **En celular** (`saveFile`) se usa «Compartir» (guardar en Archivos, enviar por WhatsApp o correo), porque en iPhone con la app instalada la descarga directa no hace nada.
 - **Detalle del vendedor:** abre en «Todo», para que no salga vacío ni con el botón Excel desactivado cuando las ventas son de otros meses.
+
+## 54. Editar y anular contratos de compraventa
+
+- **Compraventa usados → abrir el contrato → Editar contrato** (solo administrador, `editUsedPurchase`): se corrige la fecha, la ciudad, el color, los datos del vendedor y del comprador, el precio pagado, el medio y el precio de venta. El motivo es obligatorio.
+  - **Caja:** si se pagó desde la caja, la diferencia se ajusta sola en la caja abierta (vuelve como reintegro de «Pago a proveedor» o sale como egreso). Si se pagó por fuera, la caja no cambia.
+  - **Equipo:** toma el costo y el precio de venta nuevos si sigue en el local, y siempre el color y el nombre del vendedor.
+  - **Historial:** `edits` guarda los valores anteriores; en el contrato se ve «Corregido el … · antes $X». El contrato impreso sale con los datos corregidos.
+  - La marca, el modelo y el IMEI no se cambian aquí (la regla de Firestore impide cambiar el IMEI).
+- **Anular** (solo administrador, `voidUsedPurchase`): el equipo sale del inventario (kardex «anulación de compra») y queda `anulado`, con el IMEI libre. Si se pagó desde la caja, el dinero vuelve a la caja abierta. El contrato queda «Anulado» en la lista y no suma en las tarjetas. No se puede si el equipo ya se vendió (hay que anular la venta) o está en una remisión.

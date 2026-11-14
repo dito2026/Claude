@@ -125,3 +125,46 @@ describe('compraventa descontada de la caja por error', () => {
     await expect(moveUsedOutsideCash(actor, c2.id, out2.id)).rejects.toThrow(/cerró/);
   });
 });
+
+describe('editar y anular contratos de compraventa', () => {
+  it('corrige precio, medio, vendedor y precio de venta con ajuste de caja e historial', async () => {
+    const { editUsedPurchase } = await import('./used');
+    const { expectedByMethod } = await import('./cash');
+    await openSession(actor, 1000000);
+    const c = await buyUsedPhone(actor, draft(), []);
+    const cash = async () => expectedByMethod({ openingCash: 1000000 }, await backend.list<CashMovement>('cashMovements'), ['Efectivo', 'Nequi']);
+    expect(await cash()).toMatchObject({ Efectivo: 750000 });
+    const fix = { date: c.date, city: c.city, seller: { ...c.seller, name: 'Pedro Pérez Gómez' }, buyer: c.buyer, color: 'Azul', price: 230000, method: 'Efectivo', salePrice: 360000 };
+    await expect(editUsedPurchase(actor, c.id, fix, '')).rejects.toThrow(/motivo/);
+    await editUsedPurchase(actor, c.id, fix, 'precio real');
+    expect(await cash()).toMatchObject({ Efectivo: 770000 });
+    const u = (await backend.get<PhoneUnit>('phoneUnits', IMEI))!;
+    expect(u).toMatchObject({ cost: 230000, price: 360000, color: 'Azul', supplierName: 'Pedro Pérez Gómez' });
+    const saved = (await backend.get<UsedPurchase>('usedPurchases', c.id))!;
+    expect(saved).toMatchObject({ price: 230000, salePrice: 360000 });
+    expect(saved.edits![0]).toMatchObject({ reason: 'precio real', before: { price: 250000 } });
+    await editUsedPurchase(actor, c.id, { ...fix, method: 'Nequi' }, 'fue por Nequi');
+    expect(await cash()).toMatchObject({ Efectivo: 1000000, Nequi: -230000 });
+  });
+
+  it('anula: saca el equipo, libera el IMEI y devuelve la plata; no si ya se vendió', async () => {
+    const { voidUsedPurchase } = await import('./used');
+    const { expectedByMethod } = await import('./cash');
+    await openSession(actor, 0);
+    const c = await buyUsedPhone(actor, draft(), []);
+    await voidUsedPurchase(actor, c.id, 'IMEI equivocado');
+    expect((await backend.get<UsedPurchase>('usedPurchases', c.id))!.status).toBe('anulado');
+    expect((await backend.get<PhoneUnit>('phoneUnits', IMEI))!.status).toBe('anulado');
+    expect((await backend.list<Product>('products'))[0].stock).toBe(0);
+    expect(expectedByMethod({ openingCash: 0 }, await backend.list<CashMovement>('cashMovements'), ['Efectivo'])).toMatchObject({ Efectivo: 0 });
+    // el IMEI se puede volver a registrar
+    const c2 = await buyUsedPhone(actor, draft({ device: { ...draft().device, imei2: '' } }), await backend.list<Product>('products'));
+    const pid = c2.productId;
+    await createInvoice(actor, {
+      customer: { name: 'CF', phone: '', document: '' }, discount: 0, taxRate: 0, cashierName: 'T',
+      items: [{ productId: pid, description: 'A15', kind: 'producto', qty: 1, unitPrice: 300000, unitCost: 250000, imei: IMEI, unitId: IMEI }],
+      payments: [{ method: 'Efectivo', amount: 300000 }],
+    });
+    await expect(voidUsedPurchase(actor, c2.id, 'x')).rejects.toThrow(/ya se vendió/);
+  });
+});

@@ -471,6 +471,13 @@ export interface UsedPurchase extends BaseDoc {
   productId: string;
   productName: string;
   createdByName: string;
+  /** anulado = contrato mal hecho: el equipo salió del inventario y el IMEI quedó libre */
+  status?: 'anulado';
+  voidReason?: string;
+  voidedAt?: string;
+  voidedBy?: string;
+  /** correcciones: valores ANTERIORES */
+  edits?: { at: string; by: string; reason: string; before: Pick<UsedPurchase, 'date' | 'city' | 'seller' | 'buyer' | 'device' | 'price' | 'method' | 'salePrice'> }[];
 }
 
 // ---------------- Vendedores y comisiones ----------------

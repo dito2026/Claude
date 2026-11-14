@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { FileText, Plus, Printer, ShieldCheck, Smartphone } from 'lucide-react';
+import { FileText, Pencil, Plus, Printer, ShieldCheck, Smartphone } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { BusinessSettings, CashMovement, PhoneUnit, Product, UsedPurchase, UsedSeller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { useSettings } from '../services/settings';
-import { buyUsedPhone, findPhoneProduct, moveUsedOutsideCash, pesosInWords, type UsedDraft } from '../services/used';
+import { buyUsedPhone, editUsedPurchase, findPhoneProduct, moveUsedOutsideCash, pesosInWords, voidUsedPurchase, type UsedDraft } from '../services/used';
 import type { CashState } from '../services/cash';
 import { imeiError, normalizeImei } from '../services/phones';
 import { BrandInput, ModelInput } from '../components/BrandModel';
@@ -34,7 +34,7 @@ export function UsedPhones() {
     [contracts, q],
   );
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
-  const month = contracts.filter((c) => new Date(c.createdAt ?? 0).getTime() >= monthStart);
+  const month = contracts.filter((c) => c.status !== 'anulado' && new Date(c.createdAt ?? 0).getTime() >= monthStart);
   const inStock = contracts.filter((c) => unitOf.get(c.device.imei)?.status === 'disponible');
 
   return (
@@ -59,14 +59,14 @@ export function UsedPhones() {
                 {list.map((c) => {
                   const u = unitOf.get(c.device.imei);
                   return (
-                    <tr key={c.id} className="click" onClick={() => setViewing(c)}>
+                    <tr key={c.id} className="click" onClick={() => setViewing(c)} style={{ opacity: c.status === 'anulado' ? 0.55 : 1 }}>
                       <td className="mono">{pad(c.number, 4)}</td>
                       <td className="nowrap">{longDate(c.date)}</td>
                       <td><span className="strong">{c.seller.name}</span><small>C.C. {c.seller.document}</small></td>
                       <td>{c.device.brand} {c.device.model}{c.device.color && <small>{c.device.color}</small>}</td>
                       <td className="mono">{c.device.imei}</td>
                       <td className="num">{money(c.price)}<small>{c.outsideCash ? 'Fuera de caja' : c.method}</small></td>
-                      <td>{u?.status === 'vendido' ? <Badge tone="info">Vendido{u.salePrice ? ` · ${money(u.salePrice)}` : ''}</Badge> : u?.status === 'disponible' ? <Badge tone="ok">En inventario</Badge> : <Badge>—</Badge>}</td>
+                      <td>{c.status === 'anulado' ? <Badge tone="red">Anulado</Badge> : u?.status === 'vendido' ? <Badge tone="info">Vendido{u.salePrice ? ` · ${money(u.salePrice)}` : ''}</Badge> : u?.status === 'disponible' ? <Badge tone="ok">En inventario</Badge> : <Badge>—</Badge>}</td>
                       <td><button className="btn sm" onClick={(e) => { e.stopPropagation(); setViewing(c); }}><Printer size={14} />Ver / imprimir</button></td>
                     </tr>
                   );
@@ -77,7 +77,7 @@ export function UsedPhones() {
         )}
       </div>
       {creating && <UsedPurchaseModal s={settings} onClose={() => setCreating(false)} onSaved={(c) => { setCreating(false); setViewing(c); }} />}
-      {viewing && <ContractModal c={viewing} s={settings} onClose={() => setViewing(null)} />}
+      {viewing && <ContractModal c={contracts.find((x) => x.id === viewing.id) ?? viewing} s={settings} onClose={() => setViewing(null)} />}
     </>
   );
 }
@@ -289,15 +289,46 @@ function ContractModal({ c, s, onClose }: { c: UsedPurchase; s: BusinessSettings
   const cash = useDocument<CashState & { id: string }>('meta', 'cash').doc;
   const live = useCollection<UsedPurchase>('usedPurchases').rows.find((x) => x.id === c.id) ?? c;
   const paid = movements.find((m) => m.refId === c.id && m.direction === 'egreso');
-  const canReturn = !live.outsideCash && !!paid && paid.sessionId === cash?.openSessionId;
+  const canReturn = !live.outsideCash && !!paid && paid.sessionId === cash?.openSessionId && live.status !== 'anulado';
+  const { can } = useAuth();
+  const admin = can('settings');
+  const [editing, setEditing] = useState(false);
+  const [voiding, setVoiding] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
+  const anulado = live.status === 'anulado';
   return (
     <Modal wide title={`Contrato de compraventa N.º ${pad(c.number, 4)}`} onClose={onClose}
       footer={<>
         <span className="faint grow" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}><ShieldCheck size={14} />Para PDF: en «Destino» elija «Guardar como PDF».</span>
+        {admin && !anulado && <>
+          <button className="btn danger" onClick={() => setVoiding((v) => !v)}>Anular</button>
+          <button className="btn" onClick={() => setEditing(true)}><Pencil size={15} />Editar contrato</button>
+        </>}
         <button className="btn ghost" onClick={onClose}>Cerrar</button>
-        <button className="btn primary" onClick={() => printContract(c)}><Printer size={16} />Imprimir / PDF</button>
+        <button className="btn primary" onClick={() => printContract(live)}><Printer size={16} />Imprimir / PDF</button>
       </>}>
-      {live.outsideCash ? (
+      {anulado && <div className="alert error no-print" style={{ marginBottom: 14 }}><div><b>Contrato anulado</b> el {new Date(live.voidedAt ?? '').toLocaleString('es-CO')} por {live.voidedBy}: {live.voidReason}. El equipo salió del inventario y el IMEI quedó libre.</div></div>}
+      {(live.edits ?? []).length > 0 && (
+        <div className="faint no-print" style={{ fontSize: 12, marginBottom: 10 }}>
+          {live.edits!.map((e, k) => <div key={k}>Corregido el {new Date(e.at).toLocaleString('es-CO')} por {e.by} · antes {money(e.before.price)} ({e.before.method}) · {e.reason}</div>)}
+        </div>
+      )}
+      {voiding && (
+        <div className="card card-pad stack no-print" style={{ marginBottom: 14, borderColor: 'var(--red-line)' }}>
+          <b className="red">Anular el contrato N.º {pad(live.number, 4)}</b>
+          <div className="faint" style={{ fontSize: 13 }}>
+            El equipo IMEI {live.device.imei} sale del inventario y su IMEI queda libre para registrarlo bien.
+            {live.outsideCash ? ' No mueve la caja (se pagó por fuera).' : ` Los ${money(live.price)} que se pagaron vuelven a la caja abierta (${live.method}).`}
+            {' '}Solo se puede si el equipo sigue en el local.
+          </div>
+          <input className="input" placeholder="Motivo (obligatorio): ej. IMEI o modelo equivocado" value={voidReason} onChange={(e) => setVoidReason(e.target.value)} />
+          <div className="row gap-sm">
+            <button className="btn primary" disabled={busy || !voidReason.trim()} onClick={() => run(() => voidUsedPurchase(actor, live.id, voidReason), 'Contrato anulado').then((ok) => ok && setVoiding(false))}>Confirmar anulación</button>
+            <button className="btn ghost" onClick={() => setVoiding(false)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+      {anulado ? null : live.outsideCash ? (
         <div className="alert info no-print" style={{ marginBottom: 14 }}><div>
           Pagado por fuera de la caja{live.cashReversedAt ? ` · el descuento de la caja se devolvió el ${new Date(live.cashReversedAt).toLocaleString('es-CO')} (${live.cashReversedBy})` : ''}.
         </div></div>
@@ -308,7 +339,74 @@ function ContractModal({ c, s, onClose }: { c: UsedPurchase; s: BusinessSettings
           {canReturn && <button className="btn sm" disabled={busy} onClick={() => run(() => moveUsedOutsideCash(actor, c.id, paid.id), 'Devuelto a la caja · contrato marcado «Fuera de caja»')}>No era de la caja</button>}
         </div>
       )}
-      <UsedContract c={c} s={s} />
+      <UsedContract c={live} s={s} />
+      {editing && <EditUsedModal c={live} s={s} onClose={() => setEditing(false)} />}
+    </Modal>
+  );
+}
+
+function EditUsedModal({ c, s, onClose }: { c: UsedPurchase; s: BusinessSettings; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const [date, setDate] = useState(c.date);
+  const [city, setCity] = useState(c.city);
+  const [seller, setSeller] = useState<UsedSeller>({ ...c.seller });
+  const [buyer, setBuyer] = useState({ ...c.buyer });
+  const [color, setColor] = useState(c.device.color);
+  const [price, setPrice] = useState(c.price);
+  const [method, setMethod] = useState(c.method);
+  const [salePrice, setSalePrice] = useState(c.salePrice || 0);
+  const [reason, setReason] = useState('');
+  const methods = s.paymentMethods.filter((m) => m !== CREDIT_METHOD);
+  const ss = (k: keyof UsedSeller, v: string) => setSeller({ ...seller, [k]: v });
+  const diff = price - c.price;
+  const save = () => run(() => editUsedPurchase(actor, c.id, { date, city, seller, buyer, color, price, method, salePrice }, reason), 'Contrato corregido').then((ok) => ok && onClose());
+  return (
+    <Modal wide title={`Editar contrato N.º ${pad(c.number, 4)}`} onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || !reason.trim() || !price || !method} onClick={save}>Guardar cambios</button></>}>
+      <div className="alert info" style={{ marginBottom: 12 }}><div>
+        Equipo: <b>{c.device.brand} {c.device.model}</b> · IMEI <span className="mono">{c.device.imei}</span>. La marca, el modelo y el IMEI no se cambian aquí: si están mal, anule el contrato y hágalo de nuevo.
+      </div></div>
+      <div className="form-grid three">
+        <Field label="Fecha"><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label="Ciudad"><input className="input" value={city} onChange={(e) => setCity(e.target.value)} /></Field>
+        <Field label="Color"><input className="input" value={color} onChange={(e) => setColor(e.target.value)} /></Field>
+      </div>
+      <h4 className="form-section">El vendedor</h4>
+      <div className="form-grid three">
+        <Field label="Nombres y apellidos" required><input className="input" value={seller.name} onChange={(e) => ss('name', e.target.value)} /></Field>
+        <Field label="Documento" required><input className="input" value={seller.document} onChange={(e) => ss('document', e.target.value)} /></Field>
+        <Field label="Lugar de expedición"><input className="input" value={seller.documentCity} onChange={(e) => ss('documentCity', e.target.value)} /></Field>
+        <Field label="Dirección"><input className="input" value={seller.address} onChange={(e) => ss('address', e.target.value)} /></Field>
+        <Field label="Celular"><input className="input" value={seller.phone} onChange={(e) => ss('phone', e.target.value)} /></Field>
+        <Field label="Teléfono fijo"><input className="input" value={seller.landline} onChange={(e) => ss('landline', e.target.value)} /></Field>
+      </div>
+      <h4 className="form-section">El comprador</h4>
+      <div className="form-grid three">
+        <Field label="Nombre"><input className="input" value={buyer.name} onChange={(e) => setBuyer({ ...buyer, name: e.target.value })} /></Field>
+        <Field label="Cédula"><input className="input" value={buyer.document} onChange={(e) => setBuyer({ ...buyer, document: e.target.value })} /></Field>
+        <Field label="Expedida en"><input className="input" value={buyer.documentCity} onChange={(e) => setBuyer({ ...buyer, documentCity: e.target.value })} /></Field>
+      </div>
+      <h4 className="form-section">Precio y pago</h4>
+      <div className="form-grid">
+        <Field label="Precio pagado" required><MoneyInput value={price} onChange={setPrice} /></Field>
+        <Field label="Precio de venta"><MoneyInput value={salePrice} onChange={setSalePrice} /></Field>
+      </div>
+      <div className="field mt">
+        <span>Pagado con <em>*</em></span>
+        <div className="pay-methods">
+          {methods.map((m) => <button key={m} type="button" className={`cat-chip ${method === m ? 'active' : ''}`} onClick={() => setMethod(m)}>{m}</button>)}
+        </div>
+      </div>
+      {(diff !== 0 || method !== c.method) && (
+        <div className="faint mt" style={{ fontSize: 13 }}>
+          {c.outsideCash ? 'Se pagó por fuera de la caja: la caja no cambia.'
+            : method !== c.method ? <>En caja: vuelven {money(c.price)} a {c.method} y salen {money(price)} de {method}.</>
+            : diff > 0 ? <>En caja: salen {money(diff)} más de {method}.</> : <>En caja: vuelven {money(-diff)} a {method}.</>}
+        </div>
+      )}
+      <Field label="Motivo" required className="mt"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: el precio era otro · nombre mal escrito" /></Field>
     </Modal>
   );
 }

@@ -2,7 +2,7 @@
 // En una sola transacción: contrato numerado, equipo al inventario por IMEI (USADO),
 // kardex «compra» y egreso de la caja abierta.
 import { backend } from '../data';
-import type { CashMovement, Product, UsedPurchase, UsedSeller } from '../lib/types';
+import type { CashMovement, PhoneUnit, Product, UsedPurchase, UsedSeller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { normalize } from '../lib/format';
 import { canonicalBrand } from '../lib/brands';
@@ -144,6 +144,108 @@ export async function moveUsedOutsideCash(actor: Actor, contractId: string, move
     });
     const now = new Date().toISOString();
     tx.update('usedPurchases', contractId, { outsideCash: true, cashReversedAt: now, cashReversedBy: actor.name, ...touched() });
+  });
+}
+
+// ---------------- Corregir y anular contratos ----------------
+export interface UsedFix {
+  date: string;
+  city: string;
+  seller: UsedSeller;
+  buyer: UsedPurchase['buyer'];
+  color: string;
+  price: number;
+  method: string;
+  salePrice: number;
+}
+
+/**
+ * Corrige un contrato (solo administrador). La marca, el modelo y el IMEI no se cambian aquí: para eso se anula.
+ * - Precio pagado o medio: si se pagó desde la caja, la diferencia se ajusta en la caja abierta
+ *   (vuelve como reintegro de «Pago a proveedor» o sale como egreso). El costo del equipo se actualiza si sigue en el local.
+ * - Precio de venta, color y nombre del vendedor pasan al equipo.
+ */
+export async function editUsedPurchase(actor: Actor, id: string, fix: UsedFix, reason: string) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo de la corrección.');
+  if (!fix.seller.name.trim() || !fix.seller.document.trim()) throw new BusinessError('Falta el nombre o el documento del vendedor.');
+  if (!(fix.price > 0)) throw new BusinessError('El precio pagado debe ser mayor que cero.');
+  if (!fix.method || fix.method === CREDIT_METHOD) throw new BusinessError('Elija el medio de pago.');
+  return backend.transaction(async (tx) => {
+    const c = await tx.get<UsedPurchase>('usedPurchases', id);
+    if (!c) throw new BusinessError('Contrato no encontrado.');
+    if (c.status === 'anulado') throw new BusinessError('El contrato está anulado.');
+    const unit = await tx.get<PhoneUnit>('phoneUnits', c.device.imei);
+    const moneyChanged = fix.price !== c.price || fix.method !== c.method;
+    const sid = moneyChanged && !c.outsideCash ? await requireOpenSession(tx) : null;
+    // ---- escrituras ----
+    const why = reason.trim();
+    if (sid) {
+      const desc = `Corrección compraventa N.º ${c.number} · ${fix.seller.name.trim()}: ${why}`;
+      const back = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'ingreso', category: 'pago_proveedor', method, amount, description: desc, refType: 'usedPurchase', refId: c.id });
+      const out = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'egreso', category: 'pago_proveedor', method, amount, description: desc, refType: 'usedPurchase', refId: c.id });
+      if (fix.method === c.method) {
+        const diff = fix.price - c.price;
+        if (diff > 0) out(diff, c.method); else if (diff < 0) back(-diff, c.method);
+      } else {
+        back(c.price, c.method);
+        out(fix.price, fix.method);
+      }
+    }
+    if (unit && unit.usedPurchaseId === c.id) {
+      const inStore = unit.status === 'disponible' || unit.status === 'remisionado';
+      tx.update('phoneUnits', unit.id, {
+        supplierName: fix.seller.name.trim(),
+        color: fix.color.trim(),
+        ...(inStore ? { cost: fix.price, ...(fix.salePrice ? { price: fix.salePrice } : {}) } : {}),
+        ...touched(),
+      });
+    }
+    const before = { date: c.date, city: c.city, seller: c.seller, buyer: c.buyer, device: c.device, price: c.price, method: c.method, salePrice: c.salePrice };
+    tx.update('usedPurchases', c.id, {
+      date: fix.date || c.date,
+      city: fix.city.trim(),
+      seller: { ...fix.seller, name: fix.seller.name.trim(), document: fix.seller.document.trim() },
+      buyer: fix.buyer,
+      device: { ...c.device, color: fix.color.trim() },
+      price: fix.price,
+      method: fix.method,
+      salePrice: fix.salePrice || 0,
+      edits: [...(c.edits ?? []), { at: new Date().toISOString(), by: actor.name, reason: why, before }],
+      ...touched(),
+    });
+  });
+}
+
+/**
+ * Anula un contrato hecho con error (solo administrador): el equipo sale del inventario (kardex «anulación de compra»),
+ * queda «anulado» y su IMEI libre para registrarlo bien. Si se pagó desde la caja, el dinero vuelve a la caja abierta.
+ * Solo si el equipo sigue en el local (no vendido ni en remisión).
+ */
+export async function voidUsedPurchase(actor: Actor, id: string, reason: string) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo de la anulación.');
+  return backend.transaction(async (tx) => {
+    const c = await tx.get<UsedPurchase>('usedPurchases', id);
+    if (!c) throw new BusinessError('Contrato no encontrado.');
+    if (c.status === 'anulado') throw new BusinessError('El contrato ya está anulado.');
+    const unit = await tx.get<PhoneUnit>('phoneUnits', c.device.imei);
+    if (unit && unit.usedPurchaseId === c.id && unit.status !== 'disponible') {
+      throw new BusinessError(unit.status === 'vendido' ? `El equipo ya se vendió (factura ${unit.invoiceNumber}): anule primero la venta.` : 'El equipo está en una remisión: primero regístrelo como devuelto.');
+    }
+    const product = await tx.get<Product>('products', c.productId);
+    const sid = !c.outsideCash ? await requireOpenSession(tx) : null;
+    // ---- escrituras ----
+    const why = reason.trim();
+    if (unit && unit.usedPurchaseId === c.id) {
+      if (product) moveStock(tx, actor, product, -1, 'anulacion_compra', { refType: 'usedPurchase', refId: c.id, refNumber: c.number, note: `Anulación compraventa N.º ${c.number}: ${why}` });
+      tx.update('phoneUnits', unit.id, { status: 'anulado', voidReason: `Compraventa N.º ${c.number} anulada: ${why}`, voidedAt: new Date().toISOString(), voidedBy: actor.name, ...touched() });
+    }
+    if (sid) {
+      writeMovement(tx, actor, sid, {
+        direction: 'ingreso', category: 'pago_proveedor', method: c.method, amount: c.price,
+        description: `Anulación compraventa N.º ${c.number} · ${c.seller.name}: ${why}`, refType: 'usedPurchase', refId: c.id,
+      });
+    }
+    tx.update('usedPurchases', c.id, { status: 'anulado', voidReason: why, voidedAt: new Date().toISOString(), voidedBy: actor.name, ...touched() });
   });
 }
 
