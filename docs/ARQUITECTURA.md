@@ -632,3 +632,12 @@ el servidor reintenta con su modelo de respaldo.
   - **Historial:** `edits` guarda los valores anteriores; en el contrato se ve «Corregido el … · antes $X». El contrato impreso sale con los datos corregidos.
   - La marca, el modelo y el IMEI no se cambian aquí (la regla de Firestore impide cambiar el IMEI).
 - **Anular** (solo administrador, `voidUsedPurchase`): el equipo sale del inventario (kardex «anulación de compra») y queda `anulado`, con el IMEI libre. Si se pagó desde la caja, el dinero vuelve a la caja abierta. El contrato queda «Anulado» en la lista y no suma en las tarjetas. No se puede si el equipo ya se vendió (hay que anular la venta) o está en una remisión.
+
+## 55. Cobrar ventas a crédito tienda
+
+- **Facturación → Historial → «Por cobrar»** muestra las ventas con saldo y el total que deben los clientes. Cada una dice «Debe $X» y tiene el botón **Cobrar**. También está en **Clientes → cliente → Compras**.
+- **Cobrar** (`collectCredit`): abono parcial o total, con el medio de pago obligatorio. El dinero entra a la caja abierta como «Abono de cliente», que es ingreso en el libro fiscal. La factura guarda `creditPayments`, y cuando el saldo llega a 0 pasa a «pagada».
+- Saldos con `creditAmount`, `creditPaid` y `creditBalance`. Las cuentas por cobrar del Resumen del negocio y lo que debe cada cliente ya restan los abonos.
+- **Comprobante:** muestra los abonos y el «SALDO POR PAGAR».
+- **Caja:** la ganancia de la venta se reparte también en los abonos del crédito. **Anular** la factura devuelve también los abonos cobrados.
+- **Regla de Firestore:** el cajero solo puede agregar un abono (`creditPayments` crece en uno) y pasar la factura de «credito» a «credito» o «pagada».

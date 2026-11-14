@@ -286,7 +286,8 @@ export function balanceToday(data: { products: Product[]; units: PhoneUnit[]; pu
     .reduce((a, p) => a + Math.max(0, p.stock) * (p.cost || 0), 0);
   const receivables = data.invoices
     .filter((i) => i.status === 'credito')
-    .reduce((a, i) => a + i.payments.filter((x) => x.method === CREDIT_METHOD).reduce((b, x) => b + x.amount, 0), 0);
+    .reduce((a, i) => a + Math.max(0, i.payments.filter((x) => x.method === CREDIT_METHOD).reduce((b, x) => b + x.amount, 0)
+      - (i.creditPayments ?? []).reduce((b, x) => b + x.amount, 0)), 0);
   const payables = data.purchases.reduce((a, p) => a + purchaseBalance(p), 0);
   return { phones, stock, receivables, payables, net: phones + stock + receivables - payables };
 }

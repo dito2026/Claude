@@ -276,7 +276,7 @@ export async function voidInvoice(actor: Actor, invoiceId: string, reason: strin
       } else markAvailable(tx, u);
     }
     if (remission) revertRemissionSale(tx, remission, inv);
-    for (const pay of inv.payments) {
+    for (const pay of [...inv.payments, ...(inv.creditPayments ?? [])]) {
       writeMovement(tx, actor, sessionId, {
         direction: 'egreso',
         category: 'anulacion',
@@ -301,5 +301,42 @@ export async function voidInvoice(actor: Actor, invoiceId: string, reason: strin
         ...touched(),
       });
     }
+  });
+}
+
+// ---------------- Ventas a crédito tienda: saldo y cobro ----------------
+/** Valor que quedó a «Crédito tienda» en la venta. */
+export const creditAmount = (inv: Pick<Invoice, 'payments'>) =>
+  sum((inv.payments ?? []).filter((p) => p.method === CREDIT_METHOD).map((p) => p.amount));
+/** Lo que ya abonó el cliente a ese crédito. */
+export const creditPaid = (inv: Pick<Invoice, 'creditPayments'>) => sum((inv.creditPayments ?? []).map((p) => p.amount));
+/** Lo que todavía debe (0 si está pagada o anulada). */
+export const creditBalance = (inv: Pick<Invoice, 'payments' | 'creditPayments' | 'status'>) =>
+  inv.status === 'anulada' ? 0 : Math.max(0, creditAmount(inv) - creditPaid(inv));
+
+/**
+ * Cobra (total o parcial) una venta a crédito tienda: el dinero entra a la caja abierta como «Abono de cliente»
+ * (ingreso del libro fiscal) y, cuando el saldo llega a 0, la factura pasa a «pagada».
+ */
+export async function collectCredit(actor: Actor, invoiceId: string, amount: number, method: string) {
+  if (!(amount > 0)) throw new BusinessError('Escriba el valor que paga el cliente.');
+  if (!method || method === CREDIT_METHOD) throw new BusinessError('Elija con qué paga (efectivo, transferencia, Nequi…).');
+  return backend.transaction(async (tx) => {
+    const inv = await tx.get<Invoice>('invoices', invoiceId);
+    if (!inv) throw new BusinessError('Factura no encontrada.');
+    if (inv.status === 'anulada') throw new BusinessError('La factura está anulada.');
+    const balance = creditBalance(inv);
+    if (balance <= 0) throw new BusinessError('Esta venta no tiene saldo por cobrar.');
+    if (amount > balance) throw new BusinessError(`El cliente solo debe ${balance.toLocaleString('es-CO')}.`);
+    const sid = await requireOpenSession(tx);
+    // ---- escrituras ----
+    const at = new Date().toISOString();
+    writeMovement(tx, actor, sid, {
+      direction: 'ingreso', category: 'abono_cliente', method, amount,
+      description: `Abono crédito factura ${inv.number} · ${inv.customer.name || 'Cliente'}`, refType: 'invoice', refId: inv.id,
+    });
+    const creditPayments = [...(inv.creditPayments ?? []), { at, amount, method, by: actor.name }];
+    tx.update('invoices', inv.id, { creditPayments, status: amount === balance ? 'pagada' : 'credito', ...touched() });
+    return { balance: balance - amount };
   });
 }

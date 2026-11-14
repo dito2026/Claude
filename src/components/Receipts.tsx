@@ -52,6 +52,12 @@ export function InvoiceReceipt({ inv, s }: { inv: Invoice; s: BusinessSettings }
           {inv.payments.map((p, i) => (
             <tr key={i}><td>{p.method}</td><td className="r">{money(p.amount)}</td></tr>
           ))}
+          {(inv.creditPayments ?? []).map((p, i) => (
+            <tr key={`c${i}`}><td>Abono {dateOnly(p.at)} · {p.method}</td><td className="r">-{money(p.amount)}</td></tr>
+          ))}
+          {inv.payments.some((p) => p.method === 'Crédito tienda') && inv.status !== 'anulada' && (
+            <tr className="big"><td>SALDO POR PAGAR</td><td className="r">{money(Math.max(0, inv.payments.filter((p) => p.method === 'Crédito tienda').reduce((a, p) => a + p.amount, 0) - (inv.creditPayments ?? []).reduce((a, p) => a + p.amount, 0)))}</td></tr>
+          )}
         </tbody>
       </table>
       {s.warrantyTerms?.trim() && (

@@ -261,6 +261,8 @@ export interface Payment {
 
 export interface Invoice extends BaseDoc {
   number: number;
+  /** abonos recibidos después a una venta con «Crédito tienda» */
+  creditPayments?: { at: string; amount: number; method: string; by: string }[];
   /** venta de mercancía en consignación (remisión) */
   remissionId?: string;
   remissionNumber?: number;

@@ -24,7 +24,7 @@ const CAT: Record<CashCategory, string> = {
  */
 export function movementProfit(m: CashMovement, inv: Invoice | undefined): number | null {
   if (!inv || m.refType !== 'invoice') return null;
-  if (m.category !== 'venta' && m.category !== 'anulacion') return null;
+  if (m.category !== 'venta' && m.category !== 'anulacion' && m.category !== 'abono_cliente') return null;
   const profit = inv.total - (inv.tax || 0) - invoiceCost(inv);
   const paid = (inv.payments ?? []).reduce((a, x) => a + x.amount, 0);
   if (paid <= 0) return null;

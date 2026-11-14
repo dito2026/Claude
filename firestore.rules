@@ -124,9 +124,13 @@ service cloud.firestore {
     // ---- Facturación y caja ----
     match /invoices/{id} {
       allow read, create: if isCashier();
-      // Solo se permite anular (admin). Nunca borrar.
-      allow update: if isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'voidReason', 'voidedAt', 'voidedBy', 'updatedAt']);
+      // Anular: solo admin. Cobrar un crédito tienda: cajero o admin (solo agrega abonos). Nunca borrar.
+      allow update: if (isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'voidReason', 'voidedAt', 'voidedBy', 'updatedAt']))
+        || (isCashier() && resource.data.status == 'credito'
+          && request.resource.data.status in ['credito', 'pagada']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['creditPayments', 'status', 'updatedAt'])
+          && request.resource.data.creditPayments.size() == resource.data.get('creditPayments', []).size() + 1);
       allow delete: if false;
     }
 

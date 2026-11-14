@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageCircle, Pencil, Plus, Trash2 } from 'lucide-react';
+import { HandCoins, MessageCircle, Pencil, Plus, Trash2 } from 'lucide-react';
+import { CollectCreditModal } from '../components/CreditCollect';
 import { useCollection } from '../data/hooks';
 import type { Customer, Invoice, RepairOrder } from '../lib/types';
 import { dateOnly, matches, money, pad, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, PageHead, SearchBox, useAction , SkeletonRows } from '../components/ui';
 import { orderTone } from '../components/status';
-import { invoiceCost } from '../services/billing';
+import { creditBalance, invoiceCost } from '../services/billing';
 import { deleteCustomer, saveCustomer, type CustomerInput } from '../services/customers';
 
 const EMPTY: CustomerInput = { document: '', name: '', phone: '', email: '', address: '', notes: '' };
@@ -31,7 +32,7 @@ export function Customers() {
       if (!s) continue;
       s.total += i.total;
       s.tickets += 1;
-      if (i.status === 'credito') s.credit += i.payments.filter((p) => p.method === 'Crédito tienda').reduce((a, p) => a + p.amount, 0);
+      s.credit += creditBalance(i);
       if (!s.last || (i.createdAt ?? '') > s.last) s.last = i.createdAt;
     }
     for (const o of orders) {
@@ -165,6 +166,7 @@ export function Customers() {
 /** Compras del cliente con productos, fecha y (para quien ve finanzas) costo y ganancia. */
 function CustomerPurchases({ invoices }: { invoices: Invoice[] }) {
   const { can } = useAuth();
+  const [collecting, setCollecting] = useState<Invoice | null>(null);
   const finance = can('dashboard.finance');
   const list = [...invoices].sort((a, b) => b.number - a.number);
   const valid = list.filter((i) => i.status !== 'anulada');
@@ -190,7 +192,9 @@ function CustomerPurchases({ invoices }: { invoices: Invoice[] }) {
                       <td className="sold-items">{i.items.map((it, k) => (
                         <div key={k}>{it.qty > 1 && <b>{it.qty}× </b>}{it.description}{it.imei && <small className="mono">IMEI {it.imei}</small>}</div>
                       ))}</td>
-                      <td><Badge tone={i.status === 'anulada' ? 'red' : i.status === 'credito' ? 'warn' : 'ok'}>{i.status}</Badge></td>
+                      <td><Badge tone={i.status === 'anulada' ? 'red' : i.status === 'credito' ? 'warn' : 'ok'}>{i.status}</Badge>
+                        {creditBalance(i) > 0 && <><small className="red">Debe {money(creditBalance(i))}</small>
+                          <button className="btn sm mt" onClick={() => setCollecting(i)}><HandCoins size={14} />Cobrar</button></>}</td>
                       <td className="num">{money(i.total)}</td>
                       {finance && <td className={`num ${profit < 0 ? 'red' : ''}`}>{i.status === 'anulada' ? '—' : money(profit)}</td>}
                     </tr>
@@ -201,6 +205,7 @@ function CustomerPurchases({ invoices }: { invoices: Invoice[] }) {
           </div>
         )}
       </div>
+      {collecting && <CollectCreditModal inv={invoices.find((x) => x.id === collecting.id) ?? collecting} onClose={() => setCollecting(null)} />}
     </>
   );
 }

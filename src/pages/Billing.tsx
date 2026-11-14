@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Ban, Minus, PenLine, Plus, Trash2, Wrench, X } from 'lucide-react';
+import { Ban, HandCoins, Minus, PenLine, Plus, Trash2, Wrench, X } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { Customer, Invoice, InvoiceItem, InvoiceItemKind, Payment, PhoneUnit, Product, RepairOrder, Seller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
@@ -9,7 +9,7 @@ import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
 import { CustomerPicker } from '../components/CustomerPicker';
 import { InvoiceModal } from '../components/Receipts';
-import { computeTotals, createInvoice, invoiceCost, itemsFromOrder, voidInvoice } from '../services/billing';
+import { computeTotals, createInvoice, creditBalance, invoiceCost, itemsFromOrder, voidInvoice } from '../services/billing';
 import { depositsTotal } from '../services/orders';
 import { customerRef } from '../services/orders';
 import { useSettings } from '../services/settings';
@@ -22,6 +22,7 @@ import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
 
 import { BuyFromSupplierFields, EMPTY_BUY, useSuppliers, type BuyFromSupplierValue } from '../components/BuyFromSupplier';
 import { buyFreeItem } from '../services/purchases';
+import { CollectCreditModal } from '../components/CreditCollect';
 import { BASE_LABEL, computeCommission } from '../services/sellers';
 import type { CashState } from '../services/cash';
 
@@ -370,8 +371,11 @@ function History() {
   const [voiding, setVoiding] = useState<Invoice | null>(null);
   const [reason, setReason] = useState('');
   const [cat, setCat] = useState('');
+  const [onlyCredit, setOnlyCredit] = useState<'todas' | 'cobrar'>('todas');
+  const [collecting, setCollecting] = useState<Invoice | null>(null);
   const products = useCollection<Product>('products').rows;
   const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const owedTotal = rows.reduce((a, i) => a + creditBalance(i), 0);
 
   // Valor de cada categoría dentro de cada comprobante
   const byCat = useMemo(() => new Map(rows.map((inv) => {
@@ -385,6 +389,7 @@ function History() {
   const allCats = useMemo(() => sortCategories([...byCat.values()].flatMap((m) => [...m.keys()])), [byCat]);
 
   const list = rows
+    .filter((i) => onlyCredit === 'todas' || creditBalance(i) > 0)
     .filter((i) => !cat || byCat.get(i.id)?.has(cat))
     .filter((i) => matches(q, i.number, i.customer.name, i.customer.document, i.repairOrderNumber, ...i.items.map((it) => it.description), ...[...(byCat.get(i.id)?.keys() ?? [])]))
     .sort((a, b) => b.number - a.number);
@@ -402,6 +407,7 @@ function History() {
   return (
     <>
       <div className="row" style={{ marginBottom: 14 }}>
+        <Seg value={onlyCredit} onChange={setOnlyCredit} options={[{ value: 'todas', label: 'Todas' }, { value: 'cobrar', label: `Por cobrar${owedTotal ? ` · ${money(owedTotal)}` : ''}` }]} />
         <SearchBox value={q} onChange={setQ} placeholder="N.º, cliente, OT o producto" />
         <select className="input" style={{ width: 220 }} value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Categoría">
           <option value="">Todas las categorías</option>
@@ -430,13 +436,15 @@ function History() {
                       {i.items.length > 3 && <small>y {i.items.length - 3} más…</small>}
                     </td>
                     <td>{i.payments.map((p) => p.method).join(', ') || (i.depositsApplied ? 'Abonos' : '—')}{i.sellerName && <small>Vend. {i.sellerName} · {money(i.commission)}</small>}</td>
-                    <td><Badge tone={i.status === 'anulada' ? 'red' : i.status === 'credito' ? 'warn' : 'ok'}>{i.status}</Badge></td>
+                    <td><Badge tone={i.status === 'anulada' ? 'red' : i.status === 'credito' ? 'warn' : 'ok'}>{i.status}</Badge>
+                      {creditBalance(i) > 0 && <small className="red">Debe {money(creditBalance(i))}</small>}</td>
                     <td className="num">{money(i.total)}</td>
                     {finance && (() => {
                       const g = profitOf(i);
                       return <td className={`num ${i.status === 'anulada' ? 'faint' : g < 0 ? 'red strong' : 'strong'}`}>{i.status === 'anulada' ? '—' : money(g)}{i.status !== 'anulada' && i.total > 0 && <small>{Math.round((g / Math.max(1, i.total - (i.tax || 0))) * 100)}%</small>}</td>;
                     })()}
                     <td className="right" onClick={(e) => e.stopPropagation()}>
+                      {creditBalance(i) > 0 && can('billing') && <button className="btn sm" title="Registrar un pago del cliente" onClick={() => setCollecting(i)}><HandCoins size={14} />Cobrar</button>}
                       {can('billing.void') && i.status !== 'anulada' && (
                         <button className="btn sm ghost" title="Anular" onClick={() => { setVoiding(i); setReason(''); }}><Ban size={15} /></button>
                       )}
@@ -448,6 +456,7 @@ function History() {
           </div>
         )}
       </div>
+      {collecting && <CollectCreditModal inv={rows.find((x) => x.id === collecting.id) ?? collecting} onClose={() => setCollecting(null)} />}
       {view && <InvoiceModal inv={view} s={settings} onClose={() => setView(null)} />}
       {voiding && (
         <Modal title={`Anular comprobante N.º ${pad(voiding.number, 6)}`} onClose={() => setVoiding(null)}
