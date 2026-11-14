@@ -3,6 +3,7 @@
 import type { CashMovement, Invoice, InvoiceItem, PhoneUnit, Product, Purchase } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { purchaseBalance } from './purchases';
+import { buildXlsx, saveFile, XLSX_MIME } from '../lib/xlsx';
 import { tracksStock } from './inventory';
 
 export type PeriodKind = 'hoy' | '7dias' | 'mes' | 'mes_anterior' | 'anio' | 'rango';
@@ -308,14 +309,9 @@ export function toCsv(rows: (string | number)[][]): string {
   return '﻿' + rows.map((r) => r.map(esc).join(';')).join('\r\n');
 }
 
+/** Descarga una tabla como archivo de Excel real (.xlsx). En celular usa «Compartir». */
 export function downloadCsv(filename: string, rows: (string | number)[][]) {
-  const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const name = filename.replace(/\.csv$/i, '') + '.xlsx';
+  const sheet = name.replace(/\.xlsx$/, '').split('_')[0].replace(/-/g, ' ');
+  void saveFile(name, buildXlsx(rows, sheet), XLSX_MIME);
 }

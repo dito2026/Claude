@@ -120,7 +120,7 @@ const PERIODS: { value: PeriodKind | 'todo'; label: string }[] = [
 ];
 
 function SellerDetail({ seller, invoices, onClose }: { seller: Seller; invoices: Invoice[]; onClose: () => void }) {
-  const [kind, setKind] = useState<PeriodKind | 'todo'>('mes');
+  const [kind, setKind] = useState<PeriodKind | 'todo'>('todo');
   const today = new Date();
   const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const [from, setFrom] = useState(iso(new Date(today.getFullYear(), today.getMonth(), 1)));
@@ -154,7 +154,7 @@ function SellerDetail({ seller, invoices, onClose }: { seller: Seller; invoices:
         <Stat label="Comisión" value={money(t.commission)} sub={`${seller.commissionPct}% ${BASE_LABEL[seller.commissionBase]}`} />
       </div>
       <div className="card">
-        {rows.length === 0 ? <Empty>No tiene ventas en este periodo.</Empty> : (
+        {rows.length === 0 ? <Empty>No tiene ventas en este periodo{kind !== 'todo' ? ' (pruebe con «Todo»)' : ''}.</Empty> : (
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Fecha</th><th>Factura</th><th>Cliente</th><th>Producto</th><th className="num">Venta</th><th className="num">Costo</th><th className="num">Ganancia</th><th className="num">Comisión</th></tr></thead>

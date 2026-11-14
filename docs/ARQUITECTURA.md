@@ -616,3 +616,10 @@ el servidor reintenta con su modelo de respaldo.
 - **Facturación → Historial:** columna **Ganancia** en cada comprobante (total sin IVA − costo de lo vendido) con su porcentaje. Las anuladas muestran «—». Solo la ve quien tiene permiso de finanzas.
 - **Resumen de arriba:** ganancia total y margen de lo que se está viendo. Respeta el buscador y el filtro de categoría; con una categoría elegida, muestra solo la ganancia de esa categoría (con el descuento repartido).
 - La tabla quedó más compacta: el origen (venta directa, OT o remisión) va debajo del cliente, y el vendedor con su comisión va debajo del medio de pago.
+
+## 53. Descargas a Excel reales (.xlsx)
+
+- `src/lib/xlsx.ts` arma un libro de Excel de verdad (.xlsx), sin librerías: un ZIP sin compresión con la hoja. Los textos conservan las tildes, los números quedan como números (se pueden sumar) y van en negrita el título, los encabezados y los totales. Las columnas tienen el ancho ajustado.
+- `downloadCsv` ahora entrega `.xlsx` en todas las descargas: ventas por vendedor, estado de resultados, contabilidad por módulo, libro fiscal y libro de caja. Antes era un .csv, que en algunos equipos se abría mal.
+- **En celular** (`saveFile`) se usa «Compartir» (guardar en Archivos, enviar por WhatsApp o correo), porque en iPhone con la app instalada la descarga directa no hace nada.
+- **Detalle del vendedor:** abre en «Todo», para que no salga vacío ni con el botón Excel desactivado cuando las ventas son de otros meses.
