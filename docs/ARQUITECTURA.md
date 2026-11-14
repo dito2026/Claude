@@ -597,3 +597,10 @@ el servidor reintenta con su modelo de respaldo.
 - **Total y saldo** se recalculan y lo pagado no cambia. Si lo pagado quedara por encima del nuevo total, primero hay que corregir el pago.
 - **Historial:** `edits` guarda el total y las líneas anteriores, con quién y por qué. En la compra se ve «Corregida el … por … · antes $X».
 - **Regla de Firestore:** solo el admin, solo esos campos, compra no anulada, y `edits` crece en uno.
+
+## 50. Detalle de ventas por vendedor y por cliente
+
+- **Vendedores y comisiones → tocar el vendedor** (`sellerSalesDetail`): cada producto vendido con fecha, factura, cliente, IMEI, venta (con el descuento repartido), costo, ganancia y comisión (la de la factura, repartida por línea).
+- Filtro: hoy, 7 días, este mes, mes anterior, este año, todo, o un rango de fechas. Totales de vendido, costo, ganancia con margen y comisión. Botón **Excel**.
+- Las facturas anuladas no se cuentan. La ganancia es antes de la comisión.
+- **Clientes → tocar el cliente → Compras:** ahora muestra los productos de cada compra (con IMEI) y, para quien ve finanzas, la ganancia de cada factura y el total.

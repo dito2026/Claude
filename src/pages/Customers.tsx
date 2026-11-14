@@ -7,6 +7,7 @@ import { dateOnly, matches, money, pad, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, PageHead, SearchBox, useAction , SkeletonRows } from '../components/ui';
 import { orderTone } from '../components/status';
+import { invoiceCost } from '../services/billing';
 import { deleteCustomer, saveCustomer, type CustomerInput } from '../services/customers';
 
 const EMPTY: CustomerInput = { document: '', name: '', phone: '', email: '', address: '', notes: '' };
@@ -154,24 +155,52 @@ export function Customers() {
               </tbody></table>
             )}
           </div>
-          <h3 className="mt" style={{ fontSize: 14, marginBottom: 8 }}>Compras</h3>
-          <div className="card">
-            {invoices.filter((i) => i.customerId === detail.id).length === 0 ? <Empty>Sin compras.</Empty> : (
-              <table className="table"><tbody>
-                {invoices.filter((i) => i.customerId === detail.id).sort((a, b) => b.number - a.number).map((i) => (
-                  <tr key={i.id}>
-                    <td className="mono">N.º {pad(i.number, 6)}</td>
-                    <td>{dateOnly(i.createdAt)}</td>
-                    <td>{i.items.length} ítems</td>
-                    <td><Badge tone={i.status === 'anulada' ? 'red' : i.status === 'credito' ? 'warn' : 'ok'}>{i.status}</Badge></td>
-                    <td className="num">{money(i.total)}</td>
-                  </tr>
-                ))}
-              </tbody></table>
-            )}
-          </div>
+          <CustomerPurchases invoices={invoices.filter((i) => i.customerId === detail.id)} />
         </Modal>
       )}
+    </>
+  );
+}
+
+/** Compras del cliente con productos, fecha y (para quien ve finanzas) costo y ganancia. */
+function CustomerPurchases({ invoices }: { invoices: Invoice[] }) {
+  const { can } = useAuth();
+  const finance = can('dashboard.finance');
+  const list = [...invoices].sort((a, b) => b.number - a.number);
+  const valid = list.filter((i) => i.status !== 'anulada');
+  const sold = valid.reduce((a, i) => a + i.total, 0);
+  const cost = valid.reduce((a, i) => a + invoiceCost(i), 0);
+  return (
+    <>
+      <h3 className="mt" style={{ fontSize: 14, marginBottom: 8 }}>
+        Compras{valid.length > 0 && <span className="faint" style={{ fontWeight: 400 }}> · {valid.length} · {money(sold)}{finance ? ` · ganancia ${money(sold - (valid.reduce((a, i) => a + (i.tax || 0), 0)) - cost)}` : ''}</span>}
+      </h3>
+      <div className="card">
+        {list.length === 0 ? <Empty>Sin compras.</Empty> : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Fecha</th><th>Factura</th><th>Productos</th><th>Estado</th><th className="num">Total</th>{finance && <th className="num">Ganancia</th>}</tr></thead>
+              <tbody>
+                {list.map((i) => {
+                  const profit = i.total - (i.tax || 0) - invoiceCost(i);
+                  return (
+                    <tr key={i.id} style={{ opacity: i.status === 'anulada' ? 0.5 : 1 }}>
+                      <td className="nowrap">{dateOnly(i.createdAt)}</td>
+                      <td className="mono">{pad(i.number, 6)}</td>
+                      <td className="sold-items">{i.items.map((it, k) => (
+                        <div key={k}>{it.qty > 1 && <b>{it.qty}× </b>}{it.description}{it.imei && <small className="mono">IMEI {it.imei}</small>}</div>
+                      ))}</td>
+                      <td><Badge tone={i.status === 'anulada' ? 'red' : i.status === 'credito' ? 'warn' : 'ok'}>{i.status}</Badge></td>
+                      <td className="num">{money(i.total)}</td>
+                      {finance && <td className={`num ${profit < 0 ? 'red' : ''}`}>{i.status === 'anulada' ? '—' : money(profit)}</td>}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </>
   );
 }

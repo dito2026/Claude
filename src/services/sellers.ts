@@ -3,7 +3,7 @@
 import { backend } from '../data';
 import type { CashMovement, CommissionBase, Invoice, InvoiceItem, Product, Seller } from '../lib/types';
 import { BusinessError, created, sum, touched, type Actor } from './common';
-import { lineOf, type Line } from './accounting';
+import { inPeriod, lineOf, type Line, type Period } from './accounting';
 
 export type SellerInput = Omit<Seller, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>;
 
@@ -64,4 +64,42 @@ export function sellerBalance(s: Seller, invoices: Invoice[], movements: CashMov
     paid,
     owed: earned - paid,
   };
+}
+
+export interface SellerSaleLine {
+  invoiceId: string;
+  invoiceNumber: number;
+  at: string;
+  customer: string;
+  description: string;
+  imei?: string;
+  qty: number;
+  /** valor vendido de la línea (con el descuento de la factura repartido) */
+  sales: number;
+  cost: number;
+  profit: number;
+  /** comisión de la factura repartida según el valor de cada línea */
+  commission: number;
+}
+
+/** Detalle de ventas de un vendedor por producto, con costo, ganancia y comisión (sin facturas anuladas). */
+export function sellerSalesDetail(sellerId: string, invoices: Invoice[], period?: Period): SellerSaleLine[] {
+  const out: SellerSaleLine[] = [];
+  for (const inv of invoices) {
+    if (inv.sellerId !== sellerId || !valid(inv)) continue;
+    if (period && !inPeriod(inv.createdAt, period)) continue;
+    const factor = inv.subtotal > 0 ? (inv.subtotal - (inv.discount || 0)) / inv.subtotal : 1;
+    const values = inv.items.map((it) => it.qty * it.unitPrice * factor);
+    const total = sum(values);
+    inv.items.forEach((it, k) => {
+      const sales = Math.round(values[k]);
+      const cost = Math.round(it.qty * (it.unitCost || 0));
+      out.push({
+        invoiceId: inv.id, invoiceNumber: inv.number, at: inv.createdAt ?? '', customer: inv.customer?.name || 'Consumidor final',
+        description: it.description, imei: it.imei, qty: it.qty, sales, cost, profit: sales - cost,
+        commission: total > 0 ? Math.round(((inv.commission || 0) * values[k]) / total) : 0,
+      });
+    });
+  }
+  return out.sort((a, b) => b.at.localeCompare(a.at) || a.invoiceNumber - b.invoiceNumber);
 }

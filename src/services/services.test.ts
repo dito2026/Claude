@@ -961,3 +961,22 @@ describe('modelos comerciales', () => {
     for (const b of Object.keys(COMMERCIAL_MODELS)) expect(m.has(b)).toBe(true);
   });
 });
+
+describe('detalle de ventas por vendedor', () => {
+  it('lista productos con venta, costo, ganancia y comisión repartida; sin anuladas ni otros vendedores', async () => {
+    const { sellerSalesDetail } = await import('./sellers');
+    const at = new Date(2026, 10, 5).toISOString();
+    const inv = (o: Partial<Invoice>) => ({ status: 'pagada', createdAt: at, discount: 0, customer: { name: 'Laura', phone: '', document: '' }, ...o }) as Invoice;
+    const rows = sellerSalesDetail('g', [
+      inv({ id: '1', number: 1, sellerId: 'g', subtotal: 100000, discount: 10000, commission: 9000, items: [
+        { description: 'Vidrio', kind: 'producto', qty: 2, unitPrice: 25000, unitCost: 5000 },
+        { description: 'Forro', kind: 'producto', qty: 1, unitPrice: 50000, unitCost: 20000 },
+      ] }),
+      inv({ id: '2', number: 2, sellerId: 'g', status: 'anulada', subtotal: 10, items: [{ description: 'X', kind: 'producto', qty: 1, unitPrice: 10, unitCost: 0 }] }),
+      inv({ id: '3', number: 3, sellerId: 'otro', subtotal: 10, items: [{ description: 'Y', kind: 'producto', qty: 1, unitPrice: 10, unitCost: 0 }] }),
+    ], { from: new Date(2026, 10, 1), to: new Date(2026, 11, 1) });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ description: 'Vidrio', qty: 2, sales: 45000, cost: 10000, profit: 35000, commission: 4500, customer: 'Laura' });
+    expect(rows[1]).toMatchObject({ description: 'Forro', sales: 45000, cost: 20000, profit: 25000, commission: 4500 });
+  });
+});
