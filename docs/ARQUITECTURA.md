@@ -641,3 +641,10 @@ el servidor reintenta con su modelo de respaldo.
 - **Comprobante:** muestra los abonos y el «SALDO POR PAGAR».
 - **Caja:** la ganancia de la venta se reparte también en los abonos del crédito. **Anular** la factura devuelve también los abonos cobrados.
 - **Regla de Firestore:** el cajero solo puede agregar un abono (`creditPayments` crece en uno) y pasar la factura de «credito» a «credito» o «pagada».
+
+## 56. Fase 1 de simplificación
+
+- **Publicación automática** (`.github/workflows/publicar.yml`): con cada cambio subido a la rama, GitHub instala, corre `npm test` y `npm run e2e`, compila y publica en Firebase (hosting y reglas). Si una prueba falla, no publica. Necesita el secreto `FIREBASE_TOKEN` (de `npx firebase-tools login:ci`) o `FIREBASE_SERVICE_ACCOUNT`. También se puede lanzar a mano desde GitHub → Actions → Publicar → Run workflow.
+- **Medio de pago obligatorio en toda la app** (`components/PayMethods.tsx`): botones sin valor por defecto en el abono inicial de una orden, el abono a proveedor, la compra de contado y los movimientos de Caja (gasto, pagos, retiro, ingreso). Antes venía «Efectivo» marcado.
+- **«Ingresar» pasa a «Inventario inicial»**: la ventana avisa que es solo para celulares que ya estaban en el local y lleva a Compras o a Compraventa usados.
+- **Pruebas en el navegador en el proyecto** (`npm run e2e`, `e2e/run.mjs`): compilan la versión demo y revisan 16 pantallas en computador y celular (sin errores ni desbordes), además de venta con medio obligatorio, ganancia en caja, gasto, crédito y cobro, compraventa con anulación, inventario inicial, abono a proveedor y abono inicial de orden.

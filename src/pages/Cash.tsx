@@ -6,6 +6,7 @@ import { CREDIT_METHOD } from '../lib/types';
 import { dateTime, money } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, Stat, useAction } from '../components/ui';
+import { PayMethods } from '../components/PayMethods';
 import { addMovement, closeSession, editExpense, expectedByMethod, openSession, type CashState } from '../services/cash';
 import { technicianBalance } from '../services/staff';
 import { sellerBalance } from '../services/sellers';
@@ -256,14 +257,14 @@ function EditExpenseModal({ m, methods, categories, isAdmin, onClose }: { m: Cas
   );
 }
 
-function MovementModal({ kind, methods, categories, onClose }: { kind: MovKind; methods: string[]; categories: string[]; onClose: () => void }) {
+function MovementModal({ kind, categories, onClose }: { kind: MovKind; methods?: string[]; categories: string[]; onClose: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
   const techs = useCollection<Technician>('technicians').rows;
   const orders = useCollection<RepairOrder>('repairOrders').rows;
   const movements = useCollection<CashMovement>('cashMovements').rows;
   const [amount, setAmount] = useState(0);
-  const [method, setMethod] = useState('Efectivo');
+  const [method, setMethod] = useState('');
   const [desc, setDesc] = useState('');
   const [category, setCategory] = useState(categories[0] ?? 'Otros');
   const [techId, setTechId] = useState('');
@@ -292,7 +293,7 @@ function MovementModal({ kind, methods, categories, onClose }: { kind: MovKind; 
   return (
     <Modal title={title} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy || !amount || (isPerson ? !techId : !desc.trim())} onClick={submit}>Registrar</button></>}>
+        <button className="btn primary" disabled={busy || !amount || !method || (isPerson ? !techId : !desc.trim())} onClick={submit}>Registrar</button></>}>
       <div className="form-grid">
         {isPerson && (
           <Field label={kind === 'pago_vendedor' ? 'Vendedor' : 'Técnico'} required className="full">
@@ -313,11 +314,7 @@ function MovementModal({ kind, methods, categories, onClose }: { kind: MovKind; 
           </Field>
         )}
         <Field label="Valor" required><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
-        <Field label="Medio">
-          <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
-            {methods.map((m) => <option key={m}>{m}</option>)}
-          </select>
-        </Field>
+        <PayMethods label="Medio" value={method} onChange={setMethod} missing={amount > 0 && !method} />
         <Field label={kind === 'pago_proveedor' ? 'Proveedor y concepto' : 'Descripción'} required={!isPerson} className="full">
           <input className="input" value={desc} onChange={(e) => setDesc(e.target.value)} />
         </Field>

@@ -135,7 +135,7 @@ export function Inventory() {
                           <td className="num">{margin === null ? '—' : `${margin}%`}</td>
                           <td className="right nowrap">
                             {p.type === 'EQUIPO' && can('inventory.receive') && (
-                              <button className="btn sm" title="Ingresar celulares con IMEI" onClick={() => setRegistering(p)}><Smartphone size={15} />Ingresar</button>
+                              <button className="btn sm" title="Celulares que ya tenía en el local (sin compra ni pago)" onClick={() => setRegistering(p)}><Smartphone size={15} />Inventario inicial</button>
                             )}
                             {tracksStock(p) && p.type !== 'EQUIPO' && can('inventory.receive') && (
                               <button className="btn sm ghost" title="Entrada (compra)" onClick={() => setStockOp({ p, kind: 'entrada' })}><ArrowDownToLine size={15} /></button>
@@ -263,7 +263,7 @@ export function ProductModal({ edit, onClose, onSaved }: { edit: { id?: string; 
           {!priceTouched && d.price > 0 && <small className="faint">Sugerido automático con margen {margin}%. Cámbielo si quiere.</small>}
         </Field>
         {d.type === 'EQUIPO' && (
-          <div className="alert info full">Celulares: se controlan uno por uno con su IMEI. El stock sube al ingresarlos («Ingresar» en la lista o una compra) y baja al venderlos escogiendo el IMEI.</div>
+          <div className="alert info full">Celulares: se controlan uno por uno con su IMEI. El stock sube al ingresarlos (con una compra, Compraventa usados o «Inventario inicial» para lo que ya tenía) y baja al venderlos escogiendo el IMEI.</div>
         )}
         {tracksStock(d) && isNew && d.type !== 'EQUIPO' && (
           <Field label="¿Cuántos tiene?"><input className="input num" type="number" min={0} inputMode="numeric" value={d.stock || ''} placeholder="0" onChange={(e) => set('stock', Number(e.target.value))} /></Field>

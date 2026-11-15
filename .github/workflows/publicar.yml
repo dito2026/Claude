@@ -1,0 +1,58 @@
+# Publica DIGITAL CELL PRO en Firebase cada vez que se suben cambios.
+# Antes de publicar corre las pruebas; si alguna falla, NO publica (la app sigue con la versión anterior).
+# Necesita UNA de estas claves guardadas en GitHub → Settings → Secrets and variables → Actions:
+#   FIREBASE_TOKEN            (la que da «npx firebase-tools login:ci»)
+#   FIREBASE_SERVICE_ACCOUNT  (el JSON de una cuenta de servicio de Google Cloud)
+name: Publicar
+
+on:
+  push:
+    branches: [claude/digital-cell-pro-app-yx0c4d, main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Pruebas (cálculos de caja, inventario, ventas…)
+        run: npm test
+
+      - name: Pruebas en el navegador
+        run: |
+          npm i --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+          npm run e2e
+
+      - name: Compilar
+        run: npm run build
+
+      - name: Publicar en Firebase (app y reglas)
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+            export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+            npx -y firebase-tools@13 deploy --only hosting,firestore --project digital-cell-pro-9f79a --non-interactive
+          elif [ -n "$FIREBASE_TOKEN" ]; then
+            npx -y firebase-tools@13 deploy --only hosting,firestore --project digital-cell-pro-9f79a --non-interactive --token "$FIREBASE_TOKEN"
+          else
+            echo "::error::Falta la clave para publicar. Guarde FIREBASE_TOKEN en GitHub → Settings → Secrets and variables → Actions."
+            exit 1
+          fi

@@ -82,7 +82,7 @@ export async function receiveStock(actor: Actor, productId: string, qty: number,
     const p = await tx.get<Product>('products', productId);
     if (!p) throw new BusinessError('Producto no encontrado.');
     if (!tracksStock(p)) throw new BusinessError('Este producto no controla inventario.');
-    if (p.type === 'EQUIPO') throw new BusinessError('Los celulares se ingresan con su IMEI («Ingresar equipos» o una compra).');
+    if (p.type === 'EQUIPO') throw new BusinessError('Los celulares se ingresan con su IMEI (una compra, Compraventa usados o «Inventario inicial»).');
     if (unitCost !== undefined && unitCost > 0) {
       p.cost = unitCost;
       tx.update('products', p.id, { cost: unitCost });

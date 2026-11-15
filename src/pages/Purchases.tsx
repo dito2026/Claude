@@ -7,6 +7,7 @@ import { CREDIT_METHOD } from '../lib/types';
 import { dateOnly, dateTime, fromLocalInput, matches, money, pad, toLocalInput, addDays, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction } from '../components/ui';
+import { PayMethods } from '../components/PayMethods';
 import {
   changePurchaseSupplier, createPurchase, editPurchase, editSupplierPayment, supplierPayments, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
 } from '../services/purchases';
@@ -476,7 +477,6 @@ function SupplierModal({ edit, onClose, onSaved }: { edit: { id?: string; data: 
 
 function PayModal({ supplier, purchases, onClose }: { supplier: Supplier; purchases: Purchase[]; onClose: () => void }) {
   const { actor } = useAuth();
-  const settings = useSettings();
   const { run, busy } = useAction();
   const cash = useDocument<CashState & { id: string }>('meta', 'cash').doc;
   const pending = purchases
@@ -484,22 +484,18 @@ function PayModal({ supplier, purchases, onClose }: { supplier: Supplier; purcha
     .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
   const owed = pending.reduce((a, p) => a + purchaseBalance(p), 0);
   const [amount, setAmount] = useState(owed);
-  const [method, setMethod] = useState('Efectivo');
+  const [method, setMethod] = useState('');
   return (
     <Modal title={`Abonar a ${supplier.name}`} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy || !amount || !cash?.openSessionId}
+        <button className="btn primary" disabled={busy || !amount || !method || !cash?.openSessionId}
           onClick={() => run(() => paySupplier(actor, supplier, pending.map((p) => p.id), amount, method), 'Abono registrado').then((ok) => ok && onClose())}>Registrar abono</button></>}>
       <div className="stack">
         {!cash?.openSessionId && <div className="alert warn">La caja está cerrada. El abono sale de caja: <Link className="red" to="/caja">abra la caja</Link> primero.</div>}
         <div className="totals"><div className="grand"><span>Deuda total</span><span className="red">{money(owed)}</span></div></div>
         <div className="form-grid">
           <Field label="Valor del abono"><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
-          <Field label="Medio de pago">
-            <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
-              {settings.paymentMethods.filter((m) => m !== CREDIT_METHOD).map((m) => <option key={m}>{m}</option>)}
-            </select>
-          </Field>
+          <PayMethods value={method} onChange={setMethod} missing={amount > 0 && !method} />
         </div>
         <div className="faint" style={{ fontSize: 12 }}>Se aplica primero a la compra más antigua:</div>
         {pending.map((p) => (
@@ -516,7 +512,6 @@ function PayModal({ supplier, purchases, onClose }: { supplier: Supplier; purcha
 // ---------------- Nueva compra ----------------
 function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Supplier[]; prefill?: PurchasePrefill; onClose: () => void }) {
   const { actor, can } = useAuth();
-  const settings = useSettings();
   const products = useCollection<Product>('products').rows;
   const cash = useDocument<CashState & { id: string }>('meta', 'cash').doc;
   const { run, busy } = useAction();
@@ -526,7 +521,7 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
   const [items, setItems] = useState<PurchaseItem[]>(prefill.items ?? []);
   const [q, setQ] = useState('');
   const [paymentType, setPaymentType] = useState<'credito' | 'contado'>(prefill.paymentType ?? 'credito');
-  const [method, setMethod] = useState('Efectivo');
+  const [method, setMethod] = useState('');
   const [invoiceRef, setInvoiceRef] = useState(prefill.invoiceRef ?? '');
   const [due, setDue] = useState('');
   const [note, setNote] = useState(prefill.note ?? '');
@@ -577,7 +572,7 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
       footer={<>
         <span className="grow faint">{items.length} producto(s)</span>
         <button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy || !supplier || items.length === 0 || needsCash} onClick={submit}>
+        <button className="btn primary" disabled={busy || !supplier || items.length === 0 || needsCash || (paymentType === 'contado' && !method)} onClick={submit}>
           Registrar compra {money(total)}
         </button>
       </>}>
@@ -598,11 +593,7 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
           {paymentType === 'credito' ? (
             <Field label="Fecha límite de pago"><input className="input" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
           ) : (
-            <Field label="Paga con">
-              <select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>
-                {settings.paymentMethods.filter((m) => m !== CREDIT_METHOD).map((m) => <option key={m}>{m}</option>)}
-              </select>
-            </Field>
+            <PayMethods label="Paga con" value={method} onChange={setMethod} missing={!method} />
           )}
           <Field label="Factura o nota del proveedor"><input className="input" value={invoiceRef} onChange={(e) => setInvoiceRef(e.target.value)} placeholder="Opcional" /></Field>
         </div>

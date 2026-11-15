@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "deploy": "npm run build && firebase deploy"
+    "deploy": "npm run build && firebase deploy",
+    "e2e": "node e2e/run.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.4.0",

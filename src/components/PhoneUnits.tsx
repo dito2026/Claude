@@ -34,7 +34,7 @@ export function ImeiTextarea({ value, onChange }: { value: string; onChange: (v:
   );
 }
 
-/** Ingresar celulares con IMEI a un producto tipo EQUIPO (sin compra a proveedor). */
+/** Inventario inicial: celulares que ya estaban en el local, con IMEI, sin compra ni pago. */
 export function RegisterUnitsModal({ product, unregistered, onClose }: { product: Product; unregistered: number; onClose: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
@@ -46,7 +46,7 @@ export function RegisterUnitsModal({ product, unregistered, onClose }: { product
   const [already, setAlready] = useState(unregistered > 0);
   const units = parseImeiLines(text, condition, color);
   return (
-    <Modal title={`Ingresar equipos · ${product.name}`} onClose={onClose}
+    <Modal title={`Inventario inicial · ${product.name}`} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
         <button className="btn primary" disabled={busy || units.length === 0}
           onClick={() => run(() => registerUnits(actor, product.id, units, { cost, supplierName, note: '', alreadyInStock: already, unregistered }),
@@ -54,6 +54,11 @@ export function RegisterUnitsModal({ product, unregistered, onClose }: { product
           Registrar {units.length || ''} equipo{units.length === 1 ? '' : 's'}
         </button></>}>
       <div className="stack">
+        <div className="alert warn"><div>
+          <b>Solo para celulares que ya tenía en el local.</b> No crea compra ni mueve la caja.
+          Si lo acaba de comprar, use <Link className="red" to="/compras">Compras → Nueva compra</Link> (a un proveedor)
+          o <Link className="red" to="/usados">Compraventa usados</Link> (a un cliente), para que quede la compra y el pago.
+        </div></div>
         {unregistered > 0 && (
           <label className="alert warn" style={{ cursor: 'pointer' }}>
             <input type="checkbox" checked={already} onChange={(e) => setAlready(e.target.checked)} style={{ accentColor: 'var(--red)' }} />
@@ -146,7 +151,7 @@ export function UnitsTab() {
       </div>
       {manual > 0 && (
         <div className="alert info" style={{ marginBottom: 14 }}><div>
-          {manual} celular(es) disponibles entraron con «Ingresar» (sin compra): por eso no aparecen en Compras ni descontaron dinero de la caja.
+          {manual} celular(es) disponibles entraron como «Inventario inicial» (sin compra): por eso no aparecen en Compras ni descontaron dinero de la caja.
           Lo que se compra a un proveedor va en <b>Compras → Nueva compra</b>, y lo que se le compra a un cliente, en <b>Compraventa usados</b>.
         </div></div>
       )}
@@ -171,7 +176,7 @@ export function UnitsTab() {
                       : u.warrantyUntil ? <Badge tone={warrantyActive(u) ? 'ok' : ''}>{warrantyActive(u) ? 'Vigente' : 'Vencida'} · {dateOnly(u.warrantyUntil)}</Badge>
                       : <span className="faint">Sin garantía</span>}</td>
                     <td className="nowrap">{isAdmin && u.status === 'disponible' && !u.purchaseId && !u.usedPurchaseId && (
-                      <button className="btn sm danger" title="Entró con «Ingresar», sin compra: anule el ingreso para registrarlo bien" onClick={() => setVoiding(u)}>Anular ingreso</button>
+                      <button className="btn sm danger" title="Entró como inventario inicial, sin compra: anule el ingreso para registrarlo bien" onClick={() => setVoiding(u)}>Anular ingreso</button>
                     )}</td>
                   </tr>
                 ))}

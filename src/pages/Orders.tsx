@@ -7,6 +7,7 @@ import { OPEN_STATUSES } from '../lib/types';
 import { dateTime, fromLocalInput, matches, money, pad, toLocalInput } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, QuickChips, SearchBox, Seg, useAction , SkeletonRows } from '../components/ui';
+import { PayMethods } from '../components/PayMethods';
 import { CustomerPicker } from '../components/CustomerPicker';
 import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
 import { matchesBrand, matchesModel } from '../lib/brands';
@@ -127,7 +128,7 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
   const [techPay, setTechPay] = useState(0);
   const [warranty, setWarranty] = useState(settings.defaultWarrantyDays);
   const [deposit, setDeposit] = useState(0);
-  const [depMethod, setDepMethod] = useState('Efectivo');
+  const [depMethod, setDepMethod] = useState('');
 
   useEffect(() => setWarranty(settings.defaultWarrantyDays), [settings.defaultWarrantyDays]);
   const dev = (k: keyof Device) => (e: { target: { value: string } }) => setDevice({ ...device, [k]: e.target.value });
@@ -161,7 +162,7 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
       footer={
         <>
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn primary" disabled={busy || !customer} onClick={submit}>Crear orden</button>
+          <button className="btn primary" disabled={busy || !customer || (deposit > 0 && !depMethod)} onClick={submit}>Crear orden</button>
         </>
       }
     >
@@ -210,11 +211,7 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
           <Field label="Pago al técnico"><MoneyInput value={techPay} onChange={setTechPay} /></Field>
           <Field label="Garantía (días)"><input className="input num" type="number" min={0} value={warranty} onChange={(e) => setWarranty(Number(e.target.value))} /></Field>
           <Field label="Abono inicial"><MoneyInput value={deposit} onChange={setDeposit} /></Field>
-          <Field label="Medio del abono">
-            <select className="input" value={depMethod} onChange={(e) => setDepMethod(e.target.value)} disabled={!deposit}>
-              {settings.paymentMethods.filter((m) => m !== 'Crédito tienda').map((m) => <option key={m}>{m}</option>)}
-            </select>
-          </Field>
+          {deposit > 0 && <PayMethods label="Medio del abono" value={depMethod} onChange={setDepMethod} missing={!depMethod} />}
         </div>
         <div className="faint" style={{ fontSize: 12 }}>Los repuestos se agregan desde la orden y se descuentan del inventario en ese momento.</div>
       </div>
