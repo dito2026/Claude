@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { FileText, Pencil, Plus, Printer, ShieldCheck, Smartphone } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { BusinessSettings, CashMovement, PhoneUnit, Product, UsedPurchase, UsedSeller } from '../lib/types';
-import { CREDIT_METHOD } from '../lib/types';
 import { matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { useSettings } from '../services/settings';
@@ -10,7 +9,8 @@ import { buyUsedPhone, editUsedPurchase, findPhoneProduct, moveUsedOutsideCash, 
 import type { CashState } from '../services/cash';
 import { imeiError, normalizeImei } from '../services/phones';
 import { BrandInput, ModelInput } from '../components/BrandModel';
-import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Stat, printNow, useAction } from '../components/ui';
+import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Stat, printLetter, useAction } from '../components/ui';
+import { PayMethods } from '../components/PayMethods';
 
 const today = () => {
   const d = new Date();
@@ -98,7 +98,6 @@ function UsedPurchaseModal({ s, onClose, onSaved }: { s: BusinessSettings; onClo
   const [salePrice, setSalePrice] = useState(0);
   const [verified, setVerified] = useState(false);
   const [outsideCash, setOutsideCash] = useState(false);
-  const methods = s.paymentMethods.filter((m) => m !== CREDIT_METHOD);
   const ss = (k: keyof UsedSeller, v: string) => setSeller({ ...seller, [k]: v });
   const imeiMsg = (v: string) => (normalizeImei(v).length >= 14 ? imeiError(normalizeImei(v)) : null);
   const match = device.brand && device.model ? findPhoneProduct(products, device.brand, device.model) : undefined;
@@ -168,14 +167,7 @@ function UsedPurchaseModal({ s, onClose, onSaved }: { s: BusinessSettings; onClo
         <Field label="Precio que paga" required><MoneyInput value={price} onChange={setPrice} /></Field>
         <Field label="Precio de venta (opcional)"><MoneyInput value={salePrice} onChange={setSalePrice} /></Field>
       </div>
-      <div className="field mt">
-        <span>Pagado con <em>*</em></span>
-        <div className={`pay-methods ${price > 0 && !method ? 'missing' : ''}`} role="radiogroup" aria-label="Pagado con">
-          {methods.map((m) => (
-            <button key={m} type="button" role="radio" aria-checked={method === m} className={`cat-chip ${method === m ? 'active' : ''}`} onClick={() => setMethod(m)}>{m}</button>
-          ))}
-        </div>
-      </div>
+      <div className="mt"><PayMethods label="Pagado con" value={method} onChange={setMethod} missing={price > 0 && !method} /></div>
       <label className="checkbox mt" style={{ alignItems: 'flex-start' }}>
         <input type="checkbox" checked={outsideCash} onChange={(e) => setOutsideCash(e.target.checked)} />
         <span><b>No descontar de la caja</b>: lo pagué con dinero que no está en la caja (del dueño o de la cuenta). La caja no cambia; cuando lo venda, la plata de la venta entra normal.</span>
@@ -270,16 +262,7 @@ export function UsedContract({ c, s }: { c: UsedPurchase; s: BusinessSettings })
 
 /** Imprime el contrato; en el diálogo de impresión, «Guardar como PDF» lo deja en PDF con nombre propio. */
 function printContract(c: UsedPurchase) {
-  const prev = document.title;
-  document.title = `Contrato-compraventa-${pad(c.number, 4)}-${c.seller.name.replace(/\s+/g, '-')}`;
-  document.body.classList.add('print-letter');
-  const done = () => {
-    document.title = prev;
-    document.body.classList.remove('print-letter');
-    window.removeEventListener('afterprint', done);
-  };
-  window.addEventListener('afterprint', done);
-  printNow();
+  printLetter(`Contrato-compraventa-${pad(c.number, 4)}-${c.seller.name.replace(/\s+/g, '-')}`);
 }
 
 function ContractModal({ c, s, onClose }: { c: UsedPurchase; s: BusinessSettings; onClose: () => void }) {
@@ -345,7 +328,7 @@ function ContractModal({ c, s, onClose }: { c: UsedPurchase; s: BusinessSettings
   );
 }
 
-function EditUsedModal({ c, s, onClose }: { c: UsedPurchase; s: BusinessSettings; onClose: () => void }) {
+function EditUsedModal({ c, onClose }: { c: UsedPurchase; s: BusinessSettings; onClose: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
   const [date, setDate] = useState(c.date);
@@ -357,7 +340,6 @@ function EditUsedModal({ c, s, onClose }: { c: UsedPurchase; s: BusinessSettings
   const [method, setMethod] = useState(c.method);
   const [salePrice, setSalePrice] = useState(c.salePrice || 0);
   const [reason, setReason] = useState('');
-  const methods = s.paymentMethods.filter((m) => m !== CREDIT_METHOD);
   const ss = (k: keyof UsedSeller, v: string) => setSeller({ ...seller, [k]: v });
   const diff = price - c.price;
   const save = () => run(() => editUsedPurchase(actor, c.id, { date, city, seller, buyer, color, price, method, salePrice }, reason), 'Contrato corregido').then((ok) => ok && onClose());
@@ -393,12 +375,7 @@ function EditUsedModal({ c, s, onClose }: { c: UsedPurchase; s: BusinessSettings
         <Field label="Precio pagado" required><MoneyInput value={price} onChange={setPrice} /></Field>
         <Field label="Precio de venta"><MoneyInput value={salePrice} onChange={setSalePrice} /></Field>
       </div>
-      <div className="field mt">
-        <span>Pagado con <em>*</em></span>
-        <div className="pay-methods">
-          {methods.map((m) => <button key={m} type="button" className={`cat-chip ${method === m ? 'active' : ''}`} onClick={() => setMethod(m)}>{m}</button>)}
-        </div>
-      </div>
+      <div className="mt"><PayMethods label="Pagado con" value={method} onChange={setMethod} /></div>
       {(diff !== 0 || method !== c.method) && (
         <div className="faint mt" style={{ fontSize: 13 }}>
           {c.outsideCash ? 'Se pagó por fuera de la caja: la caja no cambia.'

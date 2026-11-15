@@ -42,7 +42,7 @@ export async function createTicket(actor: Actor, t: NewTicket) {
       comments: [],
       ...created(actor),
     };
-    const id = tx.create('tickets', ticket as unknown as Record<string, unknown>);
+    const id = tx.create('tickets', ticket);
     return { id, number };
   });
 }

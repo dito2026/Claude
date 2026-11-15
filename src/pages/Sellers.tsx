@@ -5,7 +5,7 @@ import type { CashMovement, CommissionBase, Invoice, Seller } from '../lib/types
 import { dateTime, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, PageHead, Seg, Stat, useAction } from '../components/ui';
-import { LINES, downloadCsv, periodRange, type PeriodKind } from '../services/accounting';
+import { LINES, downloadExcel, periodRange, type PeriodKind } from '../services/accounting';
 import { BASE_LABEL, saveSeller, sellerBalance, sellerSalesDetail, type SellerInput } from '../services/sellers';
 
 const EMPTY: SellerInput = { name: '', phone: '', active: true, commissionPct: 2, commissionBase: 'venta', lines: [] };
@@ -130,7 +130,7 @@ function SellerDetail({ seller, invoices, onClose }: { seller: Seller; invoices:
   const t = rows.reduce((a, r) => ({ sales: a.sales + r.sales, cost: a.cost + r.cost, profit: a.profit + r.profit, commission: a.commission + r.commission, units: a.units + r.qty }), { sales: 0, cost: 0, profit: 0, commission: 0, units: 0 });
   const invoicesCount = new Set(rows.map((r) => r.invoiceId)).size;
   const label = PERIODS.find((p) => p.value === kind)!.label;
-  const exportXls = () => downloadCsv(`ventas-${seller.name.replace(/\s+/g, '-')}_${kind}.csv`, [
+  const exportXls = () => downloadExcel(`ventas-${seller.name.replace(/\s+/g, '-')}_${kind}.csv`, [
     [`Ventas de ${seller.name}`, kind === 'rango' ? `${from} a ${to}` : label],
     [],
     ['Fecha', 'Factura', 'Cliente', 'Producto', 'IMEI', 'Cantidad', 'Venta', 'Costo', 'Ganancia', 'Comisión'],

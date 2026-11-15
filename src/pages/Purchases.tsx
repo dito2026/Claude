@@ -3,7 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { HandCoins, History, PackagePlus, PenLine, Pencil, Plus, Sparkles, Trash2, Truck } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { PhoneCondition, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
-import { CREDIT_METHOD } from '../lib/types';
 import { dateOnly, dateTime, fromLocalInput, matches, money, pad, toLocalInput, addDays, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction } from '../components/ui';
@@ -11,7 +10,6 @@ import { PayMethods } from '../components/PayMethods';
 import {
   changePurchaseSupplier, createPurchase, editPurchase, editSupplierPayment, supplierPayments, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
 } from '../services/purchases';
-import { useSettings } from '../services/settings';
 import type { CashState } from '../services/cash';
 import { EMPTY_PRODUCT, ProductModal } from './Inventory';
 import { ImeiTextarea, parseImeiLines } from '../components/PhoneUnits';
@@ -297,12 +295,10 @@ function EditPurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void })
 function EditSupplierPaymentModal({ p, index, onClose }: { p: Purchase; index: number; onClose: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
-  const settings = useSettings();
   const pay = p.payments[index];
   const [amount, setAmount] = useState(pay.amount);
   const [method, setMethod] = useState(pay.method);
   const [reason, setReason] = useState('');
-  const methods = settings.paymentMethods.filter((m) => m !== CREDIT_METHOD);
   const diff = amount - pay.amount;
   const save = (value: number) => run(() => editSupplierPayment(actor, p.id, index, { amount: value, method }, reason),
     value === 0 ? 'Pago eliminado · el dinero volvió a la caja' : 'Pago corregido · caja ajustada').then((ok) => ok && onClose());
@@ -316,12 +312,7 @@ function EditSupplierPaymentModal({ p, index, onClose }: { p: Purchase; index: n
       <div className="stack">
         <div className="alert info"><div>Pago del {dateTime(pay.at)} a <b>{p.supplierName}</b>: <b>{money(pay.amount)}</b> en {pay.method}. Total de la compra {money(p.total)}. La caja abierta se ajusta sola.</div></div>
         <Field label="Valor correcto"><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
-        <div className="field">
-          <span>Medio de pago <em>*</em></span>
-          <div className="pay-methods">
-            {methods.map((m) => <button key={m} type="button" className={`cat-chip ${method === m ? 'active' : ''}`} onClick={() => setMethod(m)}>{m}</button>)}
-          </div>
-        </div>
+        <PayMethods value={method} onChange={setMethod} />
         {(diff !== 0 || method !== pay.method) && (
           <div className="faint" style={{ fontSize: 13 }}>
             {method !== pay.method

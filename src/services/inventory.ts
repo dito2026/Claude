@@ -46,7 +46,7 @@ export function moveStock(
     ...ref,
     ...created(actor),
   };
-  tx.create('stockMovements', mv as unknown as Record<string, unknown>);
+  tx.create('stockMovements', mv);
   product.stock = stockAfter; // por si se mueve dos veces en la misma transacción
   return stockAfter;
 }

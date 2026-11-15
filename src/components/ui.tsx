@@ -232,6 +232,20 @@ export function Seg<T extends string>({ value, options, onChange }: { value: T; 
   );
 }
 
+/** Imprime en tamaño carta (contratos, remisiones) con un nombre de archivo para «Guardar como PDF». */
+export function printLetter(fileName: string) {
+  const prev = document.title;
+  document.title = fileName;
+  document.body.classList.add('print-letter');
+  const done = () => {
+    document.title = prev;
+    document.body.classList.remove('print-letter');
+    window.removeEventListener('afterprint', done);
+  };
+  window.addEventListener('afterprint', done);
+  printNow();
+}
+
 /** Imprime solo el contenido del modal abierto. */
 export function printNow() {
   document.body.classList.add('printing');

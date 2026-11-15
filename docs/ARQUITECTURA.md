@@ -648,3 +648,11 @@ el servidor reintenta con su modelo de respaldo.
 - **Medio de pago obligatorio en toda la app** (`components/PayMethods.tsx`): botones sin valor por defecto en el abono inicial de una orden, el abono a proveedor, la compra de contado y los movimientos de Caja (gasto, pagos, retiro, ingreso). Antes venía «Efectivo» marcado.
 - **«Ingresar» pasa a «Inventario inicial»**: la ventana avisa que es solo para celulares que ya estaban en el local y lleva a Compras o a Compraventa usados.
 - **Pruebas en el navegador en el proyecto** (`npm run e2e`, `e2e/run.mjs`): compilan la versión demo y revisan 16 pantallas en computador y celular (sin errores ni desbordes), además de venta con medio obligatorio, ganancia en caja, gasto, crédito y cobro, compraventa con anulación, inventario inicial, abono a proveedor y abono inicial de orden.
+
+## 57. Fase 2 · limpieza de código (sin cambios visibles)
+
+- **Medio de pago:** todos los formularios usan `<PayMethods>` (`src/components/PayMethods.tsx`): factura, cobro de crédito, abonos de órdenes, remisiones, compraventa de usados, pagos a proveedor y «Comprar al proveedor» en factura/orden. Este último ya no trae «Efectivo» por defecto: si la compra es de contado hay que elegir el medio, y `createPurchase` lo exige.
+- **Corrección de pagos en caja:** `adjustCash(tx, actor, sesión, 'in' | 'out', base, antes, después)` en `services/cash.ts` reemplaza la lógica repetida de `editDeposit`, `editSupplierPayment` y `editUsedPurchase`.
+- **Imprimir en carta:** `printLetter(nombreArchivo)` en `components/ui.tsx` (contratos de compraventa y remisiones).
+- **Tipos:** `Tx`/`Backend` aceptan `object` en `create`/`set`/`update`; se quitaron las 15 conversiones `as unknown as Record<string, unknown>`.
+- `downloadCsv` se llama ahora `downloadExcel` (ya generaba .xlsx).

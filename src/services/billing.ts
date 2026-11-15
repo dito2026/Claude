@@ -175,7 +175,7 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
         : {}),
       ...created(actor),
     };
-    const invoiceId = tx.create('invoices', invoice as unknown as Record<string, unknown>);
+    const invoiceId = tx.create('invoices', invoice);
     if (remission) writeRemissionSale(tx, remission, items, { id: invoiceId, number, total: totals.total });
 
     for (const it of items) {

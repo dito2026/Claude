@@ -9,7 +9,7 @@ import type {
   RepairOrder,
 } from '../lib/types';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
-import { requireOpenSession, writeMovement } from './cash';
+import { adjustCash, requireOpenSession, writeMovement } from './cash';
 import { CREDIT_METHOD } from '../lib/types';
 import { moveStock } from './inventory';
 
@@ -83,7 +83,7 @@ export async function createOrder(actor: Actor, input: NewOrderInput) {
       timeline: [{ at, by: actor.name, status: 'Recibido', note: 'Equipo recibido en el taller' }],
       ...created(actor),
     };
-    const id = tx.create('repairOrders', order as unknown as Record<string, unknown>);
+    const id = tx.create('repairOrders', order);
     if (sessionId && dep) {
       writeMovement(tx, actor, sessionId, {
         direction: 'ingreso',
@@ -282,15 +282,7 @@ export async function editDeposit(actor: Actor, orderId: string, index: number, 
     // ---- escrituras ----
     const why = reason.trim();
     const desc = `Corrección abono OT ${o.number} · ${o.customer.name}: ${why}`;
-    const out = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'egreso', category: 'anulacion', method, amount, description: desc, refType: 'repairOrder', refId: o.id });
-    const inn = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'ingreso', category: 'abono_cliente', method, amount, description: desc, refType: 'repairOrder', refId: o.id });
-    if (d.method === next.method) {
-      const diff = next.amount - d.amount;
-      if (diff > 0) inn(diff, d.method); else out(-diff, d.method);
-    } else {
-      out(d.amount, d.method);
-      if (next.amount > 0) inn(next.amount, next.method);
-    }
+    adjustCash(tx, actor, sid, 'in', { category: 'abono_cliente', description: desc, refType: 'repairOrder', refId: o.id }, d, next);
     const at = new Date().toISOString();
     const deposits = next.amount === 0
       ? o.deposits.filter((_, i) => i !== index)

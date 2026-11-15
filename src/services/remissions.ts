@@ -92,7 +92,7 @@ export async function createRemission(actor: Actor, d: RemissionDraft) {
       returns: [],
       ...created(actor),
     };
-    const id = tx.create('remissions', doc as unknown as Record<string, unknown>);
+    const id = tx.create('remissions', doc);
     for (const it of items) {
       moveStock(tx, actor, products.get(it.productId)!, -it.qty, 'remision', {
         refType: 'remission', refId: id, refNumber: number, note: `Remisión R-${number} · ${doc.recipient.name}`,

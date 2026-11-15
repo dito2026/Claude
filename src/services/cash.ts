@@ -21,7 +21,7 @@ export type MovementInput = Omit<CashMovement, 'id' | 'sessionId' | 'createdAt' 
 /** Registra un movimiento (fase de escrituras). Los créditos de tienda no tocan caja. */
 export function writeMovement(tx: Tx, actor: Actor, sessionId: string, m: MovementInput) {
   if (m.method === CREDIT_METHOD || !(m.amount > 0)) return;
-  tx.create('cashMovements', { ...m, sessionId, ...created(actor) } as unknown as Record<string, unknown>);
+  tx.create('cashMovements', { ...m, sessionId, ...created(actor) });
 }
 
 export async function openSession(actor: Actor, openingCash: number) {
@@ -35,7 +35,7 @@ export async function openSession(actor: Actor, openingCash: number) {
       openingCash: Math.max(0, openingCash || 0),
       ...created(actor),
     };
-    const id = tx.create('cashSessions', session as unknown as Record<string, unknown>);
+    const id = tx.create('cashSessions', session);
     tx.set('meta', 'cash', { openSessionId: id });
     return id;
   });
@@ -92,6 +92,34 @@ export async function editExpense(actor: Actor, movementId: string, fix: Expense
       ...touched(),
     });
   });
+}
+
+/**
+ * Cuadra la caja abierta cuando se corrige un pago ya registrado (valor o medio).
+ * - `flow: 'out'` (dinero que salió, p. ej. pago a proveedor): si baja o cambia de medio, el dinero vuelve
+ *   (reintegro de la misma categoría); si sube, sale la diferencia.
+ * - `flow: 'in'` (dinero que entró, p. ej. abono de cliente): si baja o cambia de medio, sale como «Anulación»;
+ *   si sube, entra la diferencia en la misma categoría.
+ */
+export function adjustCash(
+  tx: Tx, actor: Actor, sessionId: string, flow: 'in' | 'out',
+  base: Pick<MovementInput, 'category' | 'description' | 'refType' | 'refId'>,
+  before: { amount: number; method: string }, after: { amount: number; method: string },
+) {
+  const forward = (amount: number, method: string) => writeMovement(tx, actor, sessionId, {
+    ...base, direction: flow === 'out' ? 'egreso' : 'ingreso', method, amount,
+  });
+  const reverse = (amount: number, method: string) => writeMovement(tx, actor, sessionId, {
+    ...base, ...(flow === 'in' ? { category: 'anulacion' as const } : {}), direction: flow === 'out' ? 'ingreso' : 'egreso', method, amount,
+  });
+  if (before.method === after.method) {
+    const diff = after.amount - before.amount;
+    if (diff > 0) forward(diff, after.method);
+    else if (diff < 0) reverse(-diff, before.method);
+  } else {
+    if (before.amount > 0) reverse(before.amount, before.method);
+    if (after.amount > 0) forward(after.amount, after.method);
+  }
 }
 
 /** Esperado por medio de pago: igual que la hoja «Cierre de caja». */

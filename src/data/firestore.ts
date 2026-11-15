@@ -29,7 +29,7 @@ const withId = <T>(id: string, data: unknown) => ({ ...(data as object), id }) a
 
 /** Firestore no acepta `undefined`: se eliminan esas claves. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function clean(data: Record<string, unknown>): Record<string, any> {
+function clean(data: object): Record<string, any> {
   return JSON.parse(JSON.stringify(data));
 }
 
@@ -58,16 +58,16 @@ export class FirestoreBackend implements Backend {
     return d.exists() ? withId<T>(d.id, d.data()) : null;
   }
 
-  async create(col: string, data: Record<string, unknown>) {
+  async create(col: string, data: object) {
     const ref = await addDoc(collection(this.db, col), clean(data));
     return ref.id;
   }
 
-  async set(col: string, id: string, data: Record<string, unknown>) {
+  async set(col: string, id: string, data: object) {
     await setDoc(doc(this.db, col, id), clean(data));
   }
 
-  async update(col: string, id: string, data: Record<string, unknown>) {
+  async update(col: string, id: string, data: object) {
     await updateDoc(doc(this.db, col, id), clean(data));
   }
 

@@ -93,19 +93,19 @@ export class LocalBackend implements Backend {
     return d ? (clone(d) as T) : null;
   }
 
-  async create(col: string, data: Record<string, unknown>): Promise<string> {
+  async create(col: string, data: object): Promise<string> {
     const id = uid();
     await this.set(col, id, data);
     return id;
   }
 
-  async set(col: string, id: string, data: Record<string, unknown>) {
+  async set(col: string, id: string, data: object) {
     this.colMap(col)[id] = { ...clone(data), id };
     this.persist();
     this.emit(col);
   }
 
-  async update(col: string, id: string, data: Record<string, unknown>) {
+  async update(col: string, id: string, data: object) {
     const cur = this.colMap(col)[id];
     if (!cur) throw new Error(`No existe ${col}/${id}`);
     this.colMap(col)[id] = { ...cur, ...clone(data), id };

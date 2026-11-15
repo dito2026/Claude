@@ -9,7 +9,7 @@ import { canonicalBrand } from '../lib/brands';
 import { BusinessError, created, readNext, touched, writeCounter, type Actor } from './common';
 import { moveStock, nextSku } from './inventory';
 import { assertImeisFree, cleanUnits, writeUnits } from './phones';
-import { requireOpenSession, writeMovement, type CashState } from './cash';
+import { adjustCash, requireOpenSession, writeMovement, type CashState } from './cash';
 
 export interface UsedDraft {
   date: string;
@@ -73,7 +73,7 @@ export async function buyUsedPhone(actor: Actor, d: UsedDraft, products: Product
         cost: d.price, price: d.salePrice || 0, stock: 0, minStock: 0, warrantyMonths: 0,
         line: 'Equipos', active: true, category: 'Celulares', ...created(actor),
       };
-      const id = tx.create('products', data as unknown as Record<string, unknown>);
+      const id = tx.create('products', data);
       product = { ...data, id } as Product;
     }
     const contract: Omit<UsedPurchase, 'id'> = {
@@ -96,7 +96,7 @@ export async function buyUsedPhone(actor: Actor, d: UsedDraft, products: Product
       createdByName: actor.name,
       ...created(actor),
     };
-    const cid = tx.create('usedPurchases', contract as unknown as Record<string, unknown>);
+    const cid = tx.create('usedPurchases', contract);
     writeUnits(tx, actor, product, [{ ...unit, notes: `Compraventa N.º ${number}` }], {
       cost: d.price, supplierName: contract.seller.name, price: d.salePrice || undefined, usedPurchaseId: cid, usedPurchaseNumber: number,
     });
@@ -181,15 +181,8 @@ export async function editUsedPurchase(actor: Actor, id: string, fix: UsedFix, r
     const why = reason.trim();
     if (sid) {
       const desc = `Corrección compraventa N.º ${c.number} · ${fix.seller.name.trim()}: ${why}`;
-      const back = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'ingreso', category: 'pago_proveedor', method, amount, description: desc, refType: 'usedPurchase', refId: c.id });
-      const out = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'egreso', category: 'pago_proveedor', method, amount, description: desc, refType: 'usedPurchase', refId: c.id });
-      if (fix.method === c.method) {
-        const diff = fix.price - c.price;
-        if (diff > 0) out(diff, c.method); else if (diff < 0) back(-diff, c.method);
-      } else {
-        back(c.price, c.method);
-        out(fix.price, fix.method);
-      }
+      adjustCash(tx, actor, sid, 'out', { category: 'pago_proveedor', description: desc, refType: 'usedPurchase', refId: c.id },
+        { amount: c.price, method: c.method }, { amount: fix.price, method: fix.method });
     }
     if (unit && unit.usedPurchaseId === c.id) {
       const inStore = unit.status === 'disponible' || unit.status === 'remisionado';

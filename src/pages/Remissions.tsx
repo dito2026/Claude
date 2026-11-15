@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { FileOutput, Plus, Printer, ReceiptText, Trash2, Undo2 } from 'lucide-react';
 import { useCollection } from '../data/hooks';
 import type { BusinessSettings, Invoice, PhoneUnit, Product, Remission } from '../lib/types';
-import { CREDIT_METHOD } from '../lib/types';
 import { dateOnly, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { useSettings } from '../services/settings';
@@ -15,7 +14,8 @@ import {
 } from '../services/remissions';
 import { UnitPickerModal } from '../components/PhoneUnits';
 import { InvoiceModal } from '../components/Receipts';
-import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, printNow, useAction } from '../components/ui';
+import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, printLetter, useAction } from '../components/ui';
+import { PayMethods } from '../components/PayMethods';
 
 const rn = (n: number) => `R-${pad(n, 4)}`;
 
@@ -180,7 +180,6 @@ function RemissionModal({ r, s, onClose }: { r: Remission; s: BusinessSettings; 
   const [method, setMethod] = useState('');
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const receipt = invoices.find((i) => i.id === receiptId);
-  const methods = s.paymentMethods.filter((m) => m !== CREDIT_METHOD);
   const pick = Object.entries(qty).filter(([, n]) => n > 0).map(([lineId, n]) => ({ lineId, qty: n }));
   const saleTotal = pick.reduce((a, p) => a + p.qty * (r.items.find((i) => i.lineId === p.lineId)?.unitPrice ?? 0), 0);
   const start = (m: 'devolver' | 'vender') => { setMode(mode === m ? '' : m); setQty({}); setMethod(''); };
@@ -230,12 +229,7 @@ function RemissionModal({ r, s, onClose }: { r: Remission; s: BusinessSettings; 
           </div>
           {mode === 'vender' && (
             <>
-              <div className="field">
-                <span>Medio de pago <em>*</em></span>
-                <div className={`pay-methods ${saleTotal > 0 && !method ? 'missing' : ''}`}>
-                  {methods.map((m) => <button key={m} type="button" className={`cat-chip ${method === m ? 'active' : ''}`} onClick={() => setMethod(m)}>{m}</button>)}
-                </div>
-              </div>
+              <PayMethods value={method} onChange={setMethod} missing={saleTotal > 0 && !method} />
               <button className="btn primary" disabled={busy || pick.length === 0 || !method} onClick={doSell}>Facturar {money(saleTotal)}</button>
             </>
           )}
@@ -255,12 +249,7 @@ function RemissionModal({ r, s, onClose }: { r: Remission; s: BusinessSettings; 
 }
 
 function printDoc(r: Remission) {
-  const prev = document.title;
-  document.title = `Remision-${rn(r.number)}-${r.recipient.name.replace(/\s+/g, '-')}`;
-  document.body.classList.add('print-letter');
-  const done = () => { document.title = prev; document.body.classList.remove('print-letter'); window.removeEventListener('afterprint', done); };
-  window.addEventListener('afterprint', done);
-  printNow();
+  printLetter(`Remision-${rn(r.number)}-${r.recipient.name.replace(/\s+/g, '-')}`);
 }
 
 /** Documento de remisión (carta / PDF). */

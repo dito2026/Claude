@@ -40,4 +40,4 @@ export function useSettings(): BusinessSettings {
 }
 
 export const saveSettings = (s: BusinessSettings) =>
-  backend.set('settings', 'business', { ...s, ...touched() } as unknown as Record<string, unknown>);
+  backend.set('settings', 'business', { ...s, ...touched() });

@@ -311,7 +311,7 @@ export function toCsv(rows: (string | number)[][]): string {
 }
 
 /** Descarga una tabla como archivo de Excel real (.xlsx). En celular usa «Compartir». */
-export function downloadCsv(filename: string, rows: (string | number)[][]) {
+export function downloadExcel(filename: string, rows: (string | number)[][]) {
   const name = filename.replace(/\.csv$/i, '') + '.xlsx';
   const sheet = name.replace(/\.xlsx$/, '').split('_')[0].replace(/-/g, ' ');
   void saveFile(name, buildXlsx(rows, sheet), XLSX_MIME);

@@ -6,7 +6,7 @@ import { dateOnly, dateTime, money } from '../lib/format';
 import { Badge, Empty, Field, PageHead, Seg, Stat } from '../components/ui';
 import { useSettings } from '../services/settings';
 import {
-  balanceToday, buildReport, dayKey, moduleReport, downloadCsv, fiscalBook, fiscalSign, inPeriod, periodRange, yearSales, type PeriodKind,
+  balanceToday, buildReport, dayKey, moduleReport, downloadExcel, fiscalBook, fiscalSign, inPeriod, periodRange, yearSales, type PeriodKind,
 } from '../services/accounting';
 
 const PERIODS: { value: PeriodKind; label: string }[] = [
@@ -63,7 +63,7 @@ export function Accounting() {
   const yearIncome = yearSales(invoices);
   const capPct = cap > 0 ? yearIncome / cap : 0;
 
-  const exportResults = () => downloadCsv(`estado-resultados_${fileTag}.csv`, [
+  const exportResults = () => downloadExcel(`estado-resultados_${fileTag}.csv`, [
     ['Digital Cell · Estado de resultados', label],
     [],
     ['Concepto', 'Valor', '% de ingresos'],
@@ -91,7 +91,7 @@ export function Accounting() {
     ['(−) Gastos generales repartidos', (m) => -m.expenses, -report.expenses],
     ['Utilidad neta', (m) => m.net, report.netProfit],
   ];
-  const exportModules = () => downloadCsv(`contabilidad-por-modulo_${fileTag}.csv`, [
+  const exportModules = () => downloadExcel(`contabilidad-por-modulo_${fileTag}.csv`, [
     ['Digital Cell · Contabilidad por módulo', label],
     [],
     ['Concepto', ...modules.map((m) => MODULE_NAME[m.line]), 'Total'],
@@ -102,7 +102,7 @@ export function Accounting() {
     ...modules.flatMap((m) => [[`Más vendidos · ${MODULE_NAME[m.line]}`, 'Cantidad', 'Ventas', 'Ganancia'], ...m.top.map((t) => [t.name, t.qty, t.sales, t.profit]), []]),
   ]);
 
-  const exportFiscal = () => downloadCsv(`libro-fiscal_${fileTag}.csv`, [
+  const exportFiscal = () => downloadExcel(`libro-fiscal_${fileTag}.csv`, [
     ['Digital Cell · Libro fiscal de operaciones diarias', settings.nit ? `NIT ${settings.nit}` : '', label],
     [],
     ['Día', 'Ingresos', 'Egresos', 'Neto'],
@@ -110,7 +110,7 @@ export function Accounting() {
     ['Total', fiscal.income, fiscal.outflow, fiscal.net],
   ]);
 
-  const exportBook = () => downloadCsv(`libro-caja_${fileTag}.csv`, [
+  const exportBook = () => downloadExcel(`libro-caja_${fileTag}.csv`, [
     ['Fecha y hora', 'Tipo', 'Categoría', 'Concepto', 'Medio', 'Ingreso', 'Egreso'],
     ...[...book].reverse().map((m) => [
       dateTime(m.createdAt), m.direction === 'ingreso' ? 'Ingreso' : 'Egreso',

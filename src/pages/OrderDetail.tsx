@@ -7,6 +7,7 @@ import { ORDER_STATUSES } from '../lib/types';
 import { dateTime, matches, money, pad, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, CommitMoney, Empty, Field, Modal, MoneyInput, Seg, useAction , SkeletonRows } from '../components/ui';
+import { PayMethods } from '../components/PayMethods';
 import { tracksStock } from '../services/inventory';
 import { buyFreeItem } from '../services/purchases';
 import { BuyFromSupplierFields, EMPTY_BUY, useSuppliers, type BuyFromSupplierValue } from '../components/BuyFromSupplier';
@@ -212,8 +213,8 @@ export function OrderDetail() {
       </div>
 
       {modal === 'part' && <AddPartModal order={o} onClose={() => setModal(null)} />}
-      {editingDeposit !== null && o.deposits[editingDeposit] && <EditDepositModal order={o} index={editingDeposit} methods={settings.paymentMethods} onClose={() => setEditingDeposit(null)} />}
-      {modal === 'deposit' && <DepositModal order={o} methods={settings.paymentMethods} onClose={() => setModal(null)} />}
+      {editingDeposit !== null && o.deposits[editingDeposit] && <EditDepositModal order={o} index={editingDeposit} onClose={() => setEditingDeposit(null)} />}
+      {modal === 'deposit' && <DepositModal order={o} onClose={() => setModal(null)} />}
       {modal === 'status' && <StatusModal order={o} onClose={() => setModal(null)} onReady={() => setModal('notify')} />}
       {modal === 'ai' && <AiDiagnosisModal order={o} onClose={() => setModal(null)}
         onUse={(text) => void updateOrder(actor, o.id, { diagnosis: [o.diagnosis, text].filter(Boolean).join('\n\n') }, 'Diagnóstico con IA agregado').then(() => setModal(null))} />}
@@ -336,7 +337,7 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
   );
 }
 
-function DepositModal({ order, methods, onClose }: { order: RepairOrder; methods: string[]; onClose: () => void }) {
+function DepositModal({ order, onClose }: { order: RepairOrder; onClose: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
   const [amount, setAmount] = useState(0);
@@ -347,26 +348,14 @@ function DepositModal({ order, methods, onClose }: { order: RepairOrder; methods
         <button className="btn primary" disabled={busy || !amount || !method} onClick={() => run(() => addDeposit(actor, order.id, amount, method), 'Abono registrado en caja').then((ok) => ok && onClose())}>Registrar</button></>}>
       <div className="stack">
         <Field label="Valor"><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
-        <PayMethods methods={methods} value={method} onChange={setMethod} missing={amount > 0 && !method} />
+        <PayMethods value={method} onChange={setMethod} missing={amount > 0 && !method} />
       </div>
     </Modal>
   );
 }
 
-function PayMethods({ methods, value, onChange, missing }: { methods: string[]; value: string; onChange: (m: string) => void; missing?: boolean }) {
-  return (
-    <div className="field">
-      <span>Medio de pago <em>*</em></span>
-      <div className={`pay-methods ${missing ? 'missing' : ''}`}>
-        {methods.filter((m) => m !== 'Crédito tienda').map((m) => (
-          <button key={m} type="button" className={`cat-chip ${value === m ? 'active' : ''}`} onClick={() => onChange(m)}>{m}</button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
-function EditDepositModal({ order, index, methods, onClose }: { order: RepairOrder; index: number; methods: string[]; onClose: () => void }) {
+function EditDepositModal({ order, index, onClose }: { order: RepairOrder; index: number; onClose: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
   const d = order.deposits[index];
@@ -386,7 +375,7 @@ function EditDepositModal({ order, index, methods, onClose }: { order: RepairOrd
       <div className="stack">
         <div className="alert info"><div>Abono registrado el {dateTime(d.at)}: <b>{money(d.amount)}</b> en {d.method}. La caja abierta se ajusta sola con la diferencia.</div></div>
         <Field label="Valor correcto"><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
-        <PayMethods methods={methods} value={method} onChange={setMethod} />
+        <PayMethods value={method} onChange={setMethod} />
         {(diff !== 0 || method !== d.method) && (
           <div className="faint" style={{ fontSize: 13 }}>
             {method !== d.method

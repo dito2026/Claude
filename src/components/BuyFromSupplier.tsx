@@ -1,8 +1,7 @@
 import { useCollection } from '../data/hooks';
 import type { Supplier } from '../lib/types';
-import { CREDIT_METHOD } from '../lib/types';
-import { useSettings } from '../services/settings';
 import { Field, Seg } from './ui';
+import { PayMethods } from './PayMethods';
 
 export interface BuyFromSupplierValue {
   enabled: boolean;
@@ -11,12 +10,11 @@ export interface BuyFromSupplierValue {
   method: string;
 }
 
-export const EMPTY_BUY: BuyFromSupplierValue = { enabled: false, supplierId: '', paymentType: 'credito', method: 'Efectivo' };
+export const EMPTY_BUY: BuyFromSupplierValue = { enabled: false, supplierId: '', paymentType: 'credito', method: '' };
 
 /** Bloque «Lo compré a un proveedor»: registra la compra (crédito = deuda) del artículo libre. */
 export function BuyFromSupplierFields({ value, onChange }: { value: BuyFromSupplierValue; onChange: (v: BuyFromSupplierValue) => void }) {
   const suppliers = useCollection<Supplier>('suppliers').rows.filter((s) => s.active).sort((a, b) => a.name.localeCompare(b.name));
-  const settings = useSettings();
   const set = (patch: Partial<BuyFromSupplierValue>) => onChange({ ...value, ...patch });
   return (
     <div className="card card-pad stack" style={{ gap: 10 }}>
@@ -36,11 +34,7 @@ export function BuyFromSupplierFields({ value, onChange }: { value: BuyFromSuppl
             <Seg value={value.paymentType} onChange={(v) => set({ paymentType: v })} options={[{ value: 'credito', label: 'A crédito (le debo)' }, { value: 'contado', label: 'De contado' }]} />
           </Field>
           {value.paymentType === 'contado' && (
-            <Field label="Pagué con">
-              <select className="input" value={value.method} onChange={(e) => set({ method: e.target.value })}>
-                {settings.paymentMethods.filter((m) => m !== CREDIT_METHOD).map((m) => <option key={m}>{m}</option>)}
-              </select>
-            </Field>
+            <PayMethods label="Pagué con" value={value.method} onChange={(m) => set({ method: m })} missing={!value.method} />
           )}
           {suppliers.length === 0 && <div className="faint full" style={{ fontSize: 12 }}>No hay proveedores: créelos en «Compras y proveedores».</div>}
         </div>

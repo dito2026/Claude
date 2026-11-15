@@ -94,7 +94,7 @@ export function writeUnits(tx: Tx, actor: Actor, product: Product, units: PhoneU
       ...(origin.usedPurchaseId ? { usedPurchaseId: origin.usedPurchaseId, usedPurchaseNumber: origin.usedPurchaseNumber } : {}),
       ...created(actor),
     };
-    tx.set('phoneUnits', u.imei, unit as unknown as Record<string, unknown>);
+    tx.set('phoneUnits', u.imei, unit);
     tx.set('imeiIndex', u.imei, { unitId: u.imei });
     if (u.imei2) tx.set('imeiIndex', u.imei2, { unitId: u.imei });
   }

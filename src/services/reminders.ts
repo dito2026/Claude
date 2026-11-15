@@ -7,7 +7,7 @@ export async function addReminder(actor: Actor, text: string, dueAt?: string) {
   const t = text.trim();
   if (!t) throw new BusinessError('Escriba el recordatorio.');
   const r: Omit<Reminder, 'id'> = { text: t, done: false, createdByName: actor.name, ...(dueAt ? { dueAt } : {}), ...created(actor) };
-  return backend.create('reminders', r as unknown as Record<string, unknown>);
+  return backend.create('reminders', r);
 }
 
 export const setReminderDone = (actor: Actor, id: string, done: boolean) =>

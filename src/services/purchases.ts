@@ -6,7 +6,7 @@ import type { PhoneUnit, Product, Purchase, PurchaseItem, Supplier } from '../li
 import { CREDIT_METHOD } from '../lib/types';
 import { addDays } from '../lib/format';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
-import { requireOpenSession, writeMovement } from './cash';
+import { adjustCash, requireOpenSession, writeMovement } from './cash';
 import { moveStock, tracksStock } from './inventory';
 import { assertImeisFree, cleanUnits, isPhone, writeUnits } from './phones';
 
@@ -61,7 +61,7 @@ export async function saveSupplier(actor: Actor, s: SupplierInput, id?: string, 
         note: 'Saldo anterior por pagar',
         ...created(actor),
       };
-      tx.create('purchases', p as unknown as Record<string, unknown>);
+      tx.create('purchases', p);
     }
     return sid;
   });
@@ -95,7 +95,7 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
   if (items.length === 0) throw new BusinessError('Agregue al menos un producto a la compra.');
   if (items.some((i) => !i.productId && !i.name.trim())) throw new BusinessError('Escriba la descripción del artículo libre.');
   if (items.some((i) => !Number.isInteger(i.qty) || i.unitCost < 0)) throw new BusinessError('Revise cantidades y costos.');
-  if (d.paymentType === 'contado' && d.method === CREDIT_METHOD) throw new BusinessError('Elija con qué medio paga de contado.');
+  if (d.paymentType === 'contado' && (!d.method || d.method === CREDIT_METHOD)) throw new BusinessError('Elija con qué medio paga de contado.');
   const total = sum(items.map((i) => i.qty * i.unitCost));
 
   return backend.transaction(async (tx) => {
@@ -138,7 +138,7 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
       note: d.note.trim(),
       ...created(actor),
     };
-    const pid = tx.create('purchases', purchase as unknown as Record<string, unknown>);
+    const pid = tx.create('purchases', purchase);
 
     for (const it of items) {
       const p = it.productId ? products.get(it.productId) : undefined;
@@ -346,15 +346,7 @@ export async function editSupplierPayment(actor: Actor, purchaseId: string, inde
     // ---------- ESCRITURAS ----------
     const why = reason.trim();
     const desc = `Corrección pago compra ${p.number} · ${p.supplierName}: ${why}`;
-    const back = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'ingreso', category: 'pago_proveedor', method, amount, description: desc, refType: 'purchase', refId: p.id });
-    const out = (amount: number, method: string) => writeMovement(tx, actor, sid, { direction: 'egreso', category: 'pago_proveedor', method, amount, description: desc, refType: 'purchase', refId: p.id });
-    if (pay.method === next.method) {
-      const diff = next.amount - pay.amount;
-      if (diff > 0) out(diff, pay.method); else back(-diff, pay.method);
-    } else {
-      back(pay.amount, pay.method);
-      if (next.amount > 0) out(next.amount, next.method);
-    }
+    adjustCash(tx, actor, sid, 'out', { category: 'pago_proveedor', description: desc, refType: 'purchase', refId: p.id }, pay, next);
     const at = new Date().toISOString();
     const payments = next.amount === 0
       ? p.payments.filter((_, i) => i !== index)

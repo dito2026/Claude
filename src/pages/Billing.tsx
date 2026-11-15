@@ -7,6 +7,7 @@ import { CREDIT_METHOD } from '../lib/types';
 import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
+import { PayMethods } from '../components/PayMethods';
 import { CustomerPicker } from '../components/CustomerPicker';
 import { InvoiceModal } from '../components/Receipts';
 import { computeTotals, createInvoice, creditBalance, invoiceCost, itemsFromOrder, voidInvoice } from '../services/billing';
@@ -317,13 +318,7 @@ function Pos() {
               <button className="btn sm ghost" onClick={() => setPayments([...payments, { method: '', amount: Math.max(0, due - paid) }])}><Plus size={13} />Otro medio</button>
             </div>
             {payments.length === 1 && due > 0 && (
-              <div className={`pay-methods ${missingMethod ? 'missing' : ''}`} role="radiogroup" aria-label="Medio de pago">
-                {settings.paymentMethods.map((m) => (
-                  <button key={m} type="button" role="radio" aria-checked={payments[0].method === m}
-                    className={`cat-chip ${payments[0].method === m ? 'active' : ''}`}
-                    onClick={() => setPayments([{ ...payments[0], method: m }])}>{m}</button>
-                ))}
-              </div>
+              <PayMethods label="" allowCredit value={payments[0].method} onChange={(m) => setPayments([{ ...payments[0], method: m }])} missing={missingMethod} />
             )}
             {!(payments.length === 1 && due > 0) && payments.map((p, i) => (
               <div key={i} className="row gap-sm" style={{ flexWrap: 'nowrap' }}>

@@ -52,7 +52,7 @@ export async function createStaffUser(actor: Actor, u: NewUser) {
     sellerId: u.sellerId || undefined,
     ...created(actor),
   };
-  await backend.set('users', newUid, profile as unknown as Record<string, unknown>);
+  await backend.set('users', newUid, profile);
   if (u.technicianId) await backend.update('technicians', u.technicianId, { userId: newUid });
   if (u.sellerId) await backend.update('sellers', u.sellerId, { userId: newUid });
   return newUid;

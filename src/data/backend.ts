@@ -9,10 +9,10 @@ export type Doc = Record<string, unknown> & { id: string };
  */
 export interface Tx {
   get<T = Doc>(col: string, id: string): Promise<T | null>;
-  set(col: string, id: string, data: Record<string, unknown>): void;
-  update(col: string, id: string, data: Record<string, unknown>): void;
+  set(col: string, id: string, data: object): void;
+  update(col: string, id: string, data: object): void;
   /** Crea un documento con id generado y devuelve el id. */
-  create(col: string, data: Record<string, unknown>): string;
+  create(col: string, data: object): string;
 }
 
 export interface AuthUser {
@@ -29,9 +29,9 @@ export interface Backend {
   readonly mode: 'firebase' | 'local';
   list<T = Doc>(col: string): Promise<T[]>;
   get<T = Doc>(col: string, id: string): Promise<T | null>;
-  create(col: string, data: Record<string, unknown>): Promise<string>;
-  set(col: string, id: string, data: Record<string, unknown>): Promise<void>;
-  update(col: string, id: string, data: Record<string, unknown>): Promise<void>;
+  create(col: string, data: object): Promise<string>;
+  set(col: string, id: string, data: object): Promise<void>;
+  update(col: string, id: string, data: object): Promise<void>;
   remove(col: string, id: string): Promise<void>;
   subscribe<T = Doc>(col: string, cb: (rows: T[]) => void, onError?: (e: Error) => void): () => void;
   subscribeDoc<T = Doc>(col: string, id: string, cb: (row: T | null) => void): () => void;
