@@ -199,6 +199,22 @@ try {
     }
   });
 
+  await check('cambiar de usuario: el técnico entra con sus permisos y sin datos del anterior', async () => {
+    await page.goto(BASE + '/');
+    await page.waitForSelector('.sidebar');
+    await page.click('button[title="Cerrar sesión"]');
+    await page.fill('input[type=email]', 'tecnico@digitalcell.demo');
+    await page.fill('input[type=password]', 'demo1234');
+    await page.click('button:has-text("Entrar")');
+    await page.waitForSelector('.sidebar');
+    assert(await page.locator('.sidebar a[href="/caja"]').count() === 0, 'el técnico no debía ver Caja');
+    await page.goto(BASE + '/taller');
+    await page.waitForSelector('.sidebar');
+    await page.waitForFunction(() => !document.querySelector('main')?.textContent?.includes('Cargando…'), null, { timeout: 8000 });
+    await page.goto(BASE + '/caja');
+    await page.waitForSelector('main:has-text("No tiene permiso")');
+  });
+
   await check('sin errores de la página durante los flujos', async () => {
     assert(errors.length === 0, errors.join(' | '));
   });

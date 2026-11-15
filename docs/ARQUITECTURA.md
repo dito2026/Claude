@@ -665,3 +665,11 @@ el servidor reintenta con su modelo de respaldo.
 - **Sin internet:** la publicación escribe en `dist/sw.js` la lista de todos los archivos de la versión (`PRECACHE`). El service worker los guarda al instalarse y borra los de versiones anteriores. Tampoco guarda `index.html` en lugar de un archivo que no existe.
 - **Versión nueva publicada mientras la app está abierta:** si falta un archivo viejo, la app recarga una vez (`reloadOnce`, `vite:preloadError`). Si aun así no puede, `PageErrorBoundary` muestra «No se pudo abrir esta pantalla» con el botón Reintentar, en vez de dejar la pantalla en blanco.
 - Prueba e2e nueva: «sin internet: la app abre y cambia de pantalla».
+
+## 59. Fase 4 · datos compartidos entre pantallas
+
+- **`useCollection` compartido** (`src/data/hooks.ts`): una sola suscripción por colección para toda la app, con `useSyncExternalStore`. Antes, el inicio abría 6 suscripciones y su Centro de alertas otras 8, muchas repetidas (facturas, movimientos, productos…). Ahora todas comparten las mismas filas.
+- **Sigue viva 5 minutos** después de cerrar la última pantalla que la usa. Al ir y volver entre Caja, Facturación e Inventario no hay «Cargando…» ni se vuelven a leer los documentos de Firestore (menos lecturas facturables).
+- **Seguridad al cambiar de usuario o de rol** (`AuthContext`): `resetCollections()` descarta los datos guardados y las pantallas abiertas los vuelven a pedir con los permisos nuevos. Si una lectura falla por permisos, la suscripción se cierra apenas nadie la usa, para que se pueda reintentar.
+- **Consultas por fecha: no se aplicaron.** Saldos de vendedores, técnicos, créditos de tienda y proveedores, el kardex y la contabilidad por rango usan el historial completo. Limitar la descarga a «últimos N días» daría saldos equivocados. Con la caché persistente de Firestore y la suscripción compartida el costo es bajo. Si las colecciones crecen mucho (decenas de miles de documentos), el siguiente paso es guardar los saldos en el documento de cada persona y cargar por fecha solo los listados.
+- Prueba e2e nueva: cerrar sesión y entrar como técnico (permisos y datos del usuario nuevo).

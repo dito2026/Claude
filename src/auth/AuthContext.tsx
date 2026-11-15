@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { backend, type AuthUser } from '../data';
+import { resetCollections } from '../data/hooks';
 import type { UserProfile } from '../lib/types';
 import { can, type Permission } from './permissions';
 import type { Actor } from '../services/common';
@@ -43,6 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileReady(true);
     });
   }, [user]);
+
+  // Otro usuario, salir o cambio de rol: los datos compartidos se vuelven a pedir con esos permisos
+  const accessKey = user ? `${user.uid}:${profile?.active ? profile.role : ''}` : '';
+  const lastKey = useRef(accessKey);
+  useEffect(() => {
+    if (lastKey.current !== accessKey) resetCollections();
+    lastKey.current = accessKey;
+  }, [accessKey]);
 
   const value = useMemo<AuthState>(
     () => ({
