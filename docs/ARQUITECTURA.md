@@ -656,3 +656,12 @@ el servidor reintenta con su modelo de respaldo.
 - **Imprimir en carta:** `printLetter(nombreArchivo)` en `components/ui.tsx` (contratos de compraventa y remisiones).
 - **Tipos:** `Tx`/`Backend` aceptan `object` en `create`/`set`/`update`; se quitaron las 15 conversiones `as unknown as Record<string, unknown>`.
 - `downloadCsv` se llama ahora `downloadExcel` (ya generaba .xlsx).
+
+## 58. Fase 3 · la app abre más rápido
+
+- **Pantallas bajo demanda** (`src/lazyPage.tsx`, `App.tsx`): cada página se descarga cuando se abre. Después de entrar, las demás se bajan en segundo plano (`preloadPages`), así que cambiar de pantalla sigue siendo instantáneo.
+- **Librerías aparte** (`vite.config.ts`, `manualChunks`): `react`, `firebase` y `ai` (Claude + zod) van en archivos propios. Cambian poco, así que el celular los conserva entre publicaciones y solo baja el código de la app. La librería de IA ya no se descarga al iniciar: `useAiEnabled` y la configuración están en `services/aiConfig.ts` (ai.ts los reexporta).
+- **Inicio:** antes ~404 KB comprimidos en un solo archivo; ahora ~240 KB (index 35 + react 54 + firebase 129 + Dashboard).
+- **Sin internet:** la publicación escribe en `dist/sw.js` la lista de todos los archivos de la versión (`PRECACHE`). El service worker los guarda al instalarse y borra los de versiones anteriores. Tampoco guarda `index.html` en lugar de un archivo que no existe.
+- **Versión nueva publicada mientras la app está abierta:** si falta un archivo viejo, la app recarga una vez (`reloadOnce`, `vite:preloadError`). Si aun así no puede, `PageErrorBoundary` muestra «No se pudo abrir esta pantalla» con el botón Reintentar, en vez de dejar la pantalla en blanco.
+- Prueba e2e nueva: «sin internet: la app abre y cambia de pantalla».

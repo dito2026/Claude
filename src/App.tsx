@@ -1,29 +1,33 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import type { Permission } from './auth/permissions';
 import { Layout } from './components/Layout';
 import { Empty, ToastProvider } from './components/ui';
 import { Login } from './pages/Login';
-import { Dashboard } from './pages/Dashboard';
-import { Customers } from './pages/Customers';
-import { Orders } from './pages/Orders';
-import { OrderDetail } from './pages/OrderDetail';
-import { Tickets } from './pages/Tickets';
-import { Inventory } from './pages/Inventory';
-import { Billing } from './pages/Billing';
-import { Cash } from './pages/Cash';
-import { Purchases } from './pages/Purchases';
-import { UsedPhones } from './pages/UsedPhones';
-import { Remissions } from './pages/Remissions';
-import { LineModule } from './pages/LineModule';
-import { Accounting } from './pages/Accounting';
-import { Sellers } from './pages/Sellers';
-import { Assistant } from './pages/Assistant';
-import { Technicians } from './pages/Technicians';
-import { Users } from './pages/Users';
-import { SettingsPage } from './pages/Settings';
 import { seedDemo } from './services/seed';
+import { lazyPage, PageErrorBoundary, preloadPages } from './lazyPage';
+
+// Cada pantalla se descarga cuando se abre; las demás se bajan en segundo plano al entrar.
+const Dashboard = lazyPage(() => import('./pages/Dashboard'), 'Dashboard');
+const Customers = lazyPage(() => import('./pages/Customers'), 'Customers');
+const Orders = lazyPage(() => import('./pages/Orders'), 'Orders');
+const OrderDetail = lazyPage(() => import('./pages/OrderDetail'), 'OrderDetail');
+const Tickets = lazyPage(() => import('./pages/Tickets'), 'Tickets');
+const Inventory = lazyPage(() => import('./pages/Inventory'), 'Inventory');
+const Billing = lazyPage(() => import('./pages/Billing'), 'Billing');
+const Cash = lazyPage(() => import('./pages/Cash'), 'Cash');
+const Purchases = lazyPage(() => import('./pages/Purchases'), 'Purchases');
+const UsedPhones = lazyPage(() => import('./pages/UsedPhones'), 'UsedPhones');
+const Remissions = lazyPage(() => import('./pages/Remissions'), 'Remissions');
+const LineModule = lazyPage(() => import('./pages/LineModule'), 'LineModule');
+const Accounting = lazyPage(() => import('./pages/Accounting'), 'Accounting');
+const Sellers = lazyPage(() => import('./pages/Sellers'), 'Sellers');
+const Assistant = lazyPage(() => import('./pages/Assistant'), 'Assistant');
+const Technicians = lazyPage(() => import('./pages/Technicians'), 'Technicians');
+const Users = lazyPage(() => import('./pages/Users'), 'Users');
+const SettingsPage = lazyPage(() => import('./pages/Settings'), 'SettingsPage');
+const ALL_PAGES = [Dashboard, Customers, Orders, OrderDetail, Tickets, Inventory, Billing, Cash, Purchases, UsedPhones, Remissions, LineModule, Accounting, Sellers, Assistant, Technicians, Users, SettingsPage];
 
 function Guard({ perm, children }: { perm?: Permission; children: ReactNode }) {
   const { can } = useAuth();
@@ -31,8 +35,14 @@ function Guard({ perm, children }: { perm?: Permission; children: ReactNode }) {
   return <>{children}</>;
 }
 
+function Preload() {
+  useEffect(() => preloadPages(ALL_PAGES), []);
+  return null;
+}
+
 function Shell() {
   const { user, profile, loading, signOut } = useAuth();
+  const { pathname } = useLocation();
   if (loading) return <div className="empty" style={{ paddingTop: 120 }}>Cargando DIGITAL CELL PRO…</div>;
   if (!user) return <Login />;
   if (!profile || !profile.active) {
@@ -45,6 +55,9 @@ function Shell() {
   }
   return (
     <Layout>
+      <Preload />
+      <PageErrorBoundary resetKey={pathname}>
+      <Suspense fallback={<div className="empty" style={{ paddingTop: 60 }}>Cargando…</div>}>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/clientes" element={<Customers />} />
@@ -68,6 +81,8 @@ function Shell() {
         <Route path="/configuracion" element={<Guard perm="settings"><SettingsPage /></Guard>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
+      </PageErrorBoundary>
     </Layout>
   );
 }

@@ -14,7 +14,7 @@ import type { CashState } from '../services/cash';
 import { EMPTY_PRODUCT, ProductModal } from './Inventory';
 import { ImeiTextarea, parseImeiLines } from '../components/PhoneUnits';
 import { AiInvoiceModal, RestockTab, type PurchasePrefill } from '../components/PurchaseAutomation';
-import { useAiEnabled } from '../services/ai';
+import { useAiEnabled } from '../services/aiConfig';
 
 const EMPTY_SUPPLIER: SupplierInput = { name: '', nit: '', phone: '', termDays: 30, notes: '', active: true };
 

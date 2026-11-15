@@ -14,7 +14,7 @@ import { APP_VERSION } from '../version';
 import { backend } from '../data';
 import { ROLE_LABEL } from '../services/staff';
 import { useOnline } from './ui';
-import { useAiEnabled } from '../services/ai';
+import { useAiEnabled } from '../services/aiConfig';
 
 interface NavItem { to: string; label: string; icon: ReactNode; perm?: Permission; ai?: boolean }
 

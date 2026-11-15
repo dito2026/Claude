@@ -4,23 +4,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
-import { backend } from '../data';
-import { useDocument } from '../data/hooks';
+import { loadAiConfig } from './aiConfig';
+
+export { loadAiConfig, saveAiConfig, useAiEnabled, type AiConfig } from './aiConfig';
 
 export const AI_MODEL = 'claude-opus-5-5';
-
-export interface AiConfig {
-  apiKey: string;
-  enabled: boolean;
-}
-
-export async function loadAiConfig(): Promise<AiConfig | null> {
-  const c = await backend.get<AiConfig & { id: string }>('secrets', 'ai');
-  return c && c.apiKey && c.enabled ? c : null;
-}
-
-export const saveAiConfig = (c: AiConfig) =>
-  backend.set('secrets', 'ai', { apiKey: c.apiKey.trim(), enabled: c.enabled, updatedAt: new Date().toISOString() });
 
 async function client() {
   const cfg = await loadAiConfig();
@@ -181,8 +169,3 @@ export async function fileToBase64(f: File): Promise<{ base64: string; mediaType
   return { base64: btoa(bin), mediaType: f.type || 'image/jpeg' };
 }
 
-/** true solo si el administrador activó la IA con una clave. Mientras no, la app oculta sus botones. */
-export function useAiEnabled(): boolean {
-  const { doc } = useDocument<AiConfig & { id: string }>('secrets', 'ai');
-  return !!doc?.enabled && !!doc.apiKey;
-}

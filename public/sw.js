@@ -1,6 +1,8 @@
 // DIGITAL CELL PRO — service worker: permite abrir la app sin internet.
 // Los datos los maneja Firestore (con su propia caché); aquí solo se guarda la app.
 const CACHE = 'dcpro-app-v1';
+// La publicación escribe aquí los archivos de la versión (vite.config.ts). Vacía en desarrollo.
+const PRECACHE = [];
 const FONTS = 'dcpro-fonts-v1';
 
 // Al instalar: guarda la página y los archivos que ella usa (JS/CSS con hash).
@@ -11,7 +13,7 @@ self.addEventListener('install', (event) => {
     const html = await res.clone().text();
     await cache.put('/index.html', res);
     const assets = [...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map((m) => m[1]);
-    await cache.addAll([...new Set(['/manifest.webmanifest', '/favicon.svg', '/icon-192.png', ...assets])]);
+    await cache.addAll([...new Set(['/manifest.webmanifest', '/favicon.svg', '/icon-192.png', ...assets, ...PRECACHE])]);
     self.skipWaiting();
   })());
 });
@@ -20,6 +22,14 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keep = [CACHE, FONTS];
     for (const k of await caches.keys()) if (!keep.includes(k)) await caches.delete(k);
+    // Archivos de versiones anteriores que ya no se usan
+    if (PRECACHE.length) {
+      const cache = await caches.open(CACHE);
+      for (const r of await cache.keys()) {
+        const p = new URL(r.url).pathname;
+        if (p.startsWith('/assets/') && !PRECACHE.includes(p)) await cache.delete(r);
+      }
+    }
     await self.clients.claim();
   })());
 });
@@ -50,7 +60,9 @@ self.addEventListener('fetch', (event) => {
       const hit = await caches.match(req);
       if (hit) return hit;
       const res = await fetch(req);
-      if (res.ok) (await caches.open(CACHE)).put(req, res.clone());
+      // No guardar la página de inicio en lugar de un archivo que ya no existe
+      const isHtml = (res.headers.get('content-type') || '').includes('text/html');
+      if (res.ok && !(url.pathname.startsWith('/assets/') && isHtml)) (await caches.open(CACHE)).put(req, res.clone());
       return res;
     })());
     return;

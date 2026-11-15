@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { reloadOnce } from './lazyPage';
 import './styles.css';
 import './design-system.css';
 
@@ -15,6 +16,11 @@ try {
 } catch {
   /* sin almacenamiento */
 }
+
+// Si al navegar falta un archivo de una versión anterior (se publicó otra), recarga una vez.
+window.addEventListener('vite:preloadError', (e) => {
+  if (reloadOnce()) e.preventDefault();
+});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

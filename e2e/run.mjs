@@ -181,6 +181,24 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await check('sin internet: la app abre y cambia de pantalla (pantallas guardadas)', async () => {
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.waitForFunction(async () => {
+      const keys = await (await caches.open('dcpro-app-v1')).keys();
+      return keys.filter((k) => k.url.includes('/assets/')).length > 20;
+    }, null, { timeout: 15000 });
+    await ctx.setOffline(true);
+    try {
+      for (const r of ['/compras', '/contabilidad', '/configuracion']) {
+        await page.goto(BASE + r);
+        await page.waitForSelector('.sidebar');
+        await page.waitForFunction(() => !document.querySelector('main')?.textContent?.includes('Cargando…'), null, { timeout: 8000 });
+      }
+    } finally {
+      await ctx.setOffline(false);
+    }
+  });
+
   await check('sin errores de la página durante los flujos', async () => {
     assert(errors.length === 0, errors.join(' | '));
   });
