@@ -432,7 +432,7 @@ function PaymentsList({ purchases, supplierId, showSupplier }: { purchases: Purc
                       ))}
                     </div>
                   </td>
-                  <td>{r.method}</td>
+                  <td>{r.method}{r.source === 'fuera' && <small className="faint">fuera de la caja</small>}{r.source === 'caja_aplicado' && <small className="faint">desde Caja, aplicado después</small>}</td>
                   <td>{r.by}</td>
                   <td className="num strong">{money(r.amount)}</td>
                 </tr>

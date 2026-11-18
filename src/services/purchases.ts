@@ -178,23 +178,37 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
  * Abono a proveedor. Se aplica a las compras indicadas, de la más antigua a la más reciente,
  * y sale de la caja abierta como «Pago a proveedor».
  */
-export async function paySupplier(actor: Actor, supplier: Supplier, purchaseIds: string[], amount: number, method: string) {
+/** Orden en que se aplica un abono: la compra escogida primero y luego la más antigua. */
+export function payOrder<T extends Pick<Purchase, 'id' | 'createdAt'>>(list: T[], first?: string) {
+  return [...list].sort((a, b) => (a.id === first ? -1 : b.id === first ? 1 : (a.createdAt ?? '').localeCompare(b.createdAt ?? '')));
+}
+
+/**
+ * Abono a un proveedor: se aplica a sus compras (la escogida primero, luego la más antigua).
+ * Normalmente sale de la caja abierta. `outsideCash` (solo administrador): ya se pagó por fuera de la
+ * caja de la app (otro día, de otra cuenta): baja la deuda pero no mueve la caja.
+ */
+export async function paySupplier(
+  actor: Actor, supplier: Supplier, purchaseIds: string[], amount: number, method: string,
+  opts: { first?: string; outsideCash?: boolean } = {},
+) {
   if (!(amount > 0)) throw new BusinessError('El abono debe ser mayor que cero.');
-  if (method === CREDIT_METHOD) throw new BusinessError('Elija un medio de pago real (efectivo, transferencia…).');
+  if (!method || method === CREDIT_METHOD) throw new BusinessError('Elija un medio de pago real (efectivo, transferencia…).');
   return backend.transaction(async (tx) => {
-    const sid = await requireOpenSession(tx);
-    const list: Purchase[] = [];
+    const sid = opts.outsideCash ? null : await requireOpenSession(tx);
+    let list: Purchase[] = [];
     for (const id of purchaseIds) {
       const p = await tx.get<Purchase>('purchases', id);
       if (p && p.supplierId === supplier.id && purchaseBalance(p) > 0) list.push(p);
     }
-    list.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+    list = payOrder(list, opts.first);
     const owed = sum(list.map(purchaseBalance));
     if (owed <= 0) throw new BusinessError('Este proveedor no tiene saldo pendiente.');
     if (amount > owed) throw new BusinessError(`El abono supera la deuda (${owed.toLocaleString('es-CO')}).`);
 
     // ---------- ESCRITURAS ----------
-    const applied = applyToPurchases(tx, list, amount, { at: new Date().toISOString(), method, by: actor.name });
+    const applied = applyToPurchases(tx, list, amount, { at: new Date().toISOString(), method, by: actor.name, ...(opts.outsideCash ? { outsideCash: true } : {}) });
+    if (!sid) return { applied };
     writeMovement(tx, actor, sid, {
       direction: 'egreso',
       category: 'pago_proveedor',
@@ -248,7 +262,7 @@ export function guessSupplier(m: Pick<CashMovement, 'description'>, suppliers: S
  * Descuenta de la deuda de un proveedor un «Pago a proveedor» ya hecho desde Caja.
  * No vuelve a sacar dinero de la caja (ya salió): solo lo aplica a sus compras, la más antigua primero.
  */
-export async function linkCashPayment(actor: Actor, movementId: string, supplierId: string) {
+export async function linkCashPayment(actor: Actor, movementId: string, supplierId: string, first?: string) {
   const all = await backend.list<Purchase>('purchases');
   const ids = all.filter((p) => p.supplierId === supplierId && purchaseBalance(p) > 0).map((p) => p.id);
   return backend.transaction(async (tx) => {
@@ -262,7 +276,9 @@ export async function linkCashPayment(actor: Actor, movementId: string, supplier
       const p = await tx.get<Purchase>('purchases', id);
       if (p && p.supplierId === s.id && purchaseBalance(p) > 0) list.push(p);
     }
-    list.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+    const ordered = payOrder(list, first);
+    list.length = 0;
+    list.push(...ordered);
     const owed = sum(list.map(purchaseBalance));
     if (owed <= 0) throw new BusinessError(`${s.name} no tiene deuda pendiente. Si este pago era por una compra que no está registrada, regístrela primero en Compras.`);
     if (m.amount > owed) {
@@ -331,7 +347,8 @@ export async function voidPurchase(actor: Actor, purchaseId: string, reason: str
     const p = await tx.get<Purchase>('purchases', purchaseId);
     if (!p) throw new BusinessError('Compra no encontrada.');
     if (p.status === 'anulada') throw new BusinessError('La compra ya está anulada.');
-    const sessionId = (p.paid || 0) > 0 ? await requireOpenSession(tx) : null;
+    const fromCash = (p.payments ?? []).filter((x) => !x.outsideCash);
+    const sessionId = fromCash.some((x) => x.amount > 0) ? await requireOpenSession(tx) : null;
     const products = new Map<string, Product>();
     for (const it of p.items) {
       if (it.productId && !products.has(it.productId)) {
@@ -364,7 +381,7 @@ export async function voidPurchase(actor: Actor, purchaseId: string, reason: str
     if (sessionId) {
       // Reintegro: lo pagado vuelve a la caja por el mismo medio
       const byMethod = new Map<string, number>();
-      for (const pay of p.payments ?? []) byMethod.set(pay.method, (byMethod.get(pay.method) ?? 0) + pay.amount);
+      for (const pay of fromCash) byMethod.set(pay.method, (byMethod.get(pay.method) ?? 0) + pay.amount);
       for (const [method, amount] of byMethod) {
         writeMovement(tx, actor, sessionId, {
           direction: 'ingreso', category: 'pago_proveedor', method, amount,
@@ -396,11 +413,11 @@ export async function editSupplierPayment(actor: Actor, purchaseId: string, inde
     if (pay.amount === next.amount && pay.method === next.method) throw new BusinessError('No hay cambios para guardar.');
     const paid = (p.paid || 0) - pay.amount + next.amount;
     if (paid > p.total) throw new BusinessError(`Con ese valor se le pagaría más que el total de la compra (${p.total.toLocaleString('es-CO')}).`);
-    const sid = await requireOpenSession(tx);
+    const sid = pay.outsideCash ? null : await requireOpenSession(tx);
     // ---------- ESCRITURAS ----------
     const why = reason.trim();
     const desc = `Corrección pago compra ${p.number} · ${p.supplierName}: ${why}`;
-    adjustCash(tx, actor, sid, 'out', { category: 'pago_proveedor', description: desc, refType: 'purchase', refId: p.id }, pay, next);
+    if (sid) adjustCash(tx, actor, sid, 'out', { category: 'pago_proveedor', description: desc, refType: 'purchase', refId: p.id }, pay, next);
     const at = new Date().toISOString();
     const payments = next.amount === 0
       ? p.payments.filter((_, i) => i !== index)
@@ -423,6 +440,8 @@ export interface SupplierPaymentRow {
   parts: { purchaseId: string; number: number; amount: number; index: number }[];
   edited: boolean;
   voided: boolean;
+  /** de dónde salió la plata: caja del día, «Pago a proveedor» de Caja aplicado después, o por fuera de la caja */
+  source: 'caja' | 'caja_aplicado' | 'fuera';
 }
 
 /** Pagos hechos a proveedores, agrupados por abono (misma fecha, medio y usuario), del más reciente al más viejo. */
@@ -432,7 +451,8 @@ export function supplierPayments(purchases: Purchase[], supplierId?: string): Su
     if (supplierId && p.supplierId !== supplierId) continue;
     (p.payments ?? []).forEach((x, index) => {
       const key = `${p.supplierId}|${x.at}|${x.method}|${x.by}`;
-      const row = map.get(key) ?? { key, at: x.at, supplierId: p.supplierId, supplierName: p.supplierName, method: x.method, by: x.by, amount: 0, parts: [], edited: false, voided: false };
+      const row = map.get(key) ?? { key, at: x.at, supplierId: p.supplierId, supplierName: p.supplierName, method: x.method, by: x.by, amount: 0, parts: [], edited: false, voided: false,
+        source: x.outsideCash ? 'fuera' : x.cashMovementId ? 'caja_aplicado' : 'caja' } as SupplierPaymentRow;
       row.amount += x.amount;
       row.parts.push({ purchaseId: p.id, number: p.number, amount: x.amount, index });
       row.edited = row.edited || !!x.editedAt;

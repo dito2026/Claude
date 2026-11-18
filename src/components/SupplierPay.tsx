@@ -5,7 +5,9 @@ import { useCollection, useDocument } from '../data/hooks';
 import { dateOnly, dateTime, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import type { CashState } from '../services/cash';
-import { guessSupplier, isOverduePurchase, linkCashPayment, paySupplier, purchaseBalance, supplierSummary, unlinkedCashPayments } from '../services/purchases';
+import { guessSupplier, isOverduePurchase, linkCashPayment, payOrder, paySupplier, purchaseBalance, supplierSummary, unlinkedCashPayments } from '../services/purchases';
+
+const purchaseLabel = (p: Purchase) => (p.kind === 'saldo_inicial' ? 'Saldo anterior' : p.items.map((i) => i.name).join(', ').slice(0, 40));
 import { Field, Modal, MoneyInput, useAction, useToast } from './ui';
 import { PayMethods } from './PayMethods';
 
@@ -29,15 +31,22 @@ export function SupplierPayModal({ supplier: fixed, onClose }: { supplier?: Supp
     .filter((p) => p.supplierId === supplier.id && purchaseBalance(p) > 0)
     .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? '')) : [];
   const owed = pending.reduce((a, p) => a + purchaseBalance(p), 0);
+  const { can } = useAuth();
+  const admin = can('settings');
+  const [first, setFirst] = useState('');
+  const [outside, setOutside] = useState(false);
+  const ordered = payOrder(pending, first);
   const [amount, setAmount] = useState(() => (fixed ? owed : 0));
   const [method, setMethod] = useState('');
+  const needsCash = !outside && !cash?.openSessionId;
   return (
     <Modal title={supplier && fixed ? `Abonar a ${supplier.name}` : 'Pago a proveedor'} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy || !supplier || !amount || amount > owed || !method || !cash?.openSessionId}
-          onClick={() => run(() => paySupplier(actor, supplier!, pending.map((p) => p.id), amount, method), `Abono registrado · ${supplier?.name}`).then((ok) => ok && onClose())}>Registrar abono</button></>}>
+        <button className="btn primary" disabled={busy || !supplier || !amount || amount > owed || !method || needsCash}
+          onClick={() => run(() => paySupplier(actor, supplier!, pending.map((p) => p.id), amount, method, { first: first || undefined, outsideCash: outside }),
+            `Abono registrado · ${supplier?.name}${outside ? ' (sin mover la caja)' : ''}`).then((ok) => ok && onClose())}>Registrar abono</button></>}>
       <div className="stack">
-        {!cash?.openSessionId && <div className="alert warn">La caja está cerrada. El abono sale de caja: <Link className="red" to="/caja">abra la caja</Link> primero.</div>}
+        {needsCash && <div className="alert warn">La caja está cerrada. El abono sale de caja: <Link className="red" to="/caja">abra la caja</Link> primero.</div>}
         {!fixed && (
           <Field label="Proveedor" required>
             <select className="input" value={sid} autoFocus onChange={(e) => { setSid(e.target.value); setAmount(0); }}>
@@ -55,12 +64,30 @@ export function SupplierPayModal({ supplier: fixed, onClose }: { supplier?: Supp
               {owed > 0 && amount !== owed && <button type="button" className="btn sm ghost" style={{ justifyContent: 'flex-start', paddingLeft: 0 }} onClick={() => setAmount(owed)}>Pagar todo ({money(owed)})</button>}
             </Field>
             <PayMethods value={method} onChange={setMethod} missing={amount > 0 && !method} />
+            {pending.length > 1 && (
+              <Field label="¿A qué compra corresponde?" className="full">
+                <select className="input" value={first} onChange={(e) => {
+                  setFirst(e.target.value);
+                  const p = pending.find((x) => x.id === e.target.value);
+                  if (p) setAmount(purchaseBalance(p));
+                }}>
+                  <option value="">A la más antigua primero</option>
+                  {pending.map((p) => <option key={p.id} value={p.id}>C-{pad(p.number, 4)} · {purchaseLabel(p)} · debe {money(purchaseBalance(p))}</option>)}
+                </select>
+              </Field>
+            )}
           </div>
+          {admin && (
+            <label className="checkbox">
+              <input type="checkbox" checked={outside} onChange={(e) => setOutside(e.target.checked)} />
+              Ya se pagó por fuera de la caja de hoy (otro día, de otra cuenta o de su bolsillo): baja la deuda sin sacar plata de la caja
+            </label>
+          )}
           {amount > owed && <div className="alert error"><div>Solo le debe {money(owed)} a {supplier.name}.</div></div>}
-          <div className="faint" style={{ fontSize: 12 }}>Sale de la caja y se descuenta de la deuda, primero de la compra más antigua:</div>
-          {pending.map((p) => (
+          <div className="faint" style={{ fontSize: 12 }}>{outside ? 'No mueve la caja.' : 'Sale de la caja.'} Se descuenta de la deuda en este orden:</div>
+          {ordered.map((p) => (
             <div key={p.id} className="row between" style={{ fontSize: 13 }}>
-              <span className="mono">C-{pad(p.number, 4)} · {dateOnly(p.createdAt)}{isOverduePurchase(p) && <span className="red"> · vencida</span>}</span>
+              <span><span className="mono">C-{pad(p.number, 4)}</span> · {purchaseLabel(p)} · {dateOnly(p.createdAt)}{isOverduePurchase(p) && <span className="red"> · vencida</span>}</span>
               <b>{money(purchaseBalance(p))}</b>
             </div>
           ))}
@@ -92,7 +119,7 @@ export function UnlinkedCashPayments({ suppliers }: { suppliers: Supplier[] }) {
       </div>
       <div className="table-wrap">
         <table className="table">
-          <thead><tr><th>Fecha</th><th>Descripción</th><th>Medio</th><th className="num">Valor</th><th>Proveedor</th><th /></tr></thead>
+          <thead><tr><th>Fecha</th><th>Descripción</th><th>Medio</th><th className="num">Valor</th><th>Proveedor y compra</th><th /></tr></thead>
           <tbody>{rows.map((m) => <UnlinkedRow key={m.id} m={m} suppliers={suppliers} />)}</tbody>
         </table>
       </div>
@@ -104,10 +131,16 @@ function UnlinkedRow({ m, suppliers }: { m: CashMovement; suppliers: Supplier[] 
   const { actor } = useAuth();
   const { run, busy } = useAction();
   const toast = useToast();
+  const purchases = useCollection<Purchase>('purchases').rows;
   const [sid, setSid] = useState(() => guessSupplier(m, suppliers)?.id ?? '');
+  const [first, setFirst] = useState('');
   const sorted = useMemo(() => [...suppliers].sort((a, b) => a.name.localeCompare(b.name)), [suppliers]);
+  const pending = useMemo(() => payOrder(purchases.filter((p) => p.supplierId === sid && purchaseBalance(p) > 0)), [purchases, sid]);
+  // si el valor coincide con el saldo de una compra, se sugiere esa
+  const match = pending.find((p) => purchaseBalance(p) === m.amount);
+  const target = first || match?.id || '';
   const link = () => run(async () => {
-    const r = await linkCashPayment(actor, m.id, sid);
+    const r = await linkCashPayment(actor, m.id, sid, target || undefined);
     toast(`Descontado de la deuda de ${r.supplierName} · compra${r.applied.length === 1 ? '' : 's'} ${r.applied.map((n) => `C-${pad(n, 4)}`).join(', ')}`);
   });
   return (
@@ -117,10 +150,16 @@ function UnlinkedRow({ m, suppliers }: { m: CashMovement; suppliers: Supplier[] 
       <td>{m.method}</td>
       <td className="num strong">{money(m.amount)}</td>
       <td>
-        <select className="input" style={{ minWidth: 160 }} value={sid} onChange={(e) => setSid(e.target.value)} aria-label="Proveedor del pago">
+        <select className="input" style={{ minWidth: 160 }} value={sid} onChange={(e) => { setSid(e.target.value); setFirst(''); }} aria-label="Proveedor del pago">
           <option value="">Seleccione…</option>
           {sorted.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
+        {pending.length > 1 && (
+          <select className="input" style={{ minWidth: 160, marginTop: 6 }} value={target} onChange={(e) => setFirst(e.target.value)} aria-label="Compra a la que corresponde">
+            <option value="">A la más antigua primero</option>
+            {pending.map((p) => <option key={p.id} value={p.id}>C-{pad(p.number, 4)} · {purchaseLabel(p)} · {money(purchaseBalance(p))}</option>)}
+          </select>
+        )}
       </td>
       <td><button className="btn sm primary" disabled={busy || !sid} onClick={link}>Descontar</button></td>
     </tr>

@@ -702,3 +702,9 @@ el servidor reintenta con su modelo de respaldo.
 
 - En Compras → Proveedores y saldos, el botón «Pagos» ahora se llama **Estado de cuenta** (`SupplierStatement`). Muestra cuánto se le debe (con la fórmula compras a crédito − abonado), las compras por pagar con total, abonado, saldo y vencimiento (la más antigua primero), el total y el botón «Abonar». Debajo sigue la lista de pagos y abonos.
 - Prueba e2e: proveedor con saldo anterior → Estado de cuenta muestra la deuda.
+
+## 64. Abonar a una compra escogida y pagos por fuera de la caja
+
+- **«¿A qué compra corresponde?»** en Abonar (`SupplierPayModal`) y en «Descontar» de los pagos viejos de Caja. Se escoge la compra y el valor se llena con su saldo. Se aplica primero a esa compra y el resto a la más antigua (`payOrder`). En «Descontar», si el valor del pago es igual al saldo de una compra, esa queda sugerida.
+- **«Ya se pagó por fuera de la caja de hoy»** (solo administrador): `paySupplier(..., { outsideCash: true })` baja la deuda sin crear egreso. El pago queda con `outsideCash: true`. Al corregir ese pago no se ajusta la caja, y al anular la compra no se devuelve a la caja.
+- En la lista de pagos, el medio indica «fuera de la caja» o «desde Caja, aplicado después».

@@ -375,6 +375,8 @@ export interface SupplierPayment {
   by: string;
   /** el dinero salió con un «Pago a proveedor» de Caja (no se volvió a sacar de la caja) */
   cashMovementId?: string;
+  /** pagado por fuera de la caja de la app (no movió la caja) */
+  outsideCash?: boolean;
   /** corrección: quién, cuándo, por qué y los valores anteriores */
   editedAt?: string;
   editedBy?: string;
