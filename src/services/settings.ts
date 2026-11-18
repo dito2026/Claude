@@ -32,6 +32,7 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
   uvtValue: 52374,
   ivaCapUvt: 3500,
   suggestedMarginPct: 80,
+  giftDefaults: { name: 'Vidrio templado', cost: 1500, supplierName: 'Maxel' },
 };
 
 export function useSettings(): BusinessSettings {

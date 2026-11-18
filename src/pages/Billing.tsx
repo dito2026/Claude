@@ -4,7 +4,7 @@ import { Ban, Gift, HandCoins, Minus, PenLine, Plus, Trash2, Wrench, X } from 'l
 import { useCollection, useDocument } from '../data/hooks';
 import type { Customer, Invoice, InvoiceItem, InvoiceItemKind, Payment, PhoneUnit, Product, RepairOrder, Seller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
-import { dateTime, matches, money, pad } from '../lib/format';
+import { dateTime, matches, money, pad, normalize } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction } from '../components/ui';
 import { PayMethods } from '../components/PayMethods';
@@ -13,7 +13,7 @@ import { InvoiceModal } from '../components/Receipts';
 import { computeTotals, createInvoice, creditBalance, invoiceCost, itemsFromOrder, voidInvoice, lacksCost } from '../services/billing';
 import { depositsTotal } from '../services/orders';
 import { customerRef } from '../services/orders';
-import { useSettings } from '../services/settings';
+import { saveSettings, useSettings } from '../services/settings';
 import { tracksStock } from '../services/inventory';
 import { categoryOf, itemCategory, sortCategories } from '../lib/categories';
 import { addMonths, isPhone, normalizeImei } from '../services/phones';
@@ -533,41 +533,58 @@ const GIFT_NAMES = ['Vidrio templado', 'Vidrio cerámico', 'Hidrogel', 'Forro'];
 
 /** Encimar (regalar) un vidrio u otro artículo comprado a un proveedor: precio 0 al cliente, costo a la venta, deuda al proveedor. */
 function GiftModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it: InvoiceItem) => void }) {
+  const settings = useSettings();
+  const { can } = useAuth();
+  const { run, busy } = useAction();
+  const defaults = settings.giftDefaults ?? { name: 'Vidrio templado', cost: 0, supplierName: '' };
   const suppliers = useSuppliers().filter((s) => s.active !== false).sort((a, b) => a.name.localeCompare(b.name));
-  const [name, setName] = useState(GIFT_NAMES[0]);
+  // Proveedor por defecto: el de Configuración (por nombre); si no existe, el último usado en este equipo
+  const byName = defaults.supplierName ? suppliers.find((s) => normalize(s.name).trim() === normalize(defaults.supplierName).trim())
+    ?? suppliers.find((s) => normalize(s.name).includes(normalize(defaults.supplierName).trim())) : undefined;
+  const lastUsed = (() => { try { return localStorage.getItem(GIFT_SUPPLIER_KEY) ?? ''; } catch { return ''; } })();
+  const [nameEdit, setName] = useState<string | null>(null);
+  const [costEdit, setCost] = useState<number | null>(null);
+  const [supplierEdit, setSupplierId] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
-  const [cost, setCost] = useState(0);
-  const [supplierId, setSupplierId] = useState(() => {
-    try { return localStorage.getItem(GIFT_SUPPLIER_KEY) ?? ''; } catch { return ''; }
-  });
+  const name = nameEdit ?? defaults.name;
+  const cost = costEdit ?? defaults.cost;
+  const supplierId = supplierEdit ?? byName?.id ?? (suppliers.some((s) => s.id === lastUsed) ? lastUsed : '');
   const supplier = suppliers.find((s) => s.id === supplierId);
   const ok = name.trim() && qty > 0 && cost > 0 && supplier;
+  const isDefault = !!supplier && name.trim() === defaults.name && cost === defaults.cost && supplier.name === (byName?.name ?? '');
   const add = () => {
     if (!supplier) return;
     try { localStorage.setItem(GIFT_SUPPLIER_KEY, supplier.id); } catch { /* sin almacenamiento */ }
     onAdd({ description: `${name.trim()} (obsequio)`, kind: 'producto', qty, unitPrice: 0, unitCost: cost, gift: { supplierId: supplier.id, supplierName: supplier.name } });
     onClose();
   };
+  const saveDefault = () => run(() => saveSettings({ ...settings, giftDefaults: { name: name.trim(), cost, supplierName: supplier!.name } }),
+    'Listo: así saldrá siempre al encimar');
   return (
     <Modal title="Encimar vidrio (obsequio)" onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={!ok} onClick={add}><Gift size={16} />Encimar</button></>}>
+        <button className="btn primary" disabled={!ok} autoFocus onClick={add}><Gift size={16} />Encimar</button></>}>
       <div className="stack">
         <div className="cat-bar" role="group" aria-label="Qué se encima">
-          {GIFT_NAMES.map((n) => <button key={n} type="button" className={`cat-chip ${name === n ? 'active' : ''}`} onClick={() => setName(n)}>{n}</button>)}
+          {[...new Set([defaults.name, ...GIFT_NAMES])].map((n) => <button key={n} type="button" className={`cat-chip ${name === n ? 'active' : ''}`} onClick={() => setName(n)}>{n}</button>)}
         </div>
         <div className="form-grid">
           <Field label="Qué se encima" required className="full"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
-          <Field label="Precio que le cobra el proveedor (c/u)" required><MoneyInput value={cost} onChange={setCost} autoFocus placeholder="Ej.: 3k" /></Field>
+          <Field label="Precio que le cobra el proveedor (c/u)" required><MoneyInput value={cost} onChange={setCost} placeholder="Ej.: 1.5k" /></Field>
           <Field label="Cantidad"><input className="input num" type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))} /></Field>
           <Field label="Proveedor" required className="full">
             <select className="input" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
               <option value="">Seleccione…</option>
               {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-            {suppliers.length === 0 && <small className="muted">Primero cree el proveedor en Compras → Proveedores y saldos.</small>}
+            {defaults.supplierName && !byName && <small className="muted">No hay un proveedor llamado «{defaults.supplierName}». Créelo en Compras → Proveedores y saldos, o escoja otro.</small>}
           </Field>
         </div>
+        {can('settings') && ok && !isDefault && (
+          <button type="button" className="btn sm ghost" style={{ alignSelf: 'flex-start' }} disabled={busy} onClick={saveDefault}>
+            Usar siempre estos datos ({name.trim()} · {money(cost)} · {supplier!.name})
+          </button>
+        )}
         <div className="faint" style={{ fontSize: 12 }}>
           El cliente no lo paga: sale en la factura como obsequio en $0. El costo ({money(qty * cost)}) baja la ganancia de esta venta y, al cobrar,
           queda como deuda con el proveedor (compra a crédito) para pagarle desde Compras. Lo ve en Contabilidad → Encimados.

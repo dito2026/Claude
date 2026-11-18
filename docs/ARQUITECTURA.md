@@ -717,3 +717,4 @@ el servidor reintenta con su modelo de respaldo.
 - **Contabilidad → Encimados** (`giftReport`): gasto del período, cantidad, ventas, costo promedio, lo que aún se debe, totales por proveedor y el detalle (fecha, factura, cliente, vendedor, qué, costo, proveedor, compra y su estado). Tiene descarga a Excel.
 - Validaciones: precio > 0, proveedor existente y precio al cliente $0. Las facturas de remisión aceptan encimados.
 - Pruebas: `gifts.test.ts` y una prueba e2e (encimar → cobrar → Contabilidad → deuda en Compras).
+- **Datos por defecto** (`settings.giftDefaults`, inicial «Vidrio templado» · $1.500 · Maxel): la ventana se abre lista con esos datos. El proveedor se busca por nombre: igual o que lo contenga. Si no existe, se usa el último usado en ese equipo y aparece un aviso para crearlo. Si el administrador cambia los datos en la ventana, le sale el botón «Usar siempre estos datos», que los guarda en Configuración para todos los equipos.

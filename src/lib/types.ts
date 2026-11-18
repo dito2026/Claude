@@ -44,6 +44,8 @@ export interface BusinessSettings {
   ownerName?: string;
   ownerDocument?: string;
   ownerDocumentCity?: string;
+  /** «Encimar vidrio»: lo que sale escrito por defecto (qué, costo y proveedor por su nombre) */
+  giftDefaults?: { name: string; cost: number; supplierName: string };
 }
 
 export interface Technician extends BaseDoc {
