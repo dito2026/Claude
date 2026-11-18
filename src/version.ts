@@ -1,2 +1,2 @@
 // Versión visible en el menú: se actualiza con cada cambio para saber qué está publicado.
-export const APP_VERSION = '2026.11.18g · encimar por defecto';
+export const APP_VERSION = '2026.11.18h · encimar 2 proveedores';

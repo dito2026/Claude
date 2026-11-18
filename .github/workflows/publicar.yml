@@ -38,6 +38,9 @@ jobs:
           npx playwright install --with-deps chromium
           npm run e2e
 
+      - name: Probar las reglas de seguridad (emulador de Firestore)
+        run: npm run test:rules
+
       - name: Compilar
         run: npm run build
 

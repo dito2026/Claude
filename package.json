@@ -11,7 +11,8 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "deploy": "npm run build && firebase deploy",
-    "e2e": "node e2e/run.mjs"
+    "e2e": "node e2e/run.mjs",
+    "test:rules": "npm i --no-save @firebase/rules-unit-testing@3 && npx -y firebase-tools@13 emulators:exec --only firestore --project demo-rules \"node e2e/rules.mjs\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.4.0",

@@ -57,10 +57,15 @@ service cloud.firestore {
     }
 
     // ---- Consecutivos: solo incrementos de 1 ----
+    // Consecutivos: solo suben. Normalmente de 1 en 1; una venta con encimados de varios proveedores
+    // crea varias compras a la vez (hasta 10).
     match /counters/{name} {
       allow read: if isStaff();
-      allow create: if isStaff() && request.resource.data.value == 1;
-      allow update: if isStaff() && request.resource.data.value == resource.data.value + 1;
+      allow create: if isStaff() && request.resource.data.value is int
+        && request.resource.data.value >= 1 && request.resource.data.value <= 10;
+      allow update: if isStaff() && request.resource.data.value is int
+        && request.resource.data.value > resource.data.value
+        && request.resource.data.value <= resource.data.value + 10;
       allow delete: if false;
     }
 

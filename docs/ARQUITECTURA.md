@@ -718,3 +718,9 @@ el servidor reintenta con su modelo de respaldo.
 - Validaciones: precio > 0, proveedor existente y precio al cliente $0. Las facturas de remisión aceptan encimados.
 - Pruebas: `gifts.test.ts` y una prueba e2e (encimar → cobrar → Contabilidad → deuda en Compras).
 - **Datos por defecto** (`settings.giftDefaults`, inicial «Vidrio templado» · $1.500 · Maxel): la ventana se abre lista con esos datos. El proveedor se busca por nombre: igual o que lo contenga. Si no existe, se usa el último usado en ese equipo y aparece un aviso para crearlo. Si el administrador cambia los datos en la ventana, le sale el botón «Usar siempre estos datos», que los guarda en Configuración para todos los equipos.
+
+## 66. Error «Missing or insufficient permissions» al encimar de dos proveedores
+
+- Causa: una venta con encimados de **varios proveedores** crea una compra por proveedor en la misma transacción. El consecutivo `counters/purchases` sube 2 o más, y la regla solo permitía +1. Firestore rechazaba toda la venta; no quedó nada guardado a medias.
+- Arreglo (`firestore.rules`): los consecutivos solo suben, de 1 hasta 10 por operación (al crearse: de 1 a 10). Siguen sin poder bajar ni saltar más.
+- **Pruebas de reglas con el emulador** (`e2e/rules.mjs`, `npm run test:rules`, requiere Java): venta con encimados de 2 proveedores (cajero y admin), consecutivo que baja o salta (debe fallar), corrección de costo de una venta (admin) y descontar un pago viejo de Caja (admin sí, cajero no). Corre en la publicación automática antes de compilar. Con las reglas anteriores, la venta con 2 proveedores falla igual que en la tienda.
