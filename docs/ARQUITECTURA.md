@@ -689,3 +689,11 @@ el servidor reintenta con su modelo de respaldo.
 - **Corregir las ventas que quedaron en $0** (`components/ZeroCostSales.tsx`, `zeroCostSales`, `applyCostToZeroSales`): al guardarle el costo a un producto (Editar producto o Entrada de mercancía) o al registrar su compra, el administrador ve las ventas no anuladas de ese producto con costo $0. Ahí escoge cuáles corregir. Se corrigen la ganancia, la comisión sobre utilidad (vía `prepareInvoiceCostFix`) y el costo del celular vendido. Queda el historial en `costEdits`.
 - `lacksCost(it)`: producto o repuesto con costo ≤ 0. La mano de obra y los servicios no cuentan.
 - Pruebas: `zero-cost.test.ts` y una prueba e2e (producto sin costo → aviso → venta → poner costo → corregir la venta).
+
+## 62. «Pago a proveedor» desde Caja descuenta la deuda
+
+- Problema: el botón **Caja → Pago a proveedor** solo registraba un egreso con descripción escrita (`refType: 'manual'`). El dinero salía de la caja, pero el saldo del proveedor no bajaba.
+- Ahora abre `SupplierPayModal` (`components/SupplierPay.tsx`), la misma ventana del «Abonar» de Compras. Pide el proveedor (solo los que tienen deuda, con lo que deben), el valor (botón «Pagar todo») y el medio. Usa `paySupplier`: sale de la caja y se aplica a sus compras, la más antigua primero.
+- **Pagos viejos:** `unlinkedCashPayments` lista los «Pago a proveedor» manuales sin aplicar. En Compras sale un aviso y, en la pestaña «Pagos a proveedores», la tabla «Pagos desde Caja que no descontaron la deuda» (solo el admin). El proveedor viene sugerido por el nombre escrito (`guessSupplier`). **Descontar** (`linkCashPayment`) aplica el valor a sus compras sin crear otro egreso: el pago queda con `cashMovementId` y el movimiento con `refType: 'purchase'`, `linkedAt`, `linkedBy` y `linkedPurchases`. Si el valor supera la deuda, no se aplica: primero hay que registrar la compra que falta.
+- `applyToPurchases` reparte un abono entre compras (lo usan `paySupplier` y `linkCashPayment`).
+- Reglas: el admin puede marcar una sola vez un «Pago a proveedor» manual como aplicado (solo esos campos).

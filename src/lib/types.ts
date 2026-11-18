@@ -330,6 +330,10 @@ export interface CashMovement extends BaseDoc {
   refId?: string;
   /** correcciones de un gasto: cada entrada guarda los valores ANTERIORES */
   edits?: MovementEdit[];
+  /** «Pago a proveedor» hecho desde Caja que después se descontó de la deuda del proveedor */
+  linkedAt?: string;
+  linkedBy?: string;
+  linkedPurchases?: number[];
 }
 
 export interface MovementEdit {
@@ -369,6 +373,8 @@ export interface SupplierPayment {
   amount: number;
   method: string;
   by: string;
+  /** el dinero salió con un «Pago a proveedor» de Caja (no se volvió a sacar de la caja) */
+  cashMovementId?: string;
   /** corrección: quién, cuándo, por qué y los valores anteriores */
   editedAt?: string;
   editedBy?: string;

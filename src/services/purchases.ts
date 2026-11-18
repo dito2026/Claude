@@ -1,11 +1,11 @@
 // Compras a proveedores (contado o crédito) y cuentas por pagar.
 // Igual que las hojas «Compras» y «Proveedores» de Digital Cell POS:
 // lo comprado a crédito no sale de caja hasta el día en que se abona.
-import { backend } from '../data';
-import type { Invoice, PhoneUnit, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
+import { backend, type Tx } from '../data';
+import type { CashMovement, Invoice, PhoneUnit, Product, Purchase, PurchaseItem, Supplier, SupplierPayment } from '../lib/types';
 import { prepareInvoiceCostFix } from './billing';
 import { CREDIT_METHOD } from '../lib/types';
-import { addDays } from '../lib/format';
+import { addDays, normalize } from '../lib/format';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
 import { adjustCash, requireOpenSession, writeMovement } from './cash';
 import { moveStock, tracksStock } from './inventory';
@@ -194,22 +194,7 @@ export async function paySupplier(actor: Actor, supplier: Supplier, purchaseIds:
     if (amount > owed) throw new BusinessError(`El abono supera la deuda (${owed.toLocaleString('es-CO')}).`);
 
     // ---------- ESCRITURAS ----------
-    const at = new Date().toISOString();
-    let left = amount;
-    const applied: number[] = [];
-    for (const p of list) {
-      if (left <= 0) break;
-      const part = Math.min(left, purchaseBalance(p));
-      left -= part;
-      const paid = (p.paid || 0) + part;
-      applied.push(p.number);
-      tx.update('purchases', p.id, {
-        paid,
-        payments: [...(p.payments ?? []), { at, amount: part, method, by: actor.name }],
-        status: statusFor(p.total, paid),
-        ...touched(),
-      });
-    }
+    const applied = applyToPurchases(tx, list, amount, { at: new Date().toISOString(), method, by: actor.name });
     writeMovement(tx, actor, sid, {
       direction: 'egreso',
       category: 'pago_proveedor',
@@ -220,6 +205,74 @@ export async function paySupplier(actor: Actor, supplier: Supplier, purchaseIds:
       refId: supplier.id,
     });
     return { applied };
+  });
+}
+
+/** Reparte un abono entre compras pendientes (ya ordenadas: la más antigua primero). Devuelve los números. */
+function applyToPurchases(tx: Tx, list: Purchase[], amount: number, pay: Omit<SupplierPayment, 'amount'>) {
+  let left = amount;
+  const applied: number[] = [];
+  for (const p of list) {
+    if (left <= 0) break;
+    const part = Math.min(left, purchaseBalance(p));
+    left -= part;
+    const paid = (p.paid || 0) + part;
+    applied.push(p.number);
+    tx.update('purchases', p.id, {
+      paid,
+      payments: [...(p.payments ?? []), { ...pay, amount: part }],
+      status: statusFor(p.total, paid),
+      ...touched(),
+    });
+  }
+  return applied;
+}
+
+/**
+ * «Pago a proveedor» hechos desde Caja con descripción escrita (antes la caja no pedía el proveedor):
+ * el dinero salió, pero no descontaron la deuda del proveedor.
+ */
+export const unlinkedCashPayments = (movements: CashMovement[]) => movements
+  .filter((m) => m.direction === 'egreso' && m.category === 'pago_proveedor' && (!m.refType || m.refType === 'manual') && !m.linkedAt)
+  .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+
+/** Proveedor cuyo nombre aparece en la descripción del pago (el más largo, si varios). */
+export function guessSupplier(m: Pick<CashMovement, 'description'>, suppliers: Supplier[]) {
+  const d = normalize(m.description);
+  return suppliers
+    .filter((s) => s.name.trim().length >= 3 && d.includes(normalize(s.name.trim())))
+    .sort((a, b) => b.name.length - a.name.length)[0];
+}
+
+/**
+ * Descuenta de la deuda de un proveedor un «Pago a proveedor» ya hecho desde Caja.
+ * No vuelve a sacar dinero de la caja (ya salió): solo lo aplica a sus compras, la más antigua primero.
+ */
+export async function linkCashPayment(actor: Actor, movementId: string, supplierId: string) {
+  const all = await backend.list<Purchase>('purchases');
+  const ids = all.filter((p) => p.supplierId === supplierId && purchaseBalance(p) > 0).map((p) => p.id);
+  return backend.transaction(async (tx) => {
+    const m = await tx.get<CashMovement>('cashMovements', movementId);
+    if (!m) throw new BusinessError('Movimiento no encontrado.');
+    if (unlinkedCashPayments([m]).length === 0) throw new BusinessError('Ese pago ya está aplicado a un proveedor.');
+    const s = await tx.get<Supplier>('suppliers', supplierId);
+    if (!s) throw new BusinessError('Proveedor no encontrado.');
+    const list: Purchase[] = [];
+    for (const id of ids) {
+      const p = await tx.get<Purchase>('purchases', id);
+      if (p && p.supplierId === s.id && purchaseBalance(p) > 0) list.push(p);
+    }
+    list.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+    const owed = sum(list.map(purchaseBalance));
+    if (owed <= 0) throw new BusinessError(`${s.name} no tiene deuda pendiente. Si este pago era por una compra que no está registrada, regístrela primero en Compras.`);
+    if (m.amount > owed) {
+      throw new BusinessError(`El pago es de ${m.amount.toLocaleString('es-CO')} y la deuda con ${s.name} es de ${owed.toLocaleString('es-CO')}. Registre primero la compra que falta o revise el proveedor.`);
+    }
+    // ---------- ESCRITURAS ----------
+    const at = new Date().toISOString();
+    const applied = applyToPurchases(tx, list, m.amount, { at: m.createdAt ?? at, method: m.method, by: actor.name, cashMovementId: m.id });
+    tx.update('cashMovements', m.id, { refType: 'purchase', refId: s.id, linkedAt: at, linkedBy: actor.name, linkedPurchases: applied, ...touched() });
+    return { applied, supplierName: s.name };
   });
 }
 

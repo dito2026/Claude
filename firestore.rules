@@ -215,7 +215,15 @@ service cloud.firestore {
     // dejando los valores anteriores en `edits` (cajero: turno abierto; admin: cualquiera).
     match /cashMovements/{id} {
       allow read, create: if isCashier();
-      allow update: if isCashier()
+      // Admin: un «Pago a proveedor» de Caja escrito a mano se descuenta de la deuda del proveedor (una sola vez)
+      allow update: if (isAdmin()
+        && resource.data.direction == 'egreso'
+        && resource.data.category == 'pago_proveedor'
+        && resource.data.get('refType', 'manual') == 'manual'
+        && !('linkedAt' in resource.data)
+        && request.resource.data.refType == 'purchase'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['refType', 'refId', 'linkedAt', 'linkedBy', 'linkedPurchases', 'updatedAt']))
+        || (isCashier()
         && resource.data.direction == 'egreso'
         && resource.data.category == 'gasto'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amount', 'method', 'description', 'expenseCategory', 'edits', 'updatedAt'])
@@ -223,7 +231,7 @@ service cloud.firestore {
         && request.resource.data.amount > 0
         && request.resource.data.method != 'Crédito tienda'
         && request.resource.data.edits.size() == resource.data.get('edits', []).size() + 1
-        && (isAdmin() || get(/databases/$(database)/documents/meta/cash).data.openSessionId == resource.data.sessionId);
+        && (isAdmin() || get(/databases/$(database)/documents/meta/cash).data.openSessionId == resource.data.sessionId));
       allow delete: if false;
     }
   }

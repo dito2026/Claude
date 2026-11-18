@@ -7,6 +7,7 @@ import { dateTime, money } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, Stat, useAction } from '../components/ui';
 import { PayMethods } from '../components/PayMethods';
+import { SupplierPayModal } from '../components/SupplierPay';
 import { addMovement, closeSession, editExpense, expectedByMethod, openSession, type CashState } from '../services/cash';
 import { technicianBalance } from '../services/staff';
 import { sellerBalance } from '../services/sellers';
@@ -197,7 +198,8 @@ export function Cash() {
       </div>
 
       {editing && <EditExpenseModal m={editing} methods={methods} categories={settings.expenseCategories} isAdmin={isAdmin} onClose={() => setEditing(null)} />}
-      {mov && <MovementModal kind={mov} methods={methods} categories={settings.expenseCategories} onClose={() => setMov(null)} />}
+      {mov === 'pago_proveedor' && <SupplierPayModal onClose={() => setMov(null)} />}
+      {mov && mov !== 'pago_proveedor' && <MovementModal kind={mov} methods={methods} categories={settings.expenseCategories} onClose={() => setMov(null)} />}
       {closing && session && (
         <CloseModal session={session} expected={expected} methods={methods} onClose={() => setClosing(false)} />
       )}

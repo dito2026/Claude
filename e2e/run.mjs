@@ -200,6 +200,32 @@ try {
     await page.waitForSelector('.toast:has-text("Abono registrado")');
   });
 
+  await check('Caja → Pago a proveedor pide el proveedor y baja su deuda', async () => {
+    await page.goto(BASE + '/compras');
+    await page.click('.tabs button:has-text("Proveedores")');
+    await page.click('button:has-text("Nuevo proveedor")');
+    await page.locator('.modal input').first().fill('Pepe E2E');
+    await page.locator('.modal label.field:has-text("Saldo anterior") input').fill('80000');
+    await page.click('.modal .modal-foot button.primary');
+    await page.waitForSelector('tr:has-text("Pepe E2E")');
+    await page.goto(BASE + '/caja');
+    await page.click('button:has-text("Pago a proveedor")');
+    const sel = page.locator('.modal label.field:has-text("Proveedor") select');
+    await sel.waitFor();
+    const reg = page.locator('.modal button:has-text("Registrar abono")');
+    assert(await reg.isDisabled(), 'sin proveedor no se debía poder registrar');
+    const opt = await page.locator('.modal select option', { hasText: 'Pepe E2E' }).first().getAttribute('value');
+    await sel.selectOption(opt);
+    await page.click('.modal button:has-text("Pagar todo")');
+    await page.click('.modal .pay-methods button:has-text("Efectivo")');
+    await reg.click();
+    await page.waitForSelector('.toast:has-text("Abono registrado · Pepe E2E")');
+    await page.goto(BASE + '/compras');
+    await page.click('.tabs button:has-text("Proveedores")');
+    await page.waitForSelector('tr:has-text("Pepe E2E")');
+    assert(await page.locator('tr:has-text("Pepe E2E") button:has-text("Abonar")').count() === 0, 'la deuda debía quedar en 0');
+  });
+
   await check('nueva orden con abono inicial exige el medio', async () => {
     await page.goto(BASE + '/taller?nueva=1');
     await page.waitForSelector('.modal');

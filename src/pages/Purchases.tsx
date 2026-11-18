@@ -8,7 +8,7 @@ import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction, useToast } from '../components/ui';
 import { PayMethods } from '../components/PayMethods';
 import {
-  changePurchaseSupplier, createPurchase, editPurchase, editSupplierPayment, supplierPayments, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
+  changePurchaseSupplier, createPurchase, editPurchase, editSupplierPayment, supplierPayments, isOverduePurchase, voidPurchase, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
 } from '../services/purchases';
 import type { CashState } from '../services/cash';
 import { EMPTY_PRODUCT, ProductModal } from './Inventory';
@@ -16,6 +16,7 @@ import { ImeiTextarea, parseImeiLines } from '../components/PhoneUnits';
 import { AiInvoiceModal, RestockTab, type PurchasePrefill } from '../components/PurchaseAutomation';
 import { useAiEnabled } from '../services/aiConfig';
 import { ZeroCostSalesModal, useZeroCostSales, type CostFix } from '../components/ZeroCostSales';
+import { SupplierPayModal, UnlinkedCashPayments, useUnlinkedCashPayments } from '../components/SupplierPay';
 
 const EMPTY_SUPPLIER: SupplierInput = { name: '', nit: '', phone: '', termDays: 30, notes: '', active: true };
 
@@ -28,6 +29,7 @@ export function Purchases() {
   const suppliers = useCollection<Supplier>('suppliers').rows;
   const purchases = useCollection<Purchase>('purchases').rows;
   const [tab, setTab] = useState<'compras' | 'proveedores' | 'pagos' | 'reposicion'>('compras');
+  const unlinked = useUnlinkedCashPayments();
   const [buying, setBuying] = useState<PurchasePrefill | false>(false);
   const [readingAi, setReadingAi] = useState(false);
   const aiOn = useAiEnabled();
@@ -56,6 +58,12 @@ export function Purchases() {
         <Stat label="Comprado este mes" value={money(month.reduce((a, p) => a + p.total, 0))} sub={`${month.length} compras`} />
         <Stat label="Proveedores" value={suppliers.filter((s) => s.active).length} />
       </div>
+      {unlinked.length > 0 && tab !== 'pagos' && (
+        <div className="alert warn" style={{ marginBottom: 12 }}><div>
+          Hay <b>{unlinked.length}</b> pago{unlinked.length === 1 ? '' : 's'} a proveedores hecho{unlinked.length === 1 ? '' : 's'} desde Caja que no descontaron la deuda.{' '}
+          <button className="btn sm" onClick={() => setTab('pagos')}>Revisar y descontar</button>
+        </div></div>
+      )}
       <div className="tabs">
         <button className={tab === 'compras' ? 'active' : ''} onClick={() => setTab('compras')}>Compras</button>
         <button className={tab === 'proveedores' ? 'active' : ''} onClick={() => setTab('proveedores')}>Proveedores y saldos</button>
@@ -343,6 +351,7 @@ function PaymentsTab({ suppliers, purchases }: { suppliers: Supplier[]; purchase
           {[...suppliers].sort((a, b) => a.name.localeCompare(b.name)).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </div>
+      <UnlinkedCashPayments suppliers={suppliers} />
       <div className="card"><PaymentsList purchases={purchases} supplierId={sid || undefined} showSupplier={!sid} /></div>
     </>
   );
@@ -439,7 +448,7 @@ function SupplierList({ suppliers, purchases }: { suppliers: Supplier[]; purchas
         )}
       </div>
       {edit && <SupplierModal edit={edit} onClose={() => setEdit(null)} />}
-      {paying && <PayModal supplier={paying} purchases={purchases} onClose={() => setPaying(null)} />}
+      {paying && <SupplierPayModal supplier={paying} onClose={() => setPaying(null)} />}
       {history && (
         <Modal wide title={`Pagos a ${history.name}`} onClose={() => setHistory(null)}>
           <PaymentsList purchases={purchases} supplierId={history.id} />
@@ -471,39 +480,6 @@ function SupplierModal({ edit, onClose, onSaved }: { edit: { id?: string; data: 
   );
 }
 
-function PayModal({ supplier, purchases, onClose }: { supplier: Supplier; purchases: Purchase[]; onClose: () => void }) {
-  const { actor } = useAuth();
-  const { run, busy } = useAction();
-  const cash = useDocument<CashState & { id: string }>('meta', 'cash').doc;
-  const pending = purchases
-    .filter((p) => p.supplierId === supplier.id && purchaseBalance(p) > 0)
-    .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
-  const owed = pending.reduce((a, p) => a + purchaseBalance(p), 0);
-  const [amount, setAmount] = useState(owed);
-  const [method, setMethod] = useState('');
-  return (
-    <Modal title={`Abonar a ${supplier.name}`} onClose={onClose}
-      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy || !amount || !method || !cash?.openSessionId}
-          onClick={() => run(() => paySupplier(actor, supplier, pending.map((p) => p.id), amount, method), 'Abono registrado').then((ok) => ok && onClose())}>Registrar abono</button></>}>
-      <div className="stack">
-        {!cash?.openSessionId && <div className="alert warn">La caja está cerrada. El abono sale de caja: <Link className="red" to="/caja">abra la caja</Link> primero.</div>}
-        <div className="totals"><div className="grand"><span>Deuda total</span><span className="red">{money(owed)}</span></div></div>
-        <div className="form-grid">
-          <Field label="Valor del abono"><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
-          <PayMethods value={method} onChange={setMethod} missing={amount > 0 && !method} />
-        </div>
-        <div className="faint" style={{ fontSize: 12 }}>Se aplica primero a la compra más antigua:</div>
-        {pending.map((p) => (
-          <div key={p.id} className="row between" style={{ fontSize: 13 }}>
-            <span className="mono">C-{pad(p.number, 4)} · {dateOnly(p.createdAt)}{isOverduePurchase(p) && <span className="red"> · vencida</span>}</span>
-            <b>{money(purchaseBalance(p))}</b>
-          </div>
-        ))}
-      </div>
-    </Modal>
-  );
-}
 
 // ---------------- Nueva compra ----------------
 function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Supplier[]; prefill?: PurchasePrefill; onClose: () => void }) {
