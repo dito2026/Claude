@@ -20,7 +20,7 @@ describe('estado de cuenta del técnico', () => {
     await addMovement(actor, { direction: 'egreso', category: 'pago_tecnico', method: 'Efectivo', amount: 20000, description: 'Pago a Cristian', refType: 'technician', refId: 't1' });
     await addMovement(actor, { direction: 'egreso', category: 'gasto', expenseCategory: 'Otros', method: 'Nequi', amount: 15000, description: 'pago cristian pantalla', refType: 'manual' });
     await addMovement(actor, { direction: 'egreso', category: 'gasto', expenseCategory: 'Otros', method: 'Efectivo', amount: 9000, description: 'almuerzo', refType: 'manual' });
-    const orders = [ot(1, 'Entregado', 30000), ot(2, 'Entregado', 0), ot(3, 'Listo', 25000), ot(4, 'No reparado', 10000), ot(5, 'Entregado', 50000, 'otro')];
+    const orders = [ot(1, 'Entregado', 30000), ot(2, 'Entregado', 0), ot(3, 'Reparado / Listo', 25000), ot(4, 'No reparado', 10000), ot(5, 'Entregado', 50000, 'otro')];
     let st = technicianStatement(tech, orders, await backend.list<CashMovement>('cashMovements'));
     expect(st).toMatchObject({ earned: 30000, paid: 20000, owed: 10000, jobs: 2, noPay: 1, pendingPay: 25000 });
     expect(st.pending.map((o) => o.number)).toEqual([3]);
