@@ -2,6 +2,7 @@ import { backend } from '../data';
 import type { CashMovement, RepairOrder, Role, Technician, UserProfile } from '../lib/types';
 import { BusinessError, created, sum, touched, type Actor } from './common';
 import { DEFAULT_SETTINGS } from './settings';
+import { normalize } from '../lib/format';
 
 export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Administrador',
@@ -92,4 +93,56 @@ export async function bootstrapAdmin(name: string, email: string, password: stri
     await backend.auth.signOut();
     throw e;
   }
+}
+
+/**
+ * Estado de cuenta de un técnico: trabajos entregados (lo que ganó), trabajos sin entregar (aún no suman),
+ * pagos de «Pago a técnico» y movimientos de caja que lo mencionan pero no cuentan como pago.
+ */
+export function technicianStatement(t: Technician, orders: RepairOrder[], movements: CashMovement[]) {
+  const mine = orders.filter((o) => o.technicianId === t.id);
+  const delivered = mine.filter((o) => o.status === 'Entregado')
+    .sort((a, b) => (b.deliveredAt ?? b.updatedAt ?? '').localeCompare(a.deliveredAt ?? a.updatedAt ?? ''));
+  const pending = mine.filter((o) => o.status !== 'Entregado' && o.status !== 'No reparado')
+    .sort((a, b) => b.number - a.number);
+  const payments = movements.filter((m) => m.category === 'pago_tecnico' && m.refId === t.id)
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+  const name = normalize(t.name).trim();
+  const firstName = name.split(/\s+/)[0] ?? '';
+  const key = firstName.length >= 4 ? firstName : name;
+  const suspects = key.length >= 3 ? movements.filter((m) => m.direction === 'egreso' && m.category !== 'pago_tecnico'
+    && ['gasto', 'retiro', 'pago_vendedor', 'pago_proveedor'].includes(m.category) && (!m.refType || m.refType === 'manual')
+    && normalize(m.description).includes(key))
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')) : [];
+  return {
+    ...technicianBalance(t, orders, movements),
+    delivered,
+    noPay: delivered.filter((o) => !(o.technicianPay > 0)).length,
+    pending,
+    pendingPay: sum(pending.map((o) => o.technicianPay || 0)),
+    payments,
+    suspects,
+  };
+}
+
+/**
+ * Pasa a «Pago a técnico» un egreso de caja que se registró como gasto (u otro) escribiendo el nombre del técnico.
+ * No mueve plata: el dinero ya salió; solo deja de contar como gasto y pasa a descontar lo que se le debe.
+ */
+export async function linkTechnicianPayment(actor: Actor, movementId: string, technicianId: string) {
+  return backend.transaction(async (tx) => {
+    const m = await tx.get<CashMovement>('cashMovements', movementId);
+    if (!m) throw new BusinessError('Movimiento no encontrado.');
+    const t = await tx.get<Technician>('technicians', technicianId);
+    if (!t) throw new BusinessError('Técnico no encontrado.');
+    if (m.direction !== 'egreso' || m.category === 'pago_tecnico' || !['gasto', 'retiro', 'pago_vendedor', 'pago_proveedor'].includes(m.category)
+      || (m.refType && m.refType !== 'manual')) {
+      throw new BusinessError('Ese movimiento no se puede pasar a pago de técnico.');
+    }
+    tx.update('cashMovements', m.id, {
+      category: 'pago_tecnico', expenseCategory: 'Pago a técnicos', refType: 'technician', refId: technicianId,
+      previousCategory: m.category, linkedAt: new Date().toISOString(), linkedBy: actor.name, ...touched(),
+    });
+    return { name: t.name };
+  });
 }

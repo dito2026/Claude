@@ -281,6 +281,14 @@ try {
     await page.waitForSelector('tr:has-text("Maxel") button:has-text("Abonar")');
   });
 
+  await check('estado de cuenta del técnico', async () => {
+    await page.goto(BASE + '/tecnicos');
+    await page.locator('tr:has-text("Cristian") button:has-text("Estado de cuenta")').click();
+    await page.waitForSelector('.modal .stat:has-text("Por pagarle")');
+    await page.waitForSelector('.modal h3:has-text("Trabajos entregados")');
+    await page.keyboard.press('Escape');
+  });
+
   await check('sin internet: la app abre y cambia de pantalla (pantallas guardadas)', async () => {
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.waitForFunction(async () => {

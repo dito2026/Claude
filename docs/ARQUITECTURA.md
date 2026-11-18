@@ -724,3 +724,13 @@ el servidor reintenta con su modelo de respaldo.
 - Causa: una venta con encimados de **varios proveedores** crea una compra por proveedor en la misma transacción. El consecutivo `counters/purchases` sube 2 o más, y la regla solo permitía +1. Firestore rechazaba toda la venta; no quedó nada guardado a medias.
 - Arreglo (`firestore.rules`): los consecutivos solo suben, de 1 hasta 10 por operación (al crearse: de 1 a 10). Siguen sin poder bajar ni saltar más.
 - **Pruebas de reglas con el emulador** (`e2e/rules.mjs`, `npm run test:rules`, requiere Java): venta con encimados de 2 proveedores (cajero y admin), consecutivo que baja o salta (debe fallar), corrección de costo de una venta (admin) y descontar un pago viejo de Caja (admin sí, cajero no). Corre en la publicación automática antes de compilar. Con las reglas anteriores, la venta con 2 proveedores falla igual que en la tienda.
+
+## 67. Estado de cuenta del técnico
+
+- **Técnicos → «Estado de cuenta»** (`technicianStatement`, `TechStatementModal`): muestra por pagarle (ganado − pagado), ganado y pagado. Debajo:
+  - **Trabajos entregados**, con su «pago al técnico». Aviso si hay OT entregadas **sin pago** (no le suman).
+  - **En proceso**: OT no entregadas con su pago. Aún no suman; se suman al quedar «Entregado».
+  - **Pagos**: los movimientos «Pago a técnico» con su `refId`.
+  - **Pagos que lo mencionan pero no cuentan**: egresos manuales (gasto, retiro, pago a vendedor o a proveedor) cuya descripción tiene el nombre del técnico (el primer nombre si tiene 4 letras o más).
+- **«Contar como pago»** (solo admin, `linkTechnicianPayment`): pasa ese egreso a `pago_tecnico` con `refType: 'technician'`. Guarda `previousCategory`, `linkedAt` y `linkedBy`. No mueve plata; deja de contar como gasto y baja la deuda. Las reglas lo permiten una sola vez y solo a admin.
+- Pruebas: `technician-statement.test.ts`, reglas en el emulador y una prueba e2e.

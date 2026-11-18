@@ -220,8 +220,17 @@ service cloud.firestore {
     // dejando los valores anteriores en `edits` (cajero: turno abierto; admin: cualquiera).
     match /cashMovements/{id} {
       allow read, create: if isCashier();
-      // Admin: un «Pago a proveedor» de Caja escrito a mano se descuenta de la deuda del proveedor (una sola vez)
+      // Admin: un egreso escrito a mano (gasto, retiro…) que fue un pago a un técnico pasa a «Pago a técnico» (una sola vez)
       allow update: if (isAdmin()
+        && resource.data.direction == 'egreso'
+        && resource.data.category in ['gasto', 'retiro', 'pago_vendedor', 'pago_proveedor']
+        && resource.data.get('refType', 'manual') == 'manual'
+        && !('linkedAt' in resource.data)
+        && request.resource.data.category == 'pago_tecnico'
+        && request.resource.data.refType == 'technician'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['category', 'expenseCategory', 'refType', 'refId', 'previousCategory', 'linkedAt', 'linkedBy', 'updatedAt']))
+        // Admin: un «Pago a proveedor» de Caja escrito a mano se descuenta de la deuda del proveedor (una sola vez)
+        || (isAdmin()
         && resource.data.direction == 'egreso'
         && resource.data.category == 'pago_proveedor'
         && resource.data.get('refType', 'manual') == 'manual'

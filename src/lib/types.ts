@@ -341,6 +341,8 @@ export interface CashMovement extends BaseDoc {
   linkedAt?: string;
   linkedBy?: string;
   linkedPurchases?: number[];
+  /** si se pasó a «Pago a técnico» después: la categoría con que se registró */
+  previousCategory?: CashCategory;
 }
 
 export interface MovementEdit {

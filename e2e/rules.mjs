@@ -22,6 +22,8 @@ const check = async (name, p) => { try { await p; console.log('  ✓', name); } 
     await setDoc(doc(db, 'suppliers/pavatec'), { name: 'PAVATEC', termDays: 30 });
     await setDoc(doc(db, 'invoices/old'), { number: 3, status: 'pagada', items: [{ description: 'x', unitCost: 0, qty: 1, unitPrice: 1000, kind: 'producto' }] });
     await setDoc(doc(db, 'cashMovements/m1'), { direction: 'egreso', category: 'pago_proveedor', refType: 'manual', amount: 1000, method: 'Efectivo' });
+    await setDoc(doc(db, 'cashMovements/g1'), { direction: 'egreso', category: 'gasto', refType: 'manual', amount: 15000, method: 'Nequi', expenseCategory: 'Otros' });
+    await setDoc(doc(db, 'cashMovements/v1'), { direction: 'ingreso', category: 'venta', refType: 'invoice', amount: 15000, method: 'Nequi' });
   });
   for (const uid of ['caja1', 'admin1']) {
     const db = env.authenticatedContext(uid).firestore();
@@ -46,6 +48,10 @@ const check = async (name, p) => { try { await p; console.log('  ✓', name); } 
   await check('admin descuenta pago viejo de Caja', assertSucceeds(updateDoc(doc(adb, 'cashMovements/m1'), {
     refType: 'purchase', refId: 'maxel', linkedAt: 'x', linkedBy: 'a', linkedPurchases: [1], updatedAt: 'x' })));
   await check('cajero no puede descontar pago viejo', assertFails(updateDoc(doc(cdb, 'cashMovements/m1'), { refType: 'purchase' })));
+  await check('cajero no puede pasar un gasto a pago de técnico', assertFails(updateDoc(doc(cdb, 'cashMovements/g1'), { category: 'pago_tecnico', expenseCategory: 'Pago a técnicos', refType: 'technician', refId: 't1', previousCategory: 'gasto', linkedAt: 'x', linkedBy: 'a', updatedAt: 'x' })));
+  await check('admin pasa un gasto a pago de técnico', assertSucceeds(updateDoc(doc(adb, 'cashMovements/g1'), { category: 'pago_tecnico', expenseCategory: 'Pago a técnicos', refType: 'technician', refId: 't1', previousCategory: 'gasto', linkedAt: 'x', linkedBy: 'a', updatedAt: 'x' })));
+  await check('…y no lo puede volver a cambiar', assertFails(updateDoc(doc(adb, 'cashMovements/g1'), { refId: 't2', updatedAt: 'y' })));
+  await check('una venta no se puede pasar a pago de técnico', assertFails(updateDoc(doc(adb, 'cashMovements/v1'), { category: 'pago_tecnico', expenseCategory: 'Pago a técnicos', refType: 'technician', refId: 't1', previousCategory: 'gasto', linkedAt: 'x', linkedBy: 'a', updatedAt: 'x' })));
   await env.cleanup();
 }
 console.log(failed ? `\n${failed} revisiones de reglas fallaron` : '\nReglas OK');
