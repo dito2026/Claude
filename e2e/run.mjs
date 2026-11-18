@@ -32,7 +32,7 @@ async function check(name, fn) {
     console.log(`  ✓ ${name}`);
   } catch (e) {
     results.push([false, name, e.message.split('\n')[0]]);
-    console.log(`  ✗ ${name}\n    ${e.message.split('\n')[0]}`);
+    console.log(`  ✗ ${name}\n    ${e.message.split('\n').slice(0, 3).join(' · ')}`);
   }
 }
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
@@ -84,6 +84,36 @@ try {
     await cobrar.click();
     await page.waitForSelector('.toast:has-text("Venta registrada")');
     await page.keyboard.press('Escape');
+  });
+
+  await check('venta sin costo: avisa, se escribe el costo ahí y luego se corrigen las ventas en $0', async () => {
+    await page.goto(BASE + '/inventario');
+    await page.click('button:has-text("Nuevo producto")');
+    await page.fill('.modal label.field:has-text("Nombre") input', 'Forro prueba sin costo');
+    await page.fill('.modal label.field:has-text("Precio de venta") input', '15000');
+    await page.fill('.modal label.field:has-text("¿Cuántos tiene?") input', '5');
+    await page.click('.modal button:has-text("Guardar")');
+    await page.waitForSelector('.toast:has-text("Producto guardado")');
+    // 1) al venderlo sin costo aparece el aviso con la casilla de costo
+    await page.goto(BASE + '/facturacion');
+    const search = page.locator('input[placeholder^="Buscar, escanear"]');
+    await search.fill('Forro prueba sin costo');
+    await search.press('Enter');
+    await page.waitForSelector('.cost-missing');
+    // 2) se vende sin escribir el costo (queda en $0)
+    await page.click('.pay-methods button:has-text("Efectivo")');
+    await page.click('button:has-text("Cobrar")');
+    await page.waitForSelector('.toast:has-text("Venta registrada")');
+    await page.keyboard.press('Escape');
+    // 3) al ponerle el costo al producto, ofrece corregir esa venta
+    await page.goto(BASE + '/inventario');
+    await page.fill('input[placeholder^="SKU, nombre"]', 'Forro prueba sin costo');
+    await page.locator('tr:has-text("Forro prueba sin costo") button[title*="ditar"]').first().click();
+    await page.fill('.modal label.field:has-text("Costo") input', '6000');
+    await page.click('.modal button:has-text("Guardar")');
+    await page.waitForSelector('.modal:has-text("Ventas que quedaron sin costo")');
+    await page.click('.modal button:has-text("Poner el costo a 1 venta")');
+    await page.waitForSelector('.toast:has-text("Costo puesto en 1 venta")');
   });
 
   await check('la caja muestra la venta con su ganancia', async () => {

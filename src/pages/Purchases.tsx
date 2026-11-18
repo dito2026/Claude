@@ -15,6 +15,7 @@ import { EMPTY_PRODUCT, ProductModal } from './Inventory';
 import { ImeiTextarea, parseImeiLines } from '../components/PhoneUnits';
 import { AiInvoiceModal, RestockTab, type PurchasePrefill } from '../components/PurchaseAutomation';
 import { useAiEnabled } from '../services/aiConfig';
+import { ZeroCostSalesModal, useZeroCostSales, type CostFix } from '../components/ZeroCostSales';
 
 const EMPTY_SUPPLIER: SupplierInput = { name: '', nit: '', phone: '', termDays: 30, notes: '', active: true };
 
@@ -556,11 +557,21 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
   const setItem = (k: number, patch: Partial<PurchaseItem>) => setItems((xs) => xs.map((x, i) => (i === k ? { ...x, ...patch } : x)));
   const needsCash = paymentType === 'contado' && !cash?.openSessionId;
 
+  const fixes = useMemo<CostFix[]>(() => (can('settings') ? effectiveItems
+    .filter((it) => it.productId && it.unitCost > 0)
+    .map((it) => ({ productId: it.productId, name: it.name, cost: it.unitCost })) : []), [effectiveItems, can]);
+  const zeroSales = useZeroCostSales(fixes);
+  const [askZero, setAskZero] = useState<CostFix[] | null>(null);
   const submit = () => run(() => createPurchase(actor, {
     supplier: supplier!, items: effectiveItems, paymentType, method, invoiceRef, note, updateCost,
     dueDate: paymentType === 'credito' && due ? fromLocalInput(due) : undefined,
   }), paymentType === 'credito' ? 'Compra a crédito registrada · stock actualizado' : 'Compra de contado registrada · stock actualizado')
-    .then((ok) => ok && onClose());
+    .then((ok) => {
+      if (!ok) return;
+      if (zeroSales.length) setAskZero(fixes);
+      else onClose();
+    });
+  if (askZero) return <ZeroCostSalesModal fixes={askZero} onClose={onClose} />;
 
   return (
     <Modal wide title="Nueva compra a proveedor" onClose={onClose}

@@ -681,3 +681,11 @@ el servidor reintenta con su modelo de respaldo.
 - `editPurchase`: celulares → la factura de cada IMEI vendido (y el costo del equipo, también si está remisionado o vendido). Productos sin IMEI → las ventas desde esta compra hasta la siguiente compra del mismo producto, con el costo de la compra (actual o de antes de corregirla). Guardar la compra sin cambios vuelve a aplicarlo a ventas que quedaron con el costo viejo. El aviso dice en cuántas ventas se recalculó.
 - `editUsedPurchase`: si el equipo ya se vendió, su venta toma el precio corregido como costo.
 - Reglas: el admin puede actualizar en `invoices` solo `items`, `commission`, `costEdits` y `updatedAt`, con las mismas líneas y una entrada más en `costEdits`.
+
+## 61. Ventas sin costo
+
+- **Aviso al facturar** (`Billing.tsx`, `.cost-missing`): si una línea de producto o repuesto tiene costo $0, sale «Sin costo: la ganancia saldrá igual a la venta. ¿Cuánto le costó?» con una casilla para escribirlo. La venta se puede hacer igual.
+- **El costo escrito queda guardado** (`createInvoice`): pasa al producto (o al celular por IMEI) si ese no tenía costo, para las próximas ventas. Si ya tenía costo, no se cambia desde la venta.
+- **Corregir las ventas que quedaron en $0** (`components/ZeroCostSales.tsx`, `zeroCostSales`, `applyCostToZeroSales`): al guardarle el costo a un producto (Editar producto o Entrada de mercancía) o al registrar su compra, el administrador ve las ventas no anuladas de ese producto con costo $0. Ahí escoge cuáles corregir. Se corrigen la ganancia, la comisión sobre utilidad (vía `prepareInvoiceCostFix`) y el costo del celular vendido. Queda el historial en `costEdits`.
+- `lacksCost(it)`: producto o repuesto con costo ≤ 0. La mano de obra y los servicios no cuentan.
+- Pruebas: `zero-cost.test.ts` y una prueba e2e (producto sin costo → aviso → venta → poner costo → corregir la venta).

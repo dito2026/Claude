@@ -67,6 +67,8 @@ describe('editar una compra', () => {
   it('al corregir el costo, las ventas ya hechas recalculan ganancia y comisión sobre utilidad', async () => {
     const { id, vid, cel, supplier } = await setup();
     const sellerId = String(await saveSeller(actor, { name: 'Guillermo', phone: '', active: true, commissionPct: 10, commissionBase: 'utilidad', lines: [] }));
+    const tick = () => new Promise((r) => setTimeout(r, 5)); // fechas distintas entre compra y ventas
+    await tick();
     const sale = await createInvoice(actor, {
       customer: { name: 'Cliente', phone: '', document: '' }, discount: 0, taxRate: 0, cashierName: 'T', sellerId,
       items: [
@@ -77,9 +79,11 @@ describe('editar una compra', () => {
     });
     let inv = (await backend.get<Invoice>('invoices', sale.id))!;
     expect(inv.commission).toBe(Math.round((630000 - 406000) * 0.1));
+    await tick();
     // Una compra posterior del vidrio: sus ventas no deben tocarse
     await createPurchase(actor, { supplier, paymentType: 'credito', method: '', invoiceRef: '', note: '', updateCost: false,
       items: [{ productId: vid, name: 'Vidrio', qty: 5, unitCost: 2000 }] });
+    await tick();
     const later = await createInvoice(actor, {
       customer: { name: 'Otro', phone: '', document: '' }, discount: 0, taxRate: 0, cashierName: 'T',
       items: [{ productId: vid, description: 'Vidrio', kind: 'producto', qty: 1, unitPrice: 10000, unitCost: 2000 }],

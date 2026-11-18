@@ -189,6 +189,22 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
       }
     }
 
+    // Producto o celular sin costo al que se le escribió el costo en la venta: queda guardado para las próximas
+    const costSet = new Set<string>();
+    for (const it of items) {
+      if (it.unitCost <= 0) continue;
+      const u = it.unitId ? units.get(it.unitId) : undefined;
+      if (u) {
+        if (!(u.cost > 0)) tx.update('phoneUnits', u.id, { cost: it.unitCost, ...touched() });
+        continue;
+      }
+      const p = it.productId ? products.get(it.productId) : undefined;
+      if (p && !(p.cost > 0) && !it.stockAlreadyMoved && !costSet.has(p.id)) {
+        costSet.add(p.id);
+        tx.update('products', p.id, { cost: it.unitCost, ...touched() });
+      }
+    }
+
     for (const it of items) {
       const u = it.unitId ? units.get(it.unitId) : undefined;
       if (u) {
@@ -379,5 +395,44 @@ export async function prepareInvoiceCostFix(
       ...(commission !== inv.commission && inv.commission !== undefined ? { commission: inv.commission } : {}),
     }],
     ...touched(),
+  });
+}
+
+/** Líneas de venta que se cuentan como «sin costo» (productos y repuestos; no mano de obra ni servicios). */
+export const lacksCost = (it: InvoiceItem) => (it.kind === 'producto' || it.kind === 'repuesto') && !(it.unitCost > 0);
+
+/** Ventas (no anuladas) de un producto que quedaron con costo $0. */
+export function zeroCostSales(invoices: Invoice[], productId: string) {
+  return invoices
+    .filter((i) => i.status !== 'anulada' && i.items.some((it) => it.productId === productId && lacksCost(it)))
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+}
+
+/**
+ * Pone el costo a ventas que quedaron en $0 (al registrarle el costo al producto o su compra).
+ * Corrige ganancia y comisión sobre utilidad; si es un celular, también el costo del equipo vendido.
+ */
+export async function applyCostToZeroSales(actor: Actor, fixes: { productId: string; cost: number }[], invoiceIds: string[]) {
+  const costs = new Map(fixes.filter((f) => f.cost > 0).map((f) => [f.productId, f.cost]));
+  if (costs.size === 0 || invoiceIds.length === 0) throw new BusinessError('No hay ventas para corregir.');
+  return backend.transaction(async (tx) => {
+    const writes: (() => void)[] = [];
+    const unitIds = new Map<string, number>();
+    for (const id of invoiceIds) {
+      const w = await prepareInvoiceCostFix(tx, actor, id, (it) => {
+        const c = it.productId && lacksCost(it) ? costs.get(it.productId) : undefined;
+        if (c && it.unitId) unitIds.set(it.unitId, c);
+        return c;
+      }, 'Costo registrado después de la venta');
+      if (w) writes.push(w);
+    }
+    const units: PhoneUnit[] = [];
+    for (const uid of unitIds.keys()) {
+      const u = await tx.get<PhoneUnit>('phoneUnits', uid);
+      if (u && !(u.cost > 0)) units.push(u);
+    }
+    writes.forEach((w) => w());
+    for (const u of units) tx.update('phoneUnits', u.id, { cost: unitIds.get(u.id)!, ...touched() });
+    return writes.length;
   });
 }

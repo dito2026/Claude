@@ -10,7 +10,7 @@ import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAc
 import { PayMethods } from '../components/PayMethods';
 import { CustomerPicker } from '../components/CustomerPicker';
 import { InvoiceModal } from '../components/Receipts';
-import { computeTotals, createInvoice, creditBalance, invoiceCost, itemsFromOrder, voidInvoice } from '../services/billing';
+import { computeTotals, createInvoice, creditBalance, invoiceCost, itemsFromOrder, voidInvoice, lacksCost } from '../services/billing';
 import { depositsTotal } from '../services/orders';
 import { customerRef } from '../services/orders';
 import { useSettings } from '../services/settings';
@@ -148,6 +148,7 @@ function Pos() {
   };
   const setQty = (i: number, qty: number) => setItems((xs) => xs.map((x, k) => (k === i ? { ...x, qty: Math.max(1, qty) } : x)));
   const setPrice = (i: number, unitPrice: number) => setItems((xs) => xs.map((x, k) => (k === i ? { ...x, unitPrice } : x)));
+  const setCost = (i: number, unitCost: number) => setItems((xs) => xs.map((x, k) => (k === i ? { ...x, unitCost } : x)));
   const removeAt = (i: number) => setItems((xs) => xs.filter((_, k) => k !== i));
   const stockOf = (id?: string) => products.find((p) => p.id === id);
 
@@ -286,6 +287,12 @@ function Pos() {
                       )}
                       <small className="faint">{it.kind === 'repuesto' ? 'Repuesto de la OT' : it.kind === 'mano_obra' ? 'Mano de obra' : money(it.unitPrice) + ' c/u'}</small>
                       {over && <div className="red" style={{ fontSize: 12 }}>Solo hay {p!.stock} en stock</div>}
+                      {lacksCost(it) && !it.stockAlreadyMoved && (
+                        <div className="cost-missing" role="note">
+                          <span>Sin costo: la ganancia saldrá igual a la venta. ¿Cuánto le costó?</span>
+                          <div style={{ width: 120 }}><MoneyInput value={it.unitCost} onChange={(v) => setCost(i, v)} placeholder="Costo" /></div>
+                        </div>
+                      )}
                     </div>
                     {it.stockAlreadyMoved || it.kind === 'mano_obra' || it.unitId ? (
                       <span className="mono">{it.qty}</span>

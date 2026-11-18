@@ -7,6 +7,7 @@ import { dateTime, matches, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAction , SkeletonRows } from '../components/ui';
 import { RegisterUnitsModal, UnitsTab } from '../components/PhoneUnits';
+import { ZeroCostSalesModal, useZeroCostSales, type CostFix } from '../components/ZeroCostSales';
 import { DEFAULT_CATEGORIES, categoryOf, guessCategory, sortCategories } from '../lib/categories';
 import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandModelValue } from '../components/BrandModel';
 import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
@@ -234,11 +235,20 @@ export function ProductModal({ edit, onClose, onSaved }: { edit: { id?: string; 
   // Al escribir el costo: precio sugerido automático (si no lo escribió usted)
   const onCost = (cost: number) => setD((x) => ({ ...x, cost, ...(priceTouched ? {} : { price: suggestedPrice(cost, margin) }) }));
 
+  const { can } = useAuth();
+  const fixes = useMemo<CostFix[]>(() => (edit.id && can('settings') && d.cost > 0 ? [{ productId: edit.id, name: d.name, cost: d.cost }] : []), [edit.id, d.cost, d.name, can]);
+  const zeroSales = useZeroCostSales(fixes);
+  const [askZero, setAskZero] = useState<CostFix[] | null>(null);
   const save = () => run(async () => {
     const data = { ...d, sku: d.sku.trim() || (isNew ? nextSku(d.type, all) : d.sku), brand: canonicalBrand(d.brand) };
     const id = await saveProduct(actor, data, edit.id);
     onSaved?.(String(id));
-  }, 'Producto guardado').then((ok) => ok && onClose());
+  }, 'Producto guardado').then((ok) => {
+    if (!ok) return;
+    if (zeroSales.length) setAskZero(fixes);
+    else onClose();
+  });
+  if (askZero) return <ZeroCostSalesModal fixes={askZero} onClose={onClose} />;
 
   return (
     <Modal title={isNew ? 'Nuevo producto' : 'Editar producto'} onClose={onClose}
@@ -307,10 +317,19 @@ function StockModal({ p, kind, onClose }: { p: Product; kind: 'entrada' | 'ajust
   const [qty, setQty] = useState(kind === 'ajuste' ? p.stock : 1);
   const [cost, setCost] = useState(p.cost);
   const [note, setNote] = useState('');
+  const { can } = useAuth();
+  const fixes = useMemo<CostFix[]>(() => (kind === 'entrada' && can('settings') && cost > 0 ? [{ productId: p.id, name: p.name, cost }] : []), [kind, can, cost, p.id, p.name]);
+  const zeroSales = useZeroCostSales(fixes);
+  const [askZero, setAskZero] = useState<CostFix[] | null>(null);
   const go = () => run(
     () => (kind === 'entrada' ? receiveStock(actor, p.id, qty, cost, note) : adjustStock(actor, p.id, qty, note)),
     kind === 'entrada' ? 'Entrada registrada' : 'Ajuste registrado',
-  ).then((ok) => ok && onClose());
+  ).then((ok) => {
+    if (!ok) return;
+    if (zeroSales.length) setAskZero(fixes);
+    else onClose();
+  });
+  if (askZero) return <ZeroCostSalesModal fixes={askZero} onClose={onClose} />;
   return (
     <Modal title={`${kind === 'entrada' ? 'Entrada de mercancía' : 'Ajuste por conteo'} · ${p.name}`} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button><button className="btn primary" disabled={busy} onClick={go}>Registrar</button></>}>
