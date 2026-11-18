@@ -340,6 +340,48 @@ function EditSupplierPaymentModal({ p, index, onClose }: { p: Purchase; index: n
   );
 }
 
+// ---------------- Estado de cuenta de un proveedor ----------------
+/** Cuánto se le debe y en qué compras (la más antigua primero). */
+function SupplierStatement({ supplier, purchases, onPay }: { supplier: Supplier; purchases: Purchase[]; onPay: () => void }) {
+  const sum = supplierSummary(supplier, purchases);
+  const pending = purchases
+    .filter((p) => p.supplierId === supplier.id && purchaseBalance(p) > 0)
+    .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+  return (
+    <div className="stack">
+      <div className="grid g4">
+        <Stat accent label="Le debe" value={<span className={sum.owed ? 'red' : ''}>{money(sum.owed)}</span>} sub={sum.overdue ? `${sum.overdue} compra(s) vencida(s)` : pending.length ? `${pending.length} compra(s) por pagar` : 'Al día'} />
+        <Stat label="Compras a crédito" value={money(sum.credit)} sub="incluye saldo anterior" />
+        <Stat label="Abonado a crédito" value={money(sum.paidOnCredit)} />
+        <Stat label="De contado" value={money(sum.cash)} sub="ya pagadas al comprar" />
+      </div>
+      <div className="faint" style={{ fontSize: 13 }}>Le debe = compras a crédito − abonado ({money(sum.credit)} − {money(sum.paidOnCredit)}). Las compras anuladas no cuentan.</div>
+      {pending.length > 0 && (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Compra</th><th>Fecha</th><th>Detalle</th><th>Vence</th><th className="num">Total</th><th className="num">Abonado</th><th className="num">Saldo</th></tr></thead>
+            <tbody>
+              {pending.map((p) => (
+                <tr key={p.id}>
+                  <td className="mono strong">C-{pad(p.number, 4)}</td>
+                  <td>{dateOnly(p.createdAt)}</td>
+                  <td>{p.kind === 'saldo_inicial' ? 'Saldo anterior' : p.items.map((i) => i.name).join(', ')}</td>
+                  <td>{p.dueDate ? <span className={isOverduePurchase(p) ? 'red' : ''}>{dateOnly(p.dueDate)}</span> : '—'}</td>
+                  <td className="num">{money(p.total)}</td>
+                  <td className="num">{money(p.paid || 0)}</td>
+                  <td className="num strong red">{money(purchaseBalance(p))}</td>
+                </tr>
+              ))}
+              <tr><td className="strong" colSpan={6}>Total que le debe</td><td className="num strong red">{money(sum.owed)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      {sum.owed > 0 && <div><button className="btn primary" onClick={onPay}><HandCoins size={15} />Abonar a {supplier.name}</button></div>}
+    </div>
+  );
+}
+
 // ---------------- Pagos a proveedores ----------------
 function PaymentsTab({ suppliers, purchases }: { suppliers: Supplier[]; purchases: Purchase[] }) {
   const [sid, setSid] = useState('');
@@ -437,7 +479,7 @@ function SupplierList({ suppliers, purchases }: { suppliers: Supplier[]; purchas
                     <td className="num">{sum.owed ? <span className="red strong">{money(sum.owed)}</span> : <Badge tone="ok">Al día</Badge>}{sum.overdue > 0 && <small className="red">{sum.overdue} vencida(s)</small>}</td>
                     <td className="right nowrap">
                       {sum.owed > 0 && <button className="btn sm" onClick={() => setPaying(s)}><HandCoins size={15} />Abonar</button>}
-                      <button className="btn sm ghost" title="Ver los pagos y abonos hechos a este proveedor" onClick={() => setHistory(s)}><History size={15} />Pagos</button>
+                      <button className="btn sm ghost" title="Estado de cuenta: cuánto le debe, en qué compras y los pagos hechos" onClick={() => setHistory(s)}><History size={15} />Estado de cuenta</button>
                       <button className="btn sm ghost" title="Editar" onClick={() => setEdit({ id: s.id, data: { ...EMPTY_SUPPLIER, ...s } })}><Pencil size={15} /></button>
                     </td>
                   </tr>
@@ -450,7 +492,9 @@ function SupplierList({ suppliers, purchases }: { suppliers: Supplier[]; purchas
       {edit && <SupplierModal edit={edit} onClose={() => setEdit(null)} />}
       {paying && <SupplierPayModal supplier={paying} onClose={() => setPaying(null)} />}
       {history && (
-        <Modal wide title={`Pagos a ${history.name}`} onClose={() => setHistory(null)}>
+        <Modal wide title={`Estado de cuenta · ${history.name}`} onClose={() => setHistory(null)}>
+          <SupplierStatement supplier={history} purchases={purchases} onPay={() => { setPaying(history); setHistory(null); }} />
+          <h3 style={{ margin: '18px 0 6px' }}>Pagos y abonos</h3>
           <PaymentsList purchases={purchases} supplierId={history.id} />
         </Modal>
       )}

@@ -697,3 +697,8 @@ el servidor reintenta con su modelo de respaldo.
 - **Pagos viejos:** `unlinkedCashPayments` lista los «Pago a proveedor» manuales sin aplicar. En Compras sale un aviso y, en la pestaña «Pagos a proveedores», la tabla «Pagos desde Caja que no descontaron la deuda» (solo el admin). El proveedor viene sugerido por el nombre escrito (`guessSupplier`). **Descontar** (`linkCashPayment`) aplica el valor a sus compras sin crear otro egreso: el pago queda con `cashMovementId` y el movimiento con `refType: 'purchase'`, `linkedAt`, `linkedBy` y `linkedPurchases`. Si el valor supera la deuda, no se aplica: primero hay que registrar la compra que falta.
 - `applyToPurchases` reparte un abono entre compras (lo usan `paySupplier` y `linkCashPayment`).
 - Reglas: el admin puede marcar una sola vez un «Pago a proveedor» manual como aplicado (solo esos campos).
+
+## 63. Estado de cuenta del proveedor
+
+- En Compras → Proveedores y saldos, el botón «Pagos» ahora se llama **Estado de cuenta** (`SupplierStatement`). Muestra cuánto se le debe (con la fórmula compras a crédito − abonado), las compras por pagar con total, abonado, saldo y vencimiento (la más antigua primero), el total y el botón «Abonar». Debajo sigue la lista de pagos y abonos.
+- Prueba e2e: proveedor con saldo anterior → Estado de cuenta muestra la deuda.

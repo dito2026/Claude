@@ -200,6 +200,20 @@ try {
     await page.waitForSelector('.toast:has-text("Abono registrado")');
   });
 
+  await check('estado de cuenta del proveedor muestra cuánto se le debe', async () => {
+    await page.goto(BASE + '/compras');
+    await page.click('.tabs button:has-text("Proveedores")');
+    await page.click('button:has-text("Nuevo proveedor")');
+    await page.locator('.modal input').first().fill('Cuenta E2E');
+    await page.locator('.modal label.field:has-text("Saldo anterior") input').fill('120000');
+    await page.click('.modal .modal-foot button.primary');
+    await page.locator('tr:has-text("Cuenta E2E") button:has-text("Estado de cuenta")').click();
+    await page.waitForSelector('.modal .stat:has-text("Le debe")');
+    const txt = await page.locator('.modal').innerText();
+    assert(txt.includes('Total que le debe') && txt.includes('120.000'), 'no muestra la deuda de 120.000');
+    await page.keyboard.press('Escape');
+  });
+
   await check('Caja → Pago a proveedor pide el proveedor y baja su deuda', async () => {
     await page.goto(BASE + '/compras');
     await page.click('.tabs button:has-text("Proveedores")');
