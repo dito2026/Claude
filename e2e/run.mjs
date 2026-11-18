@@ -251,6 +251,31 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await check('encimar vidrio: obsequio en $0, deuda al proveedor y resumen en Contabilidad', async () => {
+    await page.goto(BASE + '/facturacion');
+    await page.locator('.product-grid > *', { hasText: 'Cargador' }).first().click();
+    await page.click('button:has-text("Encimar vidrio")');
+    await page.waitForSelector('.modal:has-text("Encimar vidrio")');
+    const enc = page.locator('.modal button:has-text("Encimar")').last();
+    assert(await enc.isDisabled(), 'sin precio ni proveedor no se debía poder encimar');
+    await page.locator('.modal label.field:has-text("Precio que le cobra") input').fill('3000');
+    const opt = await page.locator('.modal select option', { hasText: 'Pepe E2E' }).first().getAttribute('value');
+    await page.locator('.modal label.field:has-text("Proveedor") select').selectOption(opt);
+    await enc.click();
+    await page.waitForSelector('.gift-note:has-text("se le debe a Pepe E2E")');
+    await page.click('.pay-methods button:has-text("Efectivo")');
+    await page.click('button:has-text("Cobrar")');
+    await page.waitForSelector('.toast:has-text("Venta registrada")');
+    await page.keyboard.press('Escape');
+    await page.goto(BASE + '/contabilidad');
+    await page.click('.tabs button:has-text("Encimados")');
+    await page.waitForSelector('.stat:has-text("Gasto en encimados"):has-text("3.000")');
+    await page.waitForSelector('td:has-text("Pepe E2E")');
+    await page.goto(BASE + '/compras');
+    await page.click('.tabs button:has-text("Proveedores")');
+    await page.waitForSelector('tr:has-text("Pepe E2E") button:has-text("Abonar")');
+  });
+
   await check('sin internet: la app abre y cambia de pantalla (pantallas guardadas)', async () => {
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.waitForFunction(async () => {

@@ -708,3 +708,12 @@ el servidor reintenta con su modelo de respaldo.
 - **«¿A qué compra corresponde?»** en Abonar (`SupplierPayModal`) y en «Descontar» de los pagos viejos de Caja. Se escoge la compra y el valor se llena con su saldo. Se aplica primero a esa compra y el resto a la más antigua (`payOrder`). En «Descontar», si el valor del pago es igual al saldo de una compra, esa queda sugerida.
 - **«Ya se pagó por fuera de la caja de hoy»** (solo administrador): `paySupplier(..., { outsideCash: true })` baja la deuda sin crear egreso. El pago queda con `outsideCash: true`. Al corregir ese pago no se ajusta la caja, y al anular la compra no se devuelve a la caja.
 - En la lista de pagos, el medio indica «fuera de la caja» o «desde Caja, aplicado después».
+
+## 65. Encimar vidrio (obsequio comprado a un proveedor)
+
+- **Facturación → «Encimar vidrio»** (`GiftModal`): sirve en ventas y al facturar reparaciones. Se escoge qué se encima (chips: vidrio templado, cerámico, hidrogel, forro, o texto libre), el precio que cobra el proveedor, la cantidad y el proveedor (se recuerda el último). La línea va con precio $0 («Obsequio») y `unitCost` = precio del proveedor, con `gift: { supplierId, supplierName }`.
+- **Al cobrar** (`createInvoice`, en la misma transacción) se crea una compra a crédito por proveedor con lo encimado (nota «Encimado en la factura N»). El vencimiento sale del plazo del proveedor y la factura guarda `gift.purchaseId`/`purchaseNumber`. La deuda se paga desde Compras → Abonar.
+- **Ganancia:** el costo de lo encimado se resta de la ganancia de esa venta (historial, caja, informes y comisión sobre utilidad). En la contabilidad por módulo cuenta en la línea de la venta que acompañó (`gift.line`), no en Accesorios.
+- **Contabilidad → Encimados** (`giftReport`): gasto del período, cantidad, ventas, costo promedio, lo que aún se debe, totales por proveedor y el detalle (fecha, factura, cliente, vendedor, qué, costo, proveedor, compra y su estado). Tiene descarga a Excel.
+- Validaciones: precio > 0, proveedor existente y precio al cliente $0. Las facturas de remisión aceptan encimados.
+- Pruebas: `gifts.test.ts` y una prueba e2e (encimar → cobrar → Contabilidad → deuda en Compras).

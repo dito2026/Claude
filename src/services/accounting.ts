@@ -5,6 +5,7 @@ import { CREDIT_METHOD } from '../lib/types';
 import { purchaseBalance } from './purchases';
 import { buildXlsx, saveFile, XLSX_MIME } from '../lib/xlsx';
 import { tracksStock } from './inventory';
+import { sum } from './common';
 
 export type PeriodKind = 'hoy' | '7dias' | 'mes' | 'mes_anterior' | 'anio' | 'rango';
 
@@ -58,6 +59,8 @@ export type Line = 'Equipos' | 'Accesorios' | 'Servicio técnico';
 export const LINES: Line[] = ['Equipos', 'Accesorios', 'Servicio técnico'];
 
 export function lineOf(it: InvoiceItem, products: Map<string, Product>): Line {
+  // lo encimado es gasto de la venta que acompañó (celular, reparación o accesorio)
+  if (it.gift?.line) return it.gift.line;
   if (it.unitId) return 'Equipos';
   if (it.kind === 'mano_obra' || it.kind === 'repuesto') return 'Servicio técnico';
   const p = it.productId ? products.get(it.productId) : undefined;
@@ -315,4 +318,51 @@ export function downloadExcel(filename: string, rows: (string | number)[][]) {
   const name = filename.replace(/\.csv$/i, '') + '.xlsx';
   const sheet = name.replace(/\.xlsx$/, '').split('_')[0].replace(/-/g, ' ');
   void saveFile(name, buildXlsx(rows, sheet), XLSX_MIME);
+}
+
+export interface GiftRow {
+  invoiceId: string; invoiceNumber: number; at: string; customer: string; seller?: string;
+  description: string; qty: number; cost: number; supplierId: string; supplierName: string;
+  purchaseId?: string; purchaseNumber?: number; purchaseStatus?: Purchase['status'];
+}
+
+/** Lo encimado (obsequios comprados a proveedores) en el período: cuánto costó, a quién se le debe y en qué ventas. */
+export function giftReport(period: Period, invoices: Invoice[], purchases: Purchase[]) {
+  const byId = new Map(purchases.map((p) => [p.id, p]));
+  const rows: GiftRow[] = [];
+  for (const inv of invoices) {
+    if (inv.status === 'anulada' || !inPeriod(inv.createdAt, period)) continue;
+    for (const it of inv.items) {
+      if (!it.gift) continue;
+      const p = it.gift.purchaseId ? byId.get(it.gift.purchaseId) : undefined;
+      rows.push({
+        invoiceId: inv.id, invoiceNumber: inv.number, at: inv.createdAt ?? '', customer: inv.customer.name || 'Consumidor final', seller: inv.sellerName,
+        description: it.description, qty: it.qty, cost: it.qty * it.unitCost, supplierId: it.gift.supplierId, supplierName: it.gift.supplierName,
+        purchaseId: it.gift.purchaseId, purchaseNumber: it.gift.purchaseNumber, purchaseStatus: p?.status,
+      });
+    }
+  }
+  rows.sort((a, b) => b.at.localeCompare(a.at));
+  const bySupplier = new Map<string, { name: string; qty: number; cost: number; owed: number }>();
+  for (const r of rows) {
+    const x = bySupplier.get(r.supplierId) ?? { name: r.supplierName, qty: 0, cost: 0, owed: 0 };
+    x.qty += r.qty;
+    x.cost += r.cost;
+    bySupplier.set(r.supplierId, x);
+  }
+  // lo que todavía se le debe por esas compras (una compra puede tener varias líneas)
+  for (const id of new Set(rows.map((r) => r.purchaseId).filter(Boolean) as string[])) {
+    const p = byId.get(id);
+    if (!p || p.status === 'anulada') continue;
+    const x = bySupplier.get(p.supplierId);
+    if (x) x.owed += Math.max(0, p.total - (p.paid || 0));
+  }
+  return {
+    rows,
+    qty: sum(rows.map((r) => r.qty)),
+    cost: sum(rows.map((r) => r.cost)),
+    sales: new Set(rows.map((r) => r.invoiceId)).size,
+    owed: sum([...bySupplier.values()].map((x) => x.owed)),
+    suppliers: [...bySupplier.entries()].map(([id, x]) => ({ id, ...x })).sort((a, b) => b.cost - a.cost),
+  };
 }

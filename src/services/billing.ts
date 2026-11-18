@@ -1,5 +1,5 @@
 import { backend, type Tx } from '../data';
-import type { CustomerRef, Invoice, InvoiceItem, Payment, PhoneUnit, Product, RepairOrder, Seller } from '../lib/types';
+import type { CustomerRef, Invoice, InvoiceItem, Payment, PhoneUnit, Product, Purchase, RepairOrder, Seller, Supplier } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { addDays } from '../lib/format';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
@@ -8,6 +8,7 @@ import { moveStock } from './inventory';
 import { depositsTotal } from './orders';
 import { addMonths, isPhone, markAvailable, markSold } from './phones';
 import { computeCommission } from './sellers';
+import { lineOf, type Line } from './accounting';
 import { readRemissionForInvoice, revertRemissionSale, writeRemissionSale } from './remissions';
 import type { Remission } from '../lib/types';
 
@@ -66,6 +67,9 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
   const items = draft.items.filter((i) => i.qty > 0);
   if (items.length === 0) throw new BusinessError('Agregue al menos un producto o servicio.');
   if (items.some((i) => i.unitPrice < 0)) throw new BusinessError('Hay precios negativos.');
+  const gifts = items.filter((i) => i.gift);
+  if (gifts.some((i) => !(i.unitCost > 0) || !i.gift!.supplierId)) throw new BusinessError('En lo encimado escriba el precio y el proveedor.');
+  if (gifts.some((i) => i.unitPrice !== 0)) throw new BusinessError('Lo encimado va sin cobro al cliente (precio $0).');
   const totals = computeTotals(items, draft.discount, draft.taxRate);
   const payments = draft.payments.filter((p) => p.amount > 0);
   if (payments.some((p) => !p.method?.trim())) throw new BusinessError('Elija el medio de pago (efectivo, transferencia, Nequi…).');
@@ -115,8 +119,9 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
     // Remisión: cada línea debe salir de la remisión y tener pendiente
     let remission: Remission | null = null;
     if (draft.remissionId) {
-      if (items.some((i) => !i.remissionLineId || !i.stockAlreadyMoved)) throw new BusinessError('Todas las líneas deben salir de la remisión.');
-      remission = await readRemissionForInvoice(tx, draft.remissionId, items);
+      const fromRemission = items.filter((i) => !i.gift);
+      if (fromRemission.some((i) => !i.remissionLineId || !i.stockAlreadyMoved)) throw new BusinessError('Todas las líneas deben salir de la remisión.');
+      remission = await readRemissionForInvoice(tx, draft.remissionId, fromRemission);
     } else if (items.some((i) => i.remissionLineId)) {
       throw new BusinessError('Línea de remisión sin remisión.');
     }
@@ -140,11 +145,50 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
       units.set(u.id, u);
     }
 
+    // Encimados: proveedor y consecutivo de compras (una compra a crédito por proveedor)
+    const giftSuppliers = new Map<string, Supplier>();
+    for (const it of gifts) {
+      const sid = it.gift!.supplierId;
+      if (giftSuppliers.has(sid)) continue;
+      const s = await tx.get<Supplier>('suppliers', sid);
+      if (!s) throw new BusinessError(`Proveedor no encontrado para «${it.description}».`);
+      giftSuppliers.set(sid, { ...s, id: sid });
+    }
+    let purchaseNumber = giftSuppliers.size ? await readNext(tx, 'purchases') - 1 : 0;
+
     // ---------- ESCRITURAS ----------
     writeCounter(tx, 'invoices', number);
     const now = new Date().toISOString();
+    const giftPurchase = new Map<string, { id: string; number: number }>();
+    for (const [sid, s] of giftSuppliers) {
+      const lines = gifts.filter((i) => i.gift!.supplierId === sid);
+      const total = sum(lines.map((i) => i.qty * i.unitCost));
+      purchaseNumber += 1;
+      const doc: Omit<Purchase, 'id'> = {
+        number: purchaseNumber, kind: 'compra', supplierId: sid, supplierName: s.name,
+        items: lines.map((i) => ({ productId: '', name: i.description, qty: i.qty, unitCost: i.unitCost })),
+        total, paymentType: 'credito', invoiceRef: '', dueDate: addDays(now, s.termDays || 30),
+        paid: 0, payments: [], status: 'pendiente',
+        note: `Encimado en la factura ${number} · ${draft.customer.name || 'Consumidor final'}`,
+        ...created(actor),
+      };
+      giftPurchase.set(sid, { id: tx.create('purchases', doc), number: purchaseNumber });
+    }
+    if (giftSuppliers.size) writeCounter(tx, 'purchases', purchaseNumber);
     // Celulares: la garantía (meses y vencimiento) queda escrita en la línea del comprobante
+    // Línea de negocio de lo encimado: la de la venta que acompaña (la que más vendió en esta factura)
+    let giftLine: Line = 'Accesorios';
+    if (gifts.length) {
+      const byLine = new Map<Line, number>();
+      for (const it of items) if (!it.gift) { const l = lineOf(it, products); byLine.set(l, (byLine.get(l) ?? 0) + it.qty * it.unitPrice); }
+      giftLine = [...byLine.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Accesorios';
+    }
     const saleItems = items.map((it) => {
+      if (it.gift) {
+        const s = giftSuppliers.get(it.gift.supplierId)!;
+        const gp = giftPurchase.get(it.gift.supplierId)!;
+        return { ...it, gift: { supplierId: s.id, supplierName: s.name, purchaseId: gp.id, purchaseNumber: gp.number, line: giftLine } };
+      }
       const u = it.unitId ? units.get(it.unitId) : undefined;
       if (!u) return it;
       const months = Math.max(0, Math.round(it.warrantyMonths ?? u.warrantyMonths ?? 0));

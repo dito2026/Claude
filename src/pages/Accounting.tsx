@@ -6,7 +6,7 @@ import { dateOnly, dateTime, money } from '../lib/format';
 import { Badge, Empty, Field, PageHead, Seg, Stat } from '../components/ui';
 import { useSettings } from '../services/settings';
 import {
-  balanceToday, buildReport, dayKey, moduleReport, downloadExcel, fiscalBook, fiscalSign, inPeriod, periodRange, yearSales, type PeriodKind,
+  balanceToday, buildReport, dayKey, giftReport, moduleReport, downloadExcel, fiscalBook, fiscalSign, inPeriod, periodRange, yearSales, type PeriodKind,
 } from '../services/accounting';
 
 const PERIODS: { value: PeriodKind; label: string }[] = [
@@ -27,7 +27,7 @@ const pct = (v: number, total: number) => (total > 0 ? `${Math.round((v / total)
 const fmtDay = (k: string) => k.split('-').reverse().join('/');
 const isoDate = (d: Date) => dayKey(d.toISOString());
 
-type Tab = 'resultados' | 'modulos' | 'fiscal' | 'caja' | 'balance';
+type Tab = 'resultados' | 'modulos' | 'fiscal' | 'caja' | 'encimados' | 'balance';
 
 const MODULE_NAME: Record<string, string> = { Equipos: 'Celulares', Accesorios: 'Accesorios', 'Servicio técnico': 'Servicio técnico' };
 
@@ -63,6 +63,14 @@ export function Accounting() {
   const yearIncome = yearSales(invoices);
   const capPct = cap > 0 ? yearIncome / cap : 0;
 
+  const gifts = useMemo(() => giftReport(period, invoices, purchases), [period, invoices, purchases]);
+  const exportGifts = () => downloadExcel(`encimados_${fileTag}.csv`, [
+    ['Fecha', 'Factura', 'Cliente', 'Vendedor', 'Qué se encimó', 'Cantidad', 'Costo', 'Proveedor', 'Compra', 'Estado de la compra'],
+    ...gifts.rows.map((r) => [dateTime(r.at), r.invoiceNumber, r.customer, r.seller ?? '', r.description, r.qty, r.cost, r.supplierName,
+      r.purchaseNumber ? `C-${String(r.purchaseNumber).padStart(4, '0')}` : '', r.purchaseStatus ?? '']),
+    [],
+    ['Total', '', '', '', '', gifts.qty, gifts.cost],
+  ]);
   const exportResults = () => downloadExcel(`estado-resultados_${fileTag}.csv`, [
     ['Digital Cell · Estado de resultados', label],
     [],
@@ -144,6 +152,7 @@ export function Accounting() {
         <button className={tab === 'modulos' ? 'active' : ''} onClick={() => setTab('modulos')}>Por módulo</button>
         <button className={tab === 'fiscal' ? 'active' : ''} onClick={() => setTab('fiscal')}>Libro fiscal diario</button>
         <button className={tab === 'caja' ? 'active' : ''} onClick={() => setTab('caja')}>Libro de caja</button>
+        <button className={tab === 'encimados' ? 'active' : ''} onClick={() => setTab('encimados')}>Encimados</button>
         <button className={tab === 'balance' ? 'active' : ''} onClick={() => setTab('balance')}>Resumen del negocio</button>
       </div>
 
@@ -327,6 +336,8 @@ export function Accounting() {
         </div>
       )}
 
+      {tab === 'encimados' && <GiftsTab gifts={gifts} label={label} onExport={exportGifts} />}
+
       {tab === 'balance' && (
         <div className="grid g2">
           <div className="card">
@@ -356,5 +367,55 @@ export function Accounting() {
         </div>
       )}
     </>
+  );
+}
+
+const PURCHASE_STATUS: Record<string, string> = { pendiente: 'Por pagar', parcial: 'Abono parcial', pagada: 'Pagada', anulada: 'Anulada' };
+
+/** Resumen de lo encimado (obsequios comprados a proveedores) en el período. */
+function GiftsTab({ gifts, label, onExport }: { gifts: ReturnType<typeof giftReport>; label: string; onExport: () => void }) {
+  return (
+    <div className="stack">
+      <div className="grid g4">
+        <Stat accent label="Gasto en encimados" value={money(gifts.cost)} sub={label} />
+        <Stat label="Artículos encimados" value={gifts.qty} sub={`en ${gifts.sales} venta(s)`} />
+        <Stat label="Costo promedio" value={money(gifts.qty ? Math.round(gifts.cost / gifts.qty) : 0)} sub="por artículo" />
+        <Stat label="Se le debe a proveedores" value={<span className={gifts.owed ? 'red' : ''}>{money(gifts.owed)}</span>} sub="por estas compras" />
+      </div>
+      {gifts.rows.length === 0 ? <div className="card"><Empty>No se encimó nada en este período. En Facturación use «Encimar vidrio».</Empty></div> : <>
+        <div className="card">
+          <div className="card-head"><h3>Por proveedor</h3></div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Proveedor</th><th className="num">Cantidad</th><th className="num">Costo</th><th className="num">Aún se le debe</th></tr></thead>
+              <tbody>{gifts.suppliers.map((s) => (
+                <tr key={s.id}><td className="strong">{s.name}</td><td className="num">{s.qty}</td><td className="num">{money(s.cost)}</td>
+                  <td className="num">{s.owed ? <span className="red strong">{money(s.owed)}</span> : <Badge tone="ok">Pagado</Badge>}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head"><h3>Detalle · {gifts.rows.length} encimado(s)</h3><button className="btn sm" onClick={onExport}><Download size={15} />Excel</button></div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Fecha</th><th>Factura</th><th>Cliente</th><th>Qué</th><th className="num">Costo</th><th>Proveedor</th><th>Compra</th></tr></thead>
+              <tbody>{gifts.rows.map((r, i) => (
+                <tr key={`${r.invoiceId}-${i}`}>
+                  <td>{dateTime(r.at)}</td>
+                  <td className="mono">{String(r.invoiceNumber).padStart(6, '0')}</td>
+                  <td>{r.customer}{r.seller && <small className="faint">Vendió {r.seller}</small>}</td>
+                  <td>{r.qty > 1 ? `${r.qty}× ` : ''}{r.description}</td>
+                  <td className="num strong">{money(r.cost)}</td>
+                  <td>{r.supplierName}</td>
+                  <td>{r.purchaseNumber ? <><span className="mono">C-{String(r.purchaseNumber).padStart(4, '0')}</span> <small>{PURCHASE_STATUS[r.purchaseStatus ?? ''] ?? ''}</small></> : '—'}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      </>}
+      <div className="faint" style={{ fontSize: 12 }}>El costo de lo encimado ya está restado en la ganancia de cada venta (y en «Costo de ventas» del estado de resultados). La deuda se paga en Compras → Proveedores y saldos → Abonar.</div>
+    </div>
   );
 }

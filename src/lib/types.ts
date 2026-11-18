@@ -252,6 +252,11 @@ export interface InvoiceItem {
   /** celulares: meses de garantía dados en esta venta y fecha en que vence */
   warrantyMonths?: number;
   warrantyUntil?: string;
+  /**
+   * Encimado (obsequio, p. ej. un vidrio templado): el cliente no lo paga (precio 0) y su costo baja la ganancia.
+   * Se compró a un proveedor: al facturar queda la deuda (compra a crédito).
+   */
+  gift?: { supplierId: string; supplierName: string; purchaseId?: string; purchaseNumber?: number; line?: 'Equipos' | 'Accesorios' | 'Servicio técnico' };
 }
 
 export interface Payment {

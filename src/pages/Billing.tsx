@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Ban, HandCoins, Minus, PenLine, Plus, Trash2, Wrench, X } from 'lucide-react';
+import { Ban, Gift, HandCoins, Minus, PenLine, Plus, Trash2, Wrench, X } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { Customer, Invoice, InvoiceItem, InvoiceItemKind, Payment, PhoneUnit, Product, RepairOrder, Seller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
@@ -64,6 +64,7 @@ function Pos() {
   const [received, setReceived] = useState(0);
   const [done, setDone] = useState<Invoice | null>(null);
   const [freeItem, setFreeItem] = useState(false);
+  const [gift, setGift] = useState(false);
 
   // Cargar la OT a facturar
   useEffect(() => {
@@ -207,9 +208,12 @@ function Pos() {
             <button className="btn sm ghost" onClick={reset}><X size={15} />Quitar</button>
           </div>
         ) : null}
-        <div className="row gap-sm" style={{ flexWrap: 'nowrap' }}>
-          <div className="grow"><SearchBox value={q} onChange={setQ} onEnter={quickAdd} autoFocus placeholder="Buscar, escanear código o IMEI y Enter…" /></div>
-          <button className="btn" onClick={() => setFreeItem(true)} title="Vender algo que no está en el inventario"><PenLine size={16} />Artículo libre</button>
+        <div className="row gap-sm" style={{ flexWrap: 'wrap' }}>
+          <div className="grow" style={{ minWidth: 220 }}><SearchBox value={q} onChange={setQ} onEnter={quickAdd} autoFocus placeholder="Buscar, escanear código o IMEI y Enter…" /></div>
+          <div className="row gap-sm" style={{ flexWrap: 'nowrap' }}>
+            <button className="btn" onClick={() => setFreeItem(true)} title="Vender algo que no está en el inventario"><PenLine size={16} />Artículo libre</button>
+            <button className="btn" onClick={() => setGift(true)} title="Regalarle al cliente un vidrio (u otro artículo) comprado a un proveedor: el cliente no lo paga y queda la deuda con el proveedor"><Gift size={16} />Encimar vidrio</button>
+          </div>
         </div>
         <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />
         <div className="cat-bar">
@@ -285,7 +289,9 @@ function Pos() {
                           </select>
                         </label>
                       )}
-                      <small className="faint">{it.kind === 'repuesto' ? 'Repuesto de la OT' : it.kind === 'mano_obra' ? 'Mano de obra' : money(it.unitPrice) + ' c/u'}</small>
+                      {it.gift
+                        ? <small className="gift-note"><Gift size={12} /> Encimado · costo {money(it.qty * it.unitCost)} · se le debe a {it.gift.supplierName}</small>
+                        : <small className="faint">{it.kind === 'repuesto' ? 'Repuesto de la OT' : it.kind === 'mano_obra' ? 'Mano de obra' : money(it.unitPrice) + ' c/u'}</small>}
                       {over && <div className="red" style={{ fontSize: 12 }}>Solo hay {p!.stock} en stock</div>}
                       {lacksCost(it) && !it.stockAlreadyMoved && (
                         <div className="cost-missing" role="note">
@@ -303,7 +309,8 @@ function Pos() {
                         <button className="btn sm ghost" onClick={() => setQty(i, it.qty + 1)}><Plus size={13} /></button>
                       </div>
                     )}
-                    <div style={{ width: 110 }}><MoneyInput value={it.unitPrice} onChange={(v) => setPrice(i, v)} /></div>
+                    {it.gift ? <div style={{ width: 110 }} className="num strong">Obsequio</div>
+                      : <div style={{ width: 110 }}><MoneyInput value={it.unitPrice} onChange={(v) => setPrice(i, v)} /></div>}
                     {(!order || (!it.stockAlreadyMoved && it.kind !== 'mano_obra')) && <button className="btn sm ghost" onClick={() => removeAt(i)}><Trash2 size={14} /></button>}
                   </div>
                 );
@@ -359,6 +366,7 @@ function Pos() {
       {done && <InvoiceModal inv={done} s={settings} onClose={() => setDone(null)} />}
  {picker && <UnitPickerModal product={picker} exclude={items.map((x) => x.unitId ?? '')} onPick={addUnit} onClose={() => setPicker(null)} />}
       {freeItem && <FreeItemModal onClose={() => setFreeItem(false)} onAdd={(it) => setItems((xs) => [...xs, it])} />}
+      {gift && <GiftModal onClose={() => setGift(false)} onAdd={(it) => setItems((xs) => [...xs, it])} />}
     </div>
   );
 }
@@ -516,6 +524,55 @@ function FreeItemModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it: In
       </div>
       <div className="mt"><BuyFromSupplierFields value={buy} onChange={setBuy} /></div>
       <div className="faint mt" style={{ fontSize: 12 }}>No descuenta inventario. La venta, el costo y la utilidad sí quedan registrados en la factura y en la caja.</div>
+    </Modal>
+  );
+}
+
+const GIFT_SUPPLIER_KEY = 'dcpro:giftSupplier';
+const GIFT_NAMES = ['Vidrio templado', 'Vidrio cerámico', 'Hidrogel', 'Forro'];
+
+/** Encimar (regalar) un vidrio u otro artículo comprado a un proveedor: precio 0 al cliente, costo a la venta, deuda al proveedor. */
+function GiftModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it: InvoiceItem) => void }) {
+  const suppliers = useSuppliers().filter((s) => s.active !== false).sort((a, b) => a.name.localeCompare(b.name));
+  const [name, setName] = useState(GIFT_NAMES[0]);
+  const [qty, setQty] = useState(1);
+  const [cost, setCost] = useState(0);
+  const [supplierId, setSupplierId] = useState(() => {
+    try { return localStorage.getItem(GIFT_SUPPLIER_KEY) ?? ''; } catch { return ''; }
+  });
+  const supplier = suppliers.find((s) => s.id === supplierId);
+  const ok = name.trim() && qty > 0 && cost > 0 && supplier;
+  const add = () => {
+    if (!supplier) return;
+    try { localStorage.setItem(GIFT_SUPPLIER_KEY, supplier.id); } catch { /* sin almacenamiento */ }
+    onAdd({ description: `${name.trim()} (obsequio)`, kind: 'producto', qty, unitPrice: 0, unitCost: cost, gift: { supplierId: supplier.id, supplierName: supplier.name } });
+    onClose();
+  };
+  return (
+    <Modal title="Encimar vidrio (obsequio)" onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={!ok} onClick={add}><Gift size={16} />Encimar</button></>}>
+      <div className="stack">
+        <div className="cat-bar" role="group" aria-label="Qué se encima">
+          {GIFT_NAMES.map((n) => <button key={n} type="button" className={`cat-chip ${name === n ? 'active' : ''}`} onClick={() => setName(n)}>{n}</button>)}
+        </div>
+        <div className="form-grid">
+          <Field label="Qué se encima" required className="full"><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+          <Field label="Precio que le cobra el proveedor (c/u)" required><MoneyInput value={cost} onChange={setCost} autoFocus placeholder="Ej.: 3k" /></Field>
+          <Field label="Cantidad"><input className="input num" type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))} /></Field>
+          <Field label="Proveedor" required className="full">
+            <select className="input" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+              <option value="">Seleccione…</option>
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            {suppliers.length === 0 && <small className="muted">Primero cree el proveedor en Compras → Proveedores y saldos.</small>}
+          </Field>
+        </div>
+        <div className="faint" style={{ fontSize: 12 }}>
+          El cliente no lo paga: sale en la factura como obsequio en $0. El costo ({money(qty * cost)}) baja la ganancia de esta venta y, al cobrar,
+          queda como deuda con el proveedor (compra a crédito) para pagarle desde Compras. Lo ve en Contabilidad → Encimados.
+        </div>
+      </div>
     </Modal>
   );
 }
