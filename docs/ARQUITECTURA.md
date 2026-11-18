@@ -673,3 +673,11 @@ el servidor reintenta con su modelo de respaldo.
 - **Seguridad al cambiar de usuario o de rol** (`AuthContext`): `resetCollections()` descarta los datos guardados y las pantallas abiertas los vuelven a pedir con los permisos nuevos. Si una lectura falla por permisos, la suscripción se cierra apenas nadie la usa, para que se pueda reintentar.
 - **Consultas por fecha: no se aplicaron.** Saldos de vendedores, técnicos, créditos de tienda y proveedores, el kardex y la contabilidad por rango usan el historial completo. Limitar la descarga a «últimos N días» daría saldos equivocados. Con la caché persistente de Firestore y la suscripción compartida el costo es bajo. Si las colecciones crecen mucho (decenas de miles de documentos), el siguiente paso es guardar los saldos en el documento de cada persona y cargar por fecha solo los listados.
 - Prueba e2e nueva: cerrar sesión y entrar como técnico (permisos y datos del usuario nuevo).
+
+## 60. Corregir el costo de una compra recalcula las ventas ya hechas
+
+- Problema: al vender, la factura guarda el costo de cada línea (`unitCost`). Corregir el valor de la compra cambiaba el costo del celular en inventario, pero la ganancia de la venta ya hecha seguía con el costo viejo.
+- `prepareInvoiceCostFix` (billing.ts) corrige las líneas de una factura, recalcula la comisión si es «sobre utilidad» y guarda los valores anteriores en `invoice.costEdits`.
+- `editPurchase`: celulares → la factura de cada IMEI vendido (y el costo del equipo, también si está remisionado o vendido). Productos sin IMEI → las ventas desde esta compra hasta la siguiente compra del mismo producto, con el costo de la compra (actual o de antes de corregirla). Guardar la compra sin cambios vuelve a aplicarlo a ventas que quedaron con el costo viejo. El aviso dice en cuántas ventas se recalculó.
+- `editUsedPurchase`: si el equipo ya se vendió, su venta toma el precio corregido como costo.
+- Reglas: el admin puede actualizar en `invoices` solo `items`, `commission`, `costEdits` y `updatedAt`, con las mismas líneas y una entrada más en `costEdits`.

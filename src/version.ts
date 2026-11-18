@@ -1,2 +1,2 @@
 // Versión visible en el menú: se actualiza con cada cambio para saber qué está publicado.
-export const APP_VERSION = '2026.11.15d · fase 4';
+export const APP_VERSION = '2026.11.18 · costo en ventas';

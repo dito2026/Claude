@@ -1,4 +1,4 @@
-import { backend } from '../data';
+import { backend, type Tx } from '../data';
 import type { CustomerRef, Invoice, InvoiceItem, Payment, PhoneUnit, Product, RepairOrder, Seller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
 import { addDays } from '../lib/format';
@@ -338,5 +338,46 @@ export async function collectCredit(actor: Actor, invoiceId: string, amount: num
     const creditPayments = [...(inv.creditPayments ?? []), { at, amount, method, by: actor.name }];
     tx.update('invoices', inv.id, { creditPayments, status: amount === balance ? 'pagada' : 'credito', ...touched() });
     return { balance: balance - amount };
+  });
+}
+
+/**
+ * Corrige el costo de líneas de una venta ya hecha (cuando se corrige el valor de la compra).
+ * Así la ganancia de la factura, de la caja, de los informes y la comisión «sobre utilidad» quedan bien.
+ * Hace solo LECTURAS y devuelve la escritura para llamarla después (regla de las transacciones).
+ * `newCost` devuelve el costo nuevo de la línea, o undefined si esa línea no cambia.
+ */
+export async function prepareInvoiceCostFix(
+  tx: Tx, actor: Actor, invoiceId: string, newCost: (it: InvoiceItem) => number | undefined, reason: string,
+): Promise<(() => void) | null> {
+  const inv = await tx.get<Invoice>('invoices', invoiceId);
+  if (!inv || inv.status === 'anulada') return null;
+  const before: { index: number; unitCost: number }[] = [];
+  const items = inv.items.map((it, index) => {
+    const c = newCost(it);
+    if (c === undefined || c === it.unitCost) return it;
+    before.push({ index, unitCost: it.unitCost });
+    return { ...it, unitCost: c };
+  });
+  if (before.length === 0) return null;
+  let commission = inv.commission;
+  if (inv.sellerId && inv.commissionBase === 'utilidad' && inv.commissionPct) {
+    const seller = await tx.get<Seller>('sellers', inv.sellerId);
+    const products = new Map<string, Product>();
+    for (const it of items) {
+      if (!it.productId || products.has(it.productId)) continue;
+      const p = await tx.get<Product>('products', it.productId);
+      if (p) products.set(p.id, p);
+    }
+    commission = computeCommission({ commissionPct: inv.commissionPct, commissionBase: 'utilidad', lines: seller?.lines }, items, inv.discount, products);
+  }
+  return () => tx.update('invoices', inv.id, {
+    items,
+    ...(commission !== inv.commission ? { commission } : {}),
+    costEdits: [...(inv.costEdits ?? []), {
+      at: new Date().toISOString(), by: actor.name, reason, items: before,
+      ...(commission !== inv.commission && inv.commission !== undefined ? { commission: inv.commission } : {}),
+    }],
+    ...touched(),
   });
 }

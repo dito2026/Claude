@@ -2,7 +2,8 @@
 // Igual que las hojas «Compras» y «Proveedores» de Digital Cell POS:
 // lo comprado a crédito no sale de caja hasta el día en que se abona.
 import { backend } from '../data';
-import type { PhoneUnit, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
+import type { Invoice, PhoneUnit, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
+import { prepareInvoiceCostFix } from './billing';
 import { CREDIT_METHOD } from '../lib/types';
 import { addDays } from '../lib/format';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
@@ -400,7 +401,10 @@ export interface PurchaseLineFix {
 /**
  * Corrige una compra (solo administrador): nombre, cantidad y costo de cada línea, factura, vencimiento y nota.
  * - Productos con inventario: la diferencia de cantidad entra o sale del stock (kardex).
- * - Celulares: la cantidad la dan los IMEI (no se cambia aquí); el costo nuevo pasa a los equipos aún disponibles.
+ * - Celulares: la cantidad la dan los IMEI (no se cambia aquí); el costo nuevo pasa a cada equipo.
+ * - Ventas ya hechas: su costo (y la ganancia y la comisión sobre utilidad) se recalcula con el corregido.
+ *   Celulares: la factura de cada IMEI. Otros productos: las ventas desde esta compra (hasta la siguiente compra
+ *   del mismo producto) que tomaron el costo anterior. Guardar sin cambios vuelve a aplicarlo.
  * - Cantidad 0 quita la línea. El total y el saldo se recalculan; lo ya pagado no cambia
  *   (si queda pagado de más, primero se corrige el pago).
  * Guarda los valores anteriores en `edits`.
@@ -412,6 +416,9 @@ export async function editPurchase(
   reason: string,
 ) {
   if (!reason.trim()) throw new BusinessError('Escriba el motivo de la corrección.');
+  // Ventas de productos sin IMEI que pudieron salir de esta compra (se confirman dentro de la transacción)
+  const before = await backend.get<Purchase>('purchases', purchaseId);
+  const soldFrom = before ? await salesFromPurchase(before, fix.lines) : new Map<string, Map<string, { from: number[]; to: number }>>();
   return backend.transaction(async (tx) => {
     // ---------- LECTURAS ----------
     const p = await tx.get<Purchase>('purchases', purchaseId);
@@ -422,6 +429,7 @@ export async function editPurchase(
     const deltas: { product: Product; delta: number; name: string }[] = [];
     const products = new Map<string, Product>();
     const unitsToReprice: { id: string; cost: number }[] = [];
+    const soldUnits = new Map<string, Map<string, number>>(); // factura → IMEI → costo
     for (const f of fix.lines) {
       const old = p.items[f.index];
       if (!old) throw new BusinessError('Línea de compra no encontrada.');
@@ -429,10 +437,14 @@ export async function editPurchase(
       if (!f.name.trim()) throw new BusinessError('El nombre del producto no puede quedar vacío.');
       if (old.units?.length) {
         if (f.qty !== old.qty) throw new BusinessError(`«${old.name}» es un celular con IMEI: la cantidad no se cambia aquí (anule la compra o el ingreso).`);
-        if (f.unitCost !== old.unitCost) {
-          for (const u of old.units) {
-            const unit = await tx.get<PhoneUnit>('phoneUnits', u.imei);
-            if (unit && unit.purchaseId === p.id && unit.status === 'disponible') unitsToReprice.push({ id: unit.id, cost: f.unitCost });
+        for (const u of old.units) {
+          const unit = await tx.get<PhoneUnit>('phoneUnits', u.imei);
+          if (!unit || unit.purchaseId !== p.id || unit.status === 'anulado') continue;
+          if (unit.cost !== f.unitCost) unitsToReprice.push({ id: unit.id, cost: f.unitCost });
+          if (unit.status === 'vendido' && unit.invoiceId) {
+            const m = soldUnits.get(unit.invoiceId) ?? new Map<string, number>();
+            m.set(unit.id, f.unitCost);
+            soldUnits.set(unit.invoiceId, m);
           }
         }
       } else if (old.productId && f.qty !== old.qty) {
@@ -464,8 +476,21 @@ export async function editPurchase(
     if (paid > total) {
       throw new BusinessError(`Ya se le pagaron ${paid.toLocaleString('es-CO')} y el nuevo total sería ${total.toLocaleString('es-CO')}. Corrija primero el pago (lápiz en Pagos).`);
     }
+    const why = `Corrección compra C-${String(p.number).padStart(4, '0')}: ${reason.trim()}`;
+    const invoiceFixes: (() => void)[] = [];
+    for (const invId of new Set([...soldUnits.keys(), ...soldFrom.keys()])) {
+      const units = soldUnits.get(invId);
+      const prods = soldFrom.get(invId);
+      const w = await prepareInvoiceCostFix(tx, actor, invId, (it) => {
+        if (it.unitId) return units?.get(it.unitId);
+        const pr = it.productId ? prods?.get(it.productId) : undefined;
+        return pr && pr.from.includes(it.unitCost) ? pr.to : undefined;
+      }, why);
+      if (w) invoiceFixes.push(w);
+    }
     // ---------- ESCRITURAS ----------
     const at = new Date().toISOString();
+    invoiceFixes.forEach((w) => w());
     for (const d of deltas) {
       moveStock(tx, actor, d.product, d.delta, d.delta > 0 ? 'compra' : 'anulacion_compra', {
         refType: 'purchase', refId: p.id, refNumber: p.number, note: `Corrección compra ${p.number}: ${reason.trim()}`,
@@ -488,6 +513,39 @@ export async function editPurchase(
       edits: [...(p.edits ?? []), { at, by: actor.name, reason: reason.trim(), total: p.total, items: p.items }],
       ...touched(),
     });
-    return { total };
+    return { total, salesFixed: invoiceFixes.length };
   });
+}
+
+/**
+ * Ventas de productos sin IMEI que tomaron su costo de esta compra: desde que se registró
+ * hasta la siguiente compra del mismo producto, con el costo de la compra (actual o de antes de corregirla).
+ */
+async function salesFromPurchase(p: Purchase, lines: PurchaseLineFix[]) {
+  const out = new Map<string, Map<string, { from: number[]; to: number }>>();
+  const changes = new Map<string, { from: number[]; to: number }>();
+  for (const f of lines) {
+    const old = p.items[f.index];
+    if (!old?.productId || old.units?.length || f.qty <= 0) continue;
+    const from = [old.unitCost, ...(p.edits ?? []).flatMap((e) => e.items.filter((i) => i.productId === old.productId).map((i) => i.unitCost))]
+      .filter((c) => c !== f.unitCost);
+    if (from.length) changes.set(old.productId, { from: [...new Set(from)], to: f.unitCost });
+  }
+  if (changes.size === 0) return out;
+  const [invoices, purchases] = await Promise.all([backend.list<Invoice>('invoices'), backend.list<Purchase>('purchases')]);
+  const start = p.createdAt ?? '';
+  for (const [pid, ch] of changes) {
+    const next = purchases
+      .filter((x) => x.id !== p.id && x.status !== 'anulada' && (x.createdAt ?? '') > start && x.items.some((i) => i.productId === pid))
+      .map((x) => x.createdAt ?? '').sort()[0];
+    for (const inv of invoices) {
+      const t = inv.createdAt ?? '';
+      if (inv.status === 'anulada' || t < start || (next && t >= next)) continue;
+      if (!inv.items.some((i) => i.productId === pid && !i.unitId && ch.from.includes(i.unitCost))) continue;
+      const m = out.get(inv.id) ?? new Map();
+      m.set(pid, ch);
+      out.set(inv.id, m);
+    }
+  }
+  return out;
 }

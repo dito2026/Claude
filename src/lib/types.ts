@@ -290,6 +290,8 @@ export interface Invoice extends BaseDoc {
   voidReason?: string;
   voidedAt?: string;
   voidedBy?: string;
+  /** costos corregidos después de la venta (al corregir la compra): valores anteriores */
+  costEdits?: { at: string; by: string; reason: string; items: { index: number; unitCost: number }[]; commission?: number }[];
 }
 
 export interface CashSession extends BaseDoc {

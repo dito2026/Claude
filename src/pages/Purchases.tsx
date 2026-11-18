@@ -5,7 +5,7 @@ import { useCollection, useDocument } from '../data/hooks';
 import type { PhoneCondition, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
 import { dateOnly, dateTime, fromLocalInput, matches, money, pad, toLocalInput, addDays, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
-import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction } from '../components/ui';
+import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction, useToast } from '../components/ui';
 import { PayMethods } from '../components/PayMethods';
 import {
   changePurchaseSupplier, createPurchase, editPurchase, editSupplierPayment, supplierPayments, isOverduePurchase, voidPurchase, paySupplier, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
@@ -235,6 +235,7 @@ function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
 
 function EditPurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
   const { actor } = useAuth();
+  const toast = useToast();
   const { run, busy } = useAction();
   const [lines, setLines] = useState(() => p.items.map((it, index) => ({ index, name: it.name, qty: it.qty, unitCost: it.unitCost })));
   const [invoiceRef, setInvoiceRef] = useState(p.invoiceRef ?? '');
@@ -245,8 +246,10 @@ function EditPurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void })
   const set = (i: number, patch: Partial<(typeof lines)[number]>) => setLines((xs) => xs.map((x) => (x.index === i ? { ...x, ...patch } : x)));
   const total = lines.reduce((a, l) => a + l.qty * l.unitCost, 0);
   const paid = p.paid || 0;
-  const save = () => run(() => editPurchase(actor, p.id, { lines, invoiceRef, note, dueDate: due ? fromLocalInput(due) : undefined, updateCost }, reason),
-    'Compra corregida').then((ok) => ok && onClose());
+  const save = () => run(async () => {
+    const r = await editPurchase(actor, p.id, { lines, invoiceRef, note, dueDate: due ? fromLocalInput(due) : undefined, updateCost }, reason);
+    toast(r.salesFixed ? `Compra corregida · ganancia recalculada en ${r.salesFixed} venta${r.salesFixed === 1 ? '' : 's'}` : 'Compra corregida');
+  }).then((ok) => ok && onClose());
   return (
     <Modal wide title={`Editar compra C-${pad(p.number, 4)} · ${p.supplierName}`} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
@@ -255,6 +258,7 @@ function EditPurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void })
         <div className="alert info"><div>
           Corrija nombre, cantidad o costo. Si cambia la cantidad de un producto con inventario, la diferencia entra o sale del stock.
           Ponga <b>0</b> para quitar una línea. En los celulares la cantidad la dan los IMEI.
+          Si ya vendió algo de esta compra, la ganancia de esas ventas se recalcula con el costo corregido.
         </div></div>
         <div className="table-wrap">
           <table className="table">

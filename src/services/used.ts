@@ -10,6 +10,7 @@ import { BusinessError, created, readNext, touched, writeCounter, type Actor } f
 import { moveStock, nextSku } from './inventory';
 import { assertImeisFree, cleanUnits, writeUnits } from './phones';
 import { adjustCash, requireOpenSession, writeMovement, type CashState } from './cash';
+import { prepareInvoiceCostFix } from './billing';
 
 export interface UsedDraft {
   date: string;
@@ -177,7 +178,13 @@ export async function editUsedPurchase(actor: Actor, id: string, fix: UsedFix, r
     const unit = await tx.get<PhoneUnit>('phoneUnits', c.device.imei);
     const moneyChanged = fix.price !== c.price || fix.method !== c.method;
     const sid = moneyChanged && !c.outsideCash ? await requireOpenSession(tx) : null;
+    // Si el equipo ya se vendió, la venta toma el costo corregido (ganancia y comisión)
+    const soldFix = unit && unit.usedPurchaseId === c.id && unit.status === 'vendido' && unit.invoiceId
+      ? await prepareInvoiceCostFix(tx, actor, unit.invoiceId, (it) => (it.unitId === unit.id ? fix.price : undefined),
+        `Corrección compraventa N.º ${c.number}: ${reason.trim()}`)
+      : null;
     // ---- escrituras ----
+    soldFix?.();
     const why = reason.trim();
     if (sid) {
       const desc = `Corrección compraventa N.º ${c.number} · ${fix.seller.name.trim()}: ${why}`;
@@ -189,7 +196,8 @@ export async function editUsedPurchase(actor: Actor, id: string, fix: UsedFix, r
       tx.update('phoneUnits', unit.id, {
         supplierName: fix.seller.name.trim(),
         color: fix.color.trim(),
-        ...(inStore ? { cost: fix.price, ...(fix.salePrice ? { price: fix.salePrice } : {}) } : {}),
+        ...(inStore || unit.status === 'vendido' ? { cost: fix.price } : {}),
+        ...(inStore && fix.salePrice ? { price: fix.salePrice } : {}),
         ...touched(),
       });
     }

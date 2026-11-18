@@ -147,6 +147,24 @@ describe('editar y anular contratos de compraventa', () => {
     expect(await cash()).toMatchObject({ Efectivo: 1000000, Nequi: -230000 });
   });
 
+  it('si el equipo ya se vendió, la venta toma el costo corregido (ganancia)', async () => {
+    const { editUsedPurchase } = await import('./used');
+    await openSession(actor, 1000000);
+    const c = await buyUsedPhone(actor, draft(), []);
+    const pid = (await backend.list<Product>('products'))[0].id;
+    const sale = await createInvoice(actor, {
+      customer: { name: 'CF', phone: '', document: '' },
+      items: [{ productId: pid, description: 'Samsung (usado)', kind: 'producto', qty: 1, unitPrice: 380000, unitCost: 250000, imei: IMEI, unitId: IMEI }],
+      discount: 0, taxRate: 0, payments: [{ method: 'Efectivo', amount: 380000 }], cashierName: 'T',
+    });
+    const fix = { date: c.date, city: c.city, seller: c.seller, buyer: c.buyer, color: c.device.color, price: 200000, method: 'Efectivo', salePrice: 380000 };
+    await editUsedPurchase(actor, c.id, fix, 'se pagó menos');
+    const inv = (await backend.get<import('../lib/types').Invoice>('invoices', sale.id))!;
+    expect(inv.items[0].unitCost).toBe(200000);
+    expect(inv.costEdits![0].items).toEqual([{ index: 0, unitCost: 250000 }]);
+    expect((await backend.get<PhoneUnit>('phoneUnits', IMEI))!).toMatchObject({ cost: 200000, status: 'vendido' });
+  });
+
   it('anula: saca el equipo, libera el IMEI y devuelve la plata; no si ya se vendió', async () => {
     const { voidUsedPurchase } = await import('./used');
     const { expectedByMethod } = await import('./cash');
