@@ -386,6 +386,8 @@ export interface SupplierPayment {
   cashMovementId?: string;
   /** pagado por fuera de la caja de la app (no movió la caja) */
   outsideCash?: boolean;
+  /** se pasó desde otra compra (estaba aplicado a la compra equivocada) */
+  movedFrom?: { number: number; at: string; by: string; reason: string };
   /** corrección: quién, cuándo, por qué y los valores anteriores */
   editedAt?: string;
   editedBy?: string;

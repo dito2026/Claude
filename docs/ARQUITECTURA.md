@@ -734,3 +734,17 @@ el servidor reintenta con su modelo de respaldo.
   - **Pagos que lo mencionan pero no cuentan**: egresos manuales (gasto, retiro, pago a vendedor o a proveedor) cuya descripción tiene el nombre del técnico (el primer nombre si tiene 4 letras o más).
 - **«Contar como pago»** (solo admin, `linkTechnicianPayment`): pasa ese egreso a `pago_tecnico` con `refType: 'technician'`. Guarda `previousCategory`, `linkedAt` y `linkedBy`. No mueve plata; deja de contar como gasto y baja la deuda. Las reglas lo permiten una sola vez y solo a admin.
 - Pruebas: `technician-statement.test.ts`, reglas en el emulador y una prueba e2e.
+
+## 68. Revisión técnica de abonos a proveedores
+
+Recorridos revisados: abonar (`paySupplier`, `applyToPurchases`, `payOrder`), descontar pagos viejos de Caja (`linkCashPayment`), corregir pagos (`editSupplierPayment`), anular compras (`voidPurchase`), corregir compras (`editPurchase`), cambiar proveedor, resumen y estado de cuenta (`supplierSummary`), libro fiscal (`fiscalSign`), pantallas y reglas.
+
+Bien: cada abono se reparte en una transacción y no deja pagar más de lo que se debe. `paid` y `payments` siempre se escriben juntos. Lo pagado por fuera de la caja no se devuelve a la caja al anular. Los reintegros restan de los egresos del libro fiscal. Los pagos a proveedores no se cuentan como gasto en el estado de resultados (el costo entra por la venta).
+
+Errores encontrados y corregidos (cada uno con prueba):
+1. **Compra de contado que quedó con saldo** (se le subió el costo, o se bajó su pago): «Le debe» la contaba, pero no aparecía en «Compras a crédito − Abonado», y las columnas no cuadraban con el saldo. Ahora cuenta como crédito si quedó con saldo (`onCredit`).
+2. **Saldo anterior mal escrito con abonos**: no se podía corregir. Anularlo devolvía a la caja lo abonado (plata que no volvió) y borraba toda la deuda. Nuevo: **«Corregir saldo»** (`editOpeningBalance`, solo admin). Conserva los abonos, no toca la caja, no deja bajar de lo abonado y guarda el historial. El aviso de anular explica la diferencia.
+3. **Pago de Caja descontado después** (`cashMovementId`): eliminarlo o bajarlo metía a la caja de hoy plata que no volvió. Ahora no se cambia su valor. Nuevo: **«¿Este pago era de otra compra?»** (`movePayment`), que pasa el pago completo a otra compra del mismo proveedor con saldo suficiente, sin mover la caja. Queda `movedFrom`. Sirve para cualquier pago aplicado a la compra equivocada.
+4. Textos: «Eliminar pago… vuelve a la caja» y «vuelven a la caja al anular» ya no lo dicen para pagos hechos por fuera de la caja. En la lista de pagos de cada compra se marca si fue «por fuera de la caja», «de Caja descontado después» o «pasado desde C-xxxx».
+
+Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`payments` de una compra sin comprobar que cuadren; la app siempre los escribe juntos.

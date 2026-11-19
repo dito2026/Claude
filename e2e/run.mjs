@@ -214,6 +214,16 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await check('corregir un pago: se puede pasar a otra compra y el saldo anterior se corrige', async () => {
+    await page.goto(BASE + '/compras');
+    await page.fill('input[placeholder^="N.º, proveedor"]', 'Proveedor E2E');
+    await page.locator('tr:has-text("Proveedor E2E")').first().click();
+    await page.waitForSelector('.modal button:has-text("Corregir saldo")');
+    await page.locator('.modal button[title="Corregir o eliminar este pago"]').first().click();
+    await page.waitForSelector('.modal label.field:has-text("¿Este pago era de otra compra")');
+    await page.keyboard.press('Escape');
+  });
+
   await check('Caja → Pago a proveedor pide el proveedor y baja su deuda', async () => {
     await page.goto(BASE + '/compras');
     await page.click('.tabs button:has-text("Proveedores")');

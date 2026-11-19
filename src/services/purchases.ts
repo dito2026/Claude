@@ -20,11 +20,14 @@ export const isOverduePurchase = (p: Purchase) =>
   p.status !== 'pagada' && !!p.dueDate && new Date(p.dueDate).getTime() < Date.now();
 
 /** Resumen por proveedor (como la hoja «Proveedores»). */
+/** Cuenta como compra a crédito si se registró así o si quedó con saldo (p. ej. de contado y luego se corrigió el costo). */
+const onCredit = (p: Purchase) => p.paymentType === 'credito' || (p.paid || 0) < p.total;
+
 export function supplierSummary(s: Supplier, purchases: Purchase[]) {
   const mine = purchases.filter((p) => p.supplierId === s.id && p.status !== 'anulada');
-  const credit = sum(mine.filter((p) => p.paymentType === 'credito').map((p) => p.total));
-  const cash = sum(mine.filter((p) => p.paymentType === 'contado').map((p) => p.total));
-  const paidOnCredit = sum(mine.filter((p) => p.paymentType === 'credito').map((p) => p.paid || 0));
+  const credit = sum(mine.filter(onCredit).map((p) => p.total));
+  const cash = sum(mine.filter((p) => !onCredit(p)).map((p) => p.total));
+  const paidOnCredit = sum(mine.filter(onCredit).map((p) => p.paid || 0));
   const owed = sum(mine.map(purchaseBalance));
   const overdue = mine.filter(isOverduePurchase).length;
   return { credit, cash, paidOnCredit, owed, overdue, count: mine.length };
@@ -411,6 +414,9 @@ export async function editSupplierPayment(actor: Actor, purchaseId: string, inde
     const pay = (p.payments ?? [])[index];
     if (!pay) throw new BusinessError('Pago no encontrado.');
     if (pay.amount === next.amount && pay.method === next.method) throw new BusinessError('No hay cambios para guardar.');
+    if (pay.cashMovementId) {
+      throw new BusinessError('Este pago salió de un «Pago a proveedor» de Caja que se descontó después: su valor no se cambia aquí. Si quedó en la compra equivocada, use «Pasar a otra compra».');
+    }
     const paid = (p.paid || 0) - pay.amount + next.amount;
     if (paid > p.total) throw new BusinessError(`Con ese valor se le pagaría más que el total de la compra (${p.total.toLocaleString('es-CO')}).`);
     const sid = pay.outsideCash ? null : await requireOpenSession(tx);
@@ -621,4 +627,56 @@ async function salesFromPurchase(p: Purchase, lines: PurchaseLineFix[]) {
     }
   }
   return out;
+}
+
+/**
+ * Pasa un pago completo a otra compra (estaba aplicado a la compra equivocada). No mueve la caja:
+ * el dinero ya salió; solo cambia a qué compra se le descuenta. Las dos compras recalculan saldo y estado.
+ */
+export async function movePayment(actor: Actor, fromId: string, index: number, toId: string, reason: string) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo.');
+  if (fromId === toId) throw new BusinessError('Escoja otra compra.');
+  return backend.transaction(async (tx) => {
+    const from = await tx.get<Purchase>('purchases', fromId);
+    const to = await tx.get<Purchase>('purchases', toId);
+    if (!from || !to) throw new BusinessError('Compra no encontrada.');
+    if (from.status === 'anulada' || to.status === 'anulada') throw new BusinessError('Una de las compras está anulada.');
+    if (from.supplierId !== to.supplierId) throw new BusinessError('Las dos compras deben ser del mismo proveedor (si el proveedor está mal, use «Cambiar proveedor»).');
+    const pay = (from.payments ?? [])[index];
+    if (!pay) throw new BusinessError('Pago no encontrado.');
+    if (pay.amount > purchaseBalance(to)) {
+      throw new BusinessError(`El pago es de ${pay.amount.toLocaleString('es-CO')} y a la compra C-${String(to.number).padStart(4, '0')} solo le faltan ${purchaseBalance(to).toLocaleString('es-CO')}.`);
+    }
+    // ---------- ESCRITURAS ----------
+    const at = new Date().toISOString();
+    const fromPaid = (from.paid || 0) - pay.amount;
+    const toPaid = (to.paid || 0) + pay.amount;
+    tx.update('purchases', from.id, {
+      paid: fromPaid, payments: from.payments.filter((_, i) => i !== index), status: statusFor(from.total, fromPaid), ...touched(),
+    });
+    tx.update('purchases', to.id, {
+      paid: toPaid,
+      payments: [...(to.payments ?? []), { ...pay, movedFrom: { number: from.number, at, by: actor.name, reason: reason.trim() } }],
+      status: statusFor(to.total, toPaid), ...touched(),
+    });
+  });
+}
+
+/** Corrige el valor de un «Saldo anterior» (solo administrador). No puede quedar por debajo de lo ya abonado. */
+export async function editOpeningBalance(actor: Actor, purchaseId: string, total: number, reason: string) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo de la corrección.');
+  if (!(total > 0)) throw new BusinessError('El saldo debe ser mayor que cero (si no se le debía nada, anúlelo).');
+  return backend.transaction(async (tx) => {
+    const p = await tx.get<Purchase>('purchases', purchaseId);
+    if (!p) throw new BusinessError('Saldo no encontrado.');
+    if (p.kind !== 'saldo_inicial') throw new BusinessError('Esto solo corrige un saldo anterior.');
+    if (p.status === 'anulada') throw new BusinessError('El saldo está anulado.');
+    if (total === p.total) throw new BusinessError('No hay cambios para guardar.');
+    if (total < (p.paid || 0)) throw new BusinessError(`Ya se le abonaron ${(p.paid || 0).toLocaleString('es-CO')}: el saldo no puede quedar por debajo.`);
+    tx.update('purchases', p.id, {
+      total, status: statusFor(total, p.paid || 0),
+      edits: [...(p.edits ?? []), { at: new Date().toISOString(), by: actor.name, reason: reason.trim(), total: p.total, items: p.items }],
+      ...touched(),
+    });
+  });
 }

@@ -8,7 +8,7 @@ import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction, useToast } from '../components/ui';
 import { PayMethods } from '../components/PayMethods';
 import {
-  changePurchaseSupplier, createPurchase, editPurchase, editSupplierPayment, supplierPayments, isOverduePurchase, voidPurchase, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
+  changePurchaseSupplier, createPurchase, editOpeningBalance, editPurchase, editSupplierPayment, movePayment, supplierPayments, isOverduePurchase, voidPurchase, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
 } from '../services/purchases';
 import type { CashState } from '../services/cash';
 import { EMPTY_PRODUCT, ProductModal } from './Inventory';
@@ -150,12 +150,15 @@ function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
   const voided = p.status === 'anulada';
   const [editingPay, setEditingPay] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
+  const [openingFix, setOpeningFix] = useState(false);
+  const refundable = (p.payments ?? []).filter((x) => !x.outsideCash).reduce((a, x) => a + x.amount, 0);
   return (
     <Modal title={<><span className="mono">C-{pad(p.number, 4)}</span> · {p.supplierName}</>} wide onClose={onClose}
       footer={voided ? undefined : (
         <>
           {can('settings') && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={() => setMode(mode === 'anular' ? '' : 'anular')}>Anular compra</button>}
           {can('settings') && p.kind !== 'saldo_inicial' && <button className="btn" onClick={() => setEditing(true)}><Pencil size={15} />Editar compra</button>}
+          {can('settings') && p.kind === 'saldo_inicial' && <button className="btn" onClick={() => setOpeningFix(true)}><Pencil size={15} />Corregir saldo</button>}
           <button className="btn" onClick={() => setMode(mode === 'proveedor' ? '' : 'proveedor')}>Cambiar proveedor</button>
           <button className="btn ghost" onClick={onClose}>Cerrar</button>
         </>
@@ -185,7 +188,9 @@ function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
           <b className="red">Anular la compra completa</b>
           <div className="faint" style={{ fontSize: 13 }}>
             Se saca del inventario lo que entró con esta compra, se quita la deuda con {p.supplierName}
-            {(p.paid || 0) > 0 ? ` y los ${money(p.paid)} que se le pagaron vuelven a la caja abierta` : ''}. La compra no se borra: queda como «Anulada».
+            {refundable > 0 ? ` y los ${money(refundable)} que se le pagaron desde la caja vuelven a la caja abierta` : ''}
+            {(p.paid || 0) > refundable ? ` (lo pagado por fuera de la caja, ${money((p.paid || 0) - refundable)}, no vuelve a la caja)` : ''}. La compra no se borra: queda como «Anulada».
+            {p.kind === 'saldo_inicial' && (p.paid || 0) > 0 && <b> Si solo quiere cambiar el valor del saldo anterior, use mejor «Corregir saldo».</b>}
             Si solo se equivocó de proveedor, use mejor «Cambiar proveedor».
           </div>
           <input className="input" placeholder="Motivo (obligatorio)" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -227,6 +232,9 @@ function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
           {(p.payments ?? []).length === 0 ? <div className="faint">Sin pagos todavía.</div> : p.payments.map((x, i) => (
             <div key={i} className="row between" style={{ fontSize: 13, flexWrap: 'nowrap' }}>
               <span>{dateTime(x.at)} · {x.method} · {x.by}
+                {x.outsideCash && <small className="faint" style={{ display: 'block' }}>Pagado por fuera de la caja</small>}
+                {x.cashMovementId && <small className="faint" style={{ display: 'block' }}>Pago de Caja descontado después</small>}
+                {x.movedFrom && <small className="faint" style={{ display: 'block' }} title={x.movedFrom.reason}>Pasado desde C-{pad(x.movedFrom.number, 4)} por {x.movedFrom.by}</small>}
                 {x.editedAt && <small className="faint" style={{ display: 'block' }} title={x.editReason}>Corregido por {x.editedBy} · antes {money(x.previous?.amount)} {x.previous?.method}</small>}
               </span>
               <span className="row gap-sm" style={{ flexWrap: 'nowrap' }}><b>{money(x.amount)}</b>
@@ -238,6 +246,7 @@ function PurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
       </div>
       {editingPay !== null && p.payments[editingPay] && <EditSupplierPaymentModal p={p} index={editingPay} onClose={() => setEditingPay(null)} />}
       {editing && <EditPurchaseModal p={p} onClose={() => setEditing(false)} />}
+      {openingFix && <OpeningBalanceModal p={p} onClose={() => setOpeningFix(false)} />}
     </Modal>
   );
 }
@@ -308,33 +317,82 @@ function EditPurchaseModal({ p, onClose }: { p: Purchase; onClose: () => void })
 function EditSupplierPaymentModal({ p, index, onClose }: { p: Purchase; index: number; onClose: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
+  const purchases = useCollection<Purchase>('purchases').rows;
   const pay = p.payments[index];
   const [amount, setAmount] = useState(pay.amount);
   const [method, setMethod] = useState(pay.method);
   const [reason, setReason] = useState('');
+  const [moveTo, setMoveTo] = useState('');
   const diff = amount - pay.amount;
+  const touchesCash = !pay.outsideCash && !pay.cashMovementId;
+  const others = purchases
+    .filter((x) => x.id !== p.id && x.supplierId === p.supplierId && x.status !== 'anulada' && purchaseBalance(x) >= pay.amount)
+    .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
   const save = (value: number) => run(() => editSupplierPayment(actor, p.id, index, { amount: value, method }, reason),
-    value === 0 ? 'Pago eliminado · el dinero volvió a la caja' : 'Pago corregido · caja ajustada').then((ok) => ok && onClose());
+    value === 0 ? (touchesCash ? 'Pago eliminado · el dinero volvió a la caja' : 'Pago eliminado') : (touchesCash ? 'Pago corregido · caja ajustada' : 'Pago corregido')).then((ok) => ok && onClose());
+  const move = () => run(() => movePayment(actor, p.id, index, moveTo, reason), 'Pago pasado a la otra compra · la caja no cambia').then((ok) => ok && onClose());
   return (
     <Modal title={`Corregir pago · compra C-${pad(p.number, 4)}`} onClose={onClose}
       footer={<>
-        <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy || !reason.trim()} onClick={() => { if (confirm(`¿Eliminar el pago de ${money(pay.amount)} a ${p.supplierName}? Ese dinero vuelve a la caja.`)) void save(0); }}><Trash2 size={15} />Eliminar pago</button>
+        {!pay.cashMovementId && <button className="btn danger" style={{ marginRight: 'auto' }} disabled={busy || !reason.trim()}
+          onClick={() => { if (confirm(`¿Eliminar el pago de ${money(pay.amount)} a ${p.supplierName}?${touchesCash ? ' Ese dinero vuelve a la caja.' : ''}`)) void save(0); }}><Trash2 size={15} />Eliminar pago</button>}
         <button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy || !amount || !method || !reason.trim() || (amount === pay.amount && method === pay.method)} onClick={() => void save(amount)}>Guardar corrección</button>
+        {moveTo
+          ? <button className="btn primary" disabled={busy || !reason.trim()} onClick={move}>Pasar el pago</button>
+          : !pay.cashMovementId && <button className="btn primary" disabled={busy || !amount || !method || !reason.trim() || (amount === pay.amount && method === pay.method)} onClick={() => void save(amount)}>Guardar corrección</button>}
       </>}>
       <div className="stack">
-        <div className="alert info"><div>Pago del {dateTime(pay.at)} a <b>{p.supplierName}</b>: <b>{money(pay.amount)}</b> en {pay.method}. Total de la compra {money(p.total)}. La caja abierta se ajusta sola.</div></div>
-        <Field label="Valor correcto"><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
-        <PayMethods value={method} onChange={setMethod} />
-        {(diff !== 0 || method !== pay.method) && (
-          <div className="faint" style={{ fontSize: 13 }}>
-            {method !== pay.method
-              ? <>En caja: vuelven {money(pay.amount)} a {pay.method} y salen {money(amount)} de {method}.</>
-              : diff > 0 ? <>En caja: salen {money(diff)} más de {method}.</> : <>En caja: vuelven {money(-diff)} a {method}.</>}
-            {' '}Saldo de la compra: {money(Math.max(0, p.total - ((p.paid || 0) - pay.amount + amount)))}.
-          </div>
-        )}
-        <Field label="Motivo" required><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: digité mal el valor · fue por transferencia" /></Field>
+        <div className="alert info"><div>
+          Pago del {dateTime(pay.at)} a <b>{p.supplierName}</b>: <b>{money(pay.amount)}</b> en {pay.method}. Total de la compra {money(p.total)}.{' '}
+          {pay.outsideCash ? 'Se pagó por fuera de la caja: corregirlo no mueve la caja.'
+            : pay.cashMovementId ? 'Salió de un «Pago a proveedor» de Caja descontado después: no se cambia su valor; si quedó en la compra equivocada, páselo a la correcta.'
+              : 'La caja abierta se ajusta sola.'}
+        </div></div>
+        {!pay.cashMovementId && !moveTo && <>
+          <Field label="Valor correcto"><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
+          <PayMethods value={method} onChange={setMethod} />
+          {(diff !== 0 || method !== pay.method) && (
+            <div className="faint" style={{ fontSize: 13 }}>
+              {!touchesCash ? 'No mueve la caja.'
+                : method !== pay.method
+                  ? <>En caja: vuelven {money(pay.amount)} a {pay.method} y salen {money(amount)} de {method}.</>
+                  : diff > 0 ? <>En caja: salen {money(diff)} más de {method}.</> : <>En caja: vuelven {money(-diff)} a {method}.</>}
+              {' '}Saldo de la compra: {money(Math.max(0, p.total - ((p.paid || 0) - pay.amount + amount)))}.
+            </div>
+          )}
+        </>}
+        <Field label="¿Este pago era de otra compra de este proveedor?">
+          <select className="input" value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
+            <option value="">No, es de esta compra</option>
+            {others.map((x) => <option key={x.id} value={x.id}>C-{pad(x.number, 4)} · {x.kind === 'saldo_inicial' ? 'Saldo anterior' : x.items.map((i) => i.name).join(', ').slice(0, 40)} · le faltan {money(purchaseBalance(x))}</option>)}
+          </select>
+          {moveTo && <small className="muted">El pago completo ({money(pay.amount)}) pasa a esa compra. La caja no cambia.</small>}
+          {others.length === 0 && <small className="faint">No hay otra compra de {p.supplierName} con saldo suficiente para este pago.</small>}
+        </Field>
+        <Field label="Motivo" required><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: digité mal el valor · era de la otra compra" /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+/** Corrige el valor de un «Saldo anterior» sin anularlo (los abonos se conservan). */
+function OpeningBalanceModal({ p, onClose }: { p: Purchase; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const [total, setTotal] = useState(p.total);
+  const [reason, setReason] = useState('');
+  const paid = p.paid || 0;
+  return (
+    <Modal title={`Corregir saldo anterior · ${p.supplierName}`} onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || !reason.trim() || total < paid || !total || total === p.total}
+          onClick={() => run(() => editOpeningBalance(actor, p.id, total, reason), 'Saldo anterior corregido').then((ok) => ok && onClose())}>Guardar</button></>}>
+      <div className="stack">
+        <div className="alert info"><div>Hoy dice {money(p.total)}{paid > 0 ? <>, con {money(paid)} ya abonados</> : null}. Los abonos se conservan y la caja no cambia.</div></div>
+        <Field label="Saldo anterior correcto"><MoneyInput value={total} onChange={setTotal} autoFocus /></Field>
+        {total < paid && <div className="alert error"><div>Ya se le abonaron {money(paid)}: el saldo no puede quedar por debajo.</div></div>}
+        <div className="faint" style={{ fontSize: 13 }}>Queda por pagar: <b>{money(Math.max(0, total - paid))}</b></div>
+        <Field label="Motivo" required><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: el saldo que me pasó era 300.000" /></Field>
       </div>
     </Modal>
   );
@@ -351,9 +409,9 @@ function SupplierStatement({ supplier, purchases, onPay }: { supplier: Supplier;
     <div className="stack">
       <div className="grid g4">
         <Stat accent label="Le debe" value={<span className={sum.owed ? 'red' : ''}>{money(sum.owed)}</span>} sub={sum.overdue ? `${sum.overdue} compra(s) vencida(s)` : pending.length ? `${pending.length} compra(s) por pagar` : 'Al día'} />
-        <Stat label="Compras a crédito" value={money(sum.credit)} sub="incluye saldo anterior" />
+        <Stat label="Compras a crédito" value={money(sum.credit)} sub="incluye saldo anterior y compras que quedaron con saldo" />
         <Stat label="Abonado a crédito" value={money(sum.paidOnCredit)} />
-        <Stat label="De contado" value={money(sum.cash)} sub="ya pagadas al comprar" />
+        <Stat label="De contado" value={money(sum.cash)} sub="pagadas completas al comprar" />
       </div>
       <div className="faint" style={{ fontSize: 13 }}>Le debe = compras a crédito − abonado ({money(sum.credit)} − {money(sum.paidOnCredit)}). Las compras anuladas no cuentan.</div>
       {pending.length > 0 && (
