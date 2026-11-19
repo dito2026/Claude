@@ -755,3 +755,11 @@ Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`pa
 - Lo usan la pantalla Técnicos, el Estado de cuenta, Caja → «Pago a técnico» (por pagarle) y las alertas.
 - Estado de cuenta: «Trabajos listos y entregados», con la fecha en que quedó lista (`readyAt`: último paso a «Reparado / Listo» en el historial; si no hay, la entrega) y el estado (Lista o Entregada).
 - La contabilidad no cambia: el costo del técnico entra al estado de resultados con la factura de la OT.
+
+## 70. En servicio técnico el repuesto no se cobra aparte
+
+- `addPart` y `addFreePart` (`services/orders.ts`) guardan el repuesto con `unitPrice: 0`: el cliente paga el «Cobro al cliente (incluye repuestos)» de la orden (`laborPrice`). El repuesto conserva su costo (`unitCost`): sale del inventario igual y baja la ganancia de la orden y de la factura.
+- Orden: la columna «Al cliente» dice «Incluido». El cobro muestra el total, los abonos y el saldo, y para el administrador el costo de repuestos, el pago al técnico y la **ganancia estimada**. La ventana «Agregar repuesto» ya no pide precio al cliente (en el repuesto libre pide el costo).
+- Órdenes viejas con repuestos que tenían precio: siguen cobrándose hasta tocar **«No cobrar»** (`stopChargingPart`), que deja el precio en 0, conserva el costo y anota el cambio en el historial.
+- Factura: las líneas de repuesto van en $0 y en el comprobante salen como «Incluido»; lo encimado sale como «Obsequio» (impreso y WhatsApp).
+- Demo: las órdenes de ejemplo cobran el total en «Cobro al cliente».

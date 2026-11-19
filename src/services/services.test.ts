@@ -75,7 +75,9 @@ describe('órdenes de reparación conectadas al inventario', () => {
     expect(await stockOf(pid)).toBe(1);
     let order = (await backend.get<RepairOrder>('repairOrders', o.id))!;
     expect(order.parts).toHaveLength(1);
-    expect(orderTotal(order)).toBe(40000 + 2 * 90000);
+    // el repuesto no se le cobra aparte al cliente: va incluido en el cobro de la orden
+    expect(order.parts[0]).toMatchObject({ unitPrice: 0, unitCost: 50000 });
+    expect(orderTotal(order)).toBe(40000);
     const out = (await kardex(pid)).find((m) => m.reason === 'reparacion')!;
     expect(out).toMatchObject({ qty: -2, refType: 'repairOrder', refId: o.id, refNumber: o.number });
 
@@ -159,15 +161,16 @@ describe('facturación y caja', () => {
     await openSession(actor, 0);
     const o = await newOrder(c);
     await addPart(actor, o.id, pid, 1);
-    await addDeposit(actor, o.id, 50000, 'Efectivo');
+    await addDeposit(actor, o.id, 30000, 'Efectivo');
     const order = (await backend.get<RepairOrder>('repairOrders', o.id))!;
     const items = itemsFromOrder(order);
     expect(items.map((i) => i.kind)).toEqual(['mano_obra', 'repuesto']);
+    expect(items[1]).toMatchObject({ unitPrice: 0, unitCost: 50000 }); // incluido: su costo baja la ganancia
 
-    const total = 40000 + 90000;
+    const total = 40000;
     await createInvoice(actor, {
       customerId: c.id, customer: { name: c.name, phone: c.phone, document: c.document }, items,
-      discount: 0, taxRate: 0, payments: [{ method: 'Efectivo', amount: total - 50000 }], repairOrderId: o.id, cashierName: 'T',
+      discount: 0, taxRate: 0, payments: [{ method: 'Efectivo', amount: total - 30000 }], repairOrderId: o.id, cashierName: 'T',
     });
     expect(await stockOf(pid)).toBe(2); // solo la salida por reparación
     const delivered = (await backend.get<RepairOrder>('repairOrders', o.id))!;
@@ -175,7 +178,7 @@ describe('facturación y caja', () => {
     expect(delivered.invoiceNumber).toBe(1);
     expect(delivered.warrantyUntil).toBeTruthy();
     const inv = (await backend.list<Invoice>('invoices'))[0];
-    expect(inv).toMatchObject({ total, depositsApplied: 50000 });
+    expect(inv).toMatchObject({ total, depositsApplied: 30000 });
 
     await expect(createInvoice(actor, {
       customerId: c.id, customer: inv.customer, items, discount: 0, taxRate: 0,
@@ -391,10 +394,10 @@ describe('venta sin inventario', () => {
     const c = await newCustomer();
     const o = await newOrder(c);
     await addPart(actor, o.id, pid, 4);
-    await addFreePart(actor, o.id, { name: 'Flex de carga', qty: 1, unitCost: 20000, unitPrice: 45000 });
+    await addFreePart(actor, o.id, { name: 'Flex de carga', qty: 1, unitCost: 20000 });
     let order = (await backend.get<RepairOrder>('repairOrders', o.id))!;
     expect(order.parts.map((p) => p.productId)).toEqual([pid, '']);
-    expect(orderTotal(order)).toBe(40000 + 4 * 15000 + 45000);
+    expect(orderTotal(order)).toBe(40000); // repuestos incluidos, no se cobran aparte
     await removePart(actor, o.id, order.parts[1].lineId);
     order = (await backend.get<RepairOrder>('repairOrders', o.id))!;
     expect(order.parts).toHaveLength(1);
@@ -539,9 +542,9 @@ describe('compras a crédito sin inventario', () => {
     const c = await newCustomer();
     const o = await newOrder(c);
     const r = await buyFreeItem(actor, s, { name: 'Display Note 9', qty: 1, unitCost: 40000 }, { paymentType: 'credito', method: 'Efectivo', note: 'OT' });
-    await addFreePart(actor, o.id, { name: 'Display Note 9', qty: 1, unitCost: 40000, unitPrice: 90000, purchaseNumber: r.number, supplierName: s.name });
+    await addFreePart(actor, o.id, { name: 'Display Note 9', qty: 1, unitCost: 40000, purchaseNumber: r.number, supplierName: s.name });
     const order = (await backend.get<RepairOrder>('repairOrders', o.id))!;
-    expect(order.parts[0]).toMatchObject({ productId: '', purchaseNumber: 1, supplierName: 'Conco', unitPrice: 90000 });
+    expect(order.parts[0]).toMatchObject({ productId: '', purchaseNumber: 1, supplierName: 'Conco', unitPrice: 0, unitCost: 40000 });
     const ps = await backend.list<P>('purchases');
     expect(ps[0]).toMatchObject({ paymentType: 'credito', total: 40000, status: 'pendiente' });
   });
@@ -559,12 +562,12 @@ describe('contabilidad', () => {
       items: [{ productId: acc_pid, description: 'Cargador', kind: 'producto', qty: 2, unitPrice: 20000, unitCost: 10000 }],
       discount: 4000, taxRate: 0, payments: [{ method: 'Efectivo', amount: 36000 }], cashierName: 'T',
     });
-    // reparación: mano de obra 60.000 (pago técnico 10.000) + repuesto libre 40.000
+    // reparación: cobro al cliente 100.000 (incluye el repuesto) · pago técnico 10.000 · repuesto libre con costo 40.000
     const c = await newCustomer();
     const o = await newOrder(c);
-    await backend.update('repairOrders', o.id, { laborPrice: 60000, technicianPay: 10000 });
+    await backend.update('repairOrders', o.id, { laborPrice: 100000, technicianPay: 10000 });
     const { addFreePart } = await import('./orders');
-    await addFreePart(actor, o.id, { name: 'Pantalla', qty: 1, unitCost: 40000, unitPrice: 40000 });
+    await addFreePart(actor, o.id, { name: 'Pantalla', qty: 1, unitCost: 40000 });
     const ord = (await backend.get<RepairOrder>('repairOrders', o.id))!;
     await createInvoice(actor, {
       customerId: c.id, customer: { name: c.name, phone: '', document: '' }, items: itemsFromOrder(ord),

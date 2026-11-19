@@ -141,8 +141,12 @@ export async function setStatus(actor: Actor, id: string, status: OrderStatus, n
   });
 }
 
-/** Agrega un repuesto: descuenta inventario y registra kardex en la MISMA transacción. */
-export async function addPart(actor: Actor, orderId: string, productId: string, qty: number, unitPrice?: number) {
+/**
+ * Agrega un repuesto: descuenta inventario y registra kardex en la MISMA transacción.
+ * El repuesto NO se le cobra aparte al cliente (precio 0): lo que se cobra es «Cobro al cliente» de la orden;
+ * su costo sí baja la ganancia.
+ */
+export async function addPart(actor: Actor, orderId: string, productId: string, qty: number) {
   if (!(qty > 0) || !Number.isInteger(qty)) throw new BusinessError('Cantidad inválida.');
   return backend.transaction(async (tx) => {
     const o = await tx.get<RepairOrder>('repairOrders', orderId);
@@ -167,7 +171,7 @@ export async function addPart(actor: Actor, orderId: string, productId: string, 
       name: p.name,
       qty,
       unitCost: p.cost,
-      unitPrice: unitPrice ?? p.price,
+      unitPrice: 0,
     };
     const timeline = [
       ...o.timeline,
@@ -181,7 +185,7 @@ export async function addPart(actor: Actor, orderId: string, productId: string, 
 export async function addFreePart(
   actor: Actor,
   orderId: string,
-  item: { name: string; qty: number; unitCost: number; unitPrice: number; purchaseNumber?: number; supplierName?: string },
+  item: { name: string; qty: number; unitCost: number; purchaseNumber?: number; supplierName?: string },
 ) {
   if (!item.name.trim()) throw new BusinessError('Escriba la descripción del repuesto.');
   if (!(item.qty > 0) || !Number.isInteger(item.qty)) throw new BusinessError('Cantidad inválida.');
@@ -195,7 +199,7 @@ export async function addFreePart(
       name: item.name.trim(),
       qty: item.qty,
       unitCost: Math.max(0, item.unitCost || 0),
-      unitPrice: Math.max(0, item.unitPrice || 0),
+      unitPrice: 0,
       purchaseNumber: item.purchaseNumber,
       supplierName: item.supplierName,
     };
@@ -293,6 +297,26 @@ export async function editDeposit(actor: Actor, orderId: string, index: number, 
       timeline: [...o.timeline, { at, by: actor.name, note: next.amount === 0
         ? `Abono eliminado (${fmt(d.amount)} ${d.method}): ${why}`
         : `Abono corregido de ${fmt(d.amount)} ${d.method} a ${fmt(next.amount)} ${next.method}: ${why}` }],
+      ...touched(),
+    });
+  });
+}
+
+/**
+ * Deja de cobrarle aparte un repuesto al cliente (órdenes viejas, cuando el repuesto tenía precio).
+ * El costo se conserva; el total de la orden baja en lo que se cobraba por él.
+ */
+export async function stopChargingPart(actor: Actor, orderId: string, lineId: string) {
+  return backend.transaction(async (tx) => {
+    const o = await tx.get<RepairOrder>('repairOrders', orderId);
+    if (!o) throw new BusinessError('Orden no encontrada.');
+    if (o.status === 'Entregado' || o.status === 'No reparado') throw new BusinessError('La orden está cerrada.');
+    const part = o.parts.find((x) => x.lineId === lineId);
+    if (!part) throw new BusinessError('Repuesto no encontrado.');
+    if (!(part.unitPrice > 0)) throw new BusinessError('Ese repuesto ya no se cobra.');
+    tx.update('repairOrders', o.id, {
+      parts: o.parts.map((x) => (x.lineId === lineId ? { ...x, unitPrice: 0 } : x)),
+      timeline: [...o.timeline, { at: new Date().toISOString(), by: actor.name, note: `Repuesto incluido en el cobro (no se cobra aparte): ${part.name}` }],
       ...touched(),
     });
   });

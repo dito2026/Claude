@@ -14,7 +14,7 @@ import { BuyFromSupplierFields, EMPTY_BUY, useSuppliers, type BuyFromSupplierVal
 import { orderTone, priorityTone } from '../components/status';
 import { OrderReceiptModal } from '../components/Receipts';
 import {
-  addDeposit, editDeposit, addFreePart, addPart, depositsTotal, isOverdue, orderTotal, partsTotal, removePart, setStatus, updateOrder,
+  addDeposit, editDeposit, addFreePart, addPart, depositsTotal, isOverdue, orderTotal, partsTotal, removePart, setStatus, stopChargingPart, updateOrder,
 } from '../services/orders';
 import { useSettings } from '../services/settings';
 import { readyMessage } from '../services/automation';
@@ -42,6 +42,7 @@ export function OrderDetail() {
   const canWork = !closed && (can('orders.create') || isMine);
   const canMoney = !closed && can('orders.billing');
   const total = orderTotal(o);
+  const partsCost = o.parts.reduce((a, x) => a + x.qty * x.unitCost, 0);
   const deposits = depositsTotal(o);
 
   const saveField = (patch: Parameters<typeof updateOrder>[2], msg = 'Orden actualizada') =>
@@ -114,15 +115,21 @@ export function OrderDetail() {
             </div>
             {o.parts.length === 0 ? <Empty>Sin repuestos todavía.</Empty> : (
               <table className="table">
-                <thead><tr><th>Repuesto</th><th className="num">Cant.</th><th className="num">Costo</th><th className="num">Precio</th><th className="num">Subtotal</th><th /></tr></thead>
+                <thead><tr><th>Repuesto</th><th className="num">Cant.</th><th className="num">Costo</th><th className="num">Al cliente</th><th /></tr></thead>
                 <tbody>
                   {o.parts.map((p) => (
                     <tr key={p.lineId}>
                       <td><span className="strong">{p.name}</span>{!p.productId && <small>Repuesto libre · sin inventario{p.purchaseNumber ? ` · Compra C-${pad(p.purchaseNumber, 4)} a ${p.supplierName}` : ''}</small>}</td>
                       <td className="num">{p.qty}</td>
-                      <td className="num faint">{money(p.unitCost)}</td>
-                      <td className="num">{money(p.unitPrice)}</td>
-                      <td className="num">{money(p.qty * p.unitPrice)}</td>
+                      <td className="num">{money(p.qty * p.unitCost)}</td>
+                      <td className="num">
+                        {p.unitPrice > 0 ? <>
+                          {money(p.qty * p.unitPrice)}
+                          {canMoney && <button type="button" className="btn sm ghost" style={{ display: 'block', marginLeft: 'auto' }} disabled={busy}
+                            title="Este repuesto ya va incluido en el cobro de la orden"
+                            onClick={() => run(() => stopChargingPart(actor, o.id, p.lineId), 'Listo: el repuesto ya no se cobra aparte')}>No cobrar</button>}
+                        </> : <span className="faint">Incluido</span>}
+                      </td>
                       <td className="right">
                         {canWork && (
                           <button className="btn sm ghost" title="Quitar y devolver al inventario" disabled={busy}
@@ -143,16 +150,21 @@ export function OrderDetail() {
             <div className="card-pad grid g2">
               <div className="form-grid">
                 <Field label="Presupuesto al cliente"><CommitMoney value={o.budget} disabled={!canMoney} onCommit={(v) => void saveField({ budget: v })} /></Field>
-                <Field label="Mano de obra (cobro)"><CommitMoney value={o.laborPrice} disabled={!canMoney} onCommit={(v) => void saveField({ laborPrice: v })} /></Field>
+                <Field label="Cobro al cliente (incluye repuestos)"><CommitMoney value={o.laborPrice} disabled={!canMoney} onCommit={(v) => void saveField({ laborPrice: v })} /></Field>
                 <Field label="Pago al técnico"><CommitMoney value={o.technicianPay} disabled={!canMoney} onCommit={(v) => void saveField({ technicianPay: v })} /></Field>
                 <Field label="Garantía (días)"><input className="input num" type="number" min={0} disabled={!canMoney} defaultValue={o.warrantyDays} key={o.warrantyDays} onBlur={(e) => Number(e.target.value) !== o.warrantyDays && void saveField({ warrantyDays: Number(e.target.value) })} /></Field>
               </div>
               <div className="totals">
-                <div><span className="muted">Mano de obra</span><span>{money(o.laborPrice)}</span></div>
-                <div><span className="muted">Repuestos</span><span>{money(partsTotal(o))}</span></div>
+                <div><span className="muted">Cobro al cliente</span><span>{money(o.laborPrice)}</span></div>
+                {partsTotal(o) > 0 && <div><span className="muted">Repuestos cobrados aparte</span><span>{money(partsTotal(o))}</span></div>}
                 <div className="grand"><span>Total</span><span>{money(total)}</span></div>
                 <div><span className="muted">Abonos</span><span>-{money(deposits)}</span></div>
                 <div style={{ fontWeight: 600 }}><span>Saldo pendiente</span><span className="red">{money(Math.max(0, total - deposits))}</span></div>
+                {canMoney && <>
+                  <div className="faint" style={{ marginTop: 8 }}><span>Costo de repuestos</span><span>-{money(partsCost)}</span></div>
+                  <div className="faint"><span>Pago al técnico</span><span>-{money(o.technicianPay || 0)}</span></div>
+                  <div style={{ fontWeight: 600 }}><span>Ganancia estimada</span><span className={total - partsCost - (o.technicianPay || 0) < 0 ? 'red' : ''}>{money(total - partsCost - (o.technicianPay || 0))}</span></div>
+                </>}
                 {canMoney && <button className="btn sm mt" onClick={() => setModal('deposit')}>Registrar abono</button>}
                 {o.deposits.map((d, i) => (
                   <div key={i} className="faint deposit-row" style={{ fontSize: 12 }}>
@@ -240,7 +252,6 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
   const [q, setQ] = useState(order.device.model);
   const [sel, setSel] = useState<Product | null>(null);
   const [qty, setQty] = useState(1);
-  const [price, setPrice] = useState(0);
   const [freeName, setFreeName] = useState('');
   const [freeCost, setFreeCost] = useState(0);
   const [buy, setBuy] = useState<BuyFromSupplierValue>(EMPTY_BUY);
@@ -268,9 +279,9 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
               { paymentType: buy.paymentType, method: buy.method, note: `Repuesto para OT ${order.number}` });
             purchase = { number: r.number, supplierName: s.name };
           }
-          await addFreePart(actor, order.id, { name: freeName, qty, unitCost: freeCost, unitPrice: price, purchaseNumber: purchase?.number, supplierName: purchase?.supplierName });
+          await addFreePart(actor, order.id, { name: freeName, qty, unitCost: freeCost, purchaseNumber: purchase?.number, supplierName: purchase?.supplierName });
         }, buy.enabled ? (buy.paymentType === 'credito' ? 'Repuesto agregado y deuda registrada al proveedor' : 'Repuesto agregado y compra registrada') : 'Repuesto agregado (sin inventario)')
-      : run(() => addPart(actor, order.id, sel!.id, qty, price), selTracks ? 'Repuesto agregado y descontado del inventario' : 'Repuesto agregado (sin inventario)');
+      : run(() => addPart(actor, order.id, sel!.id, qty), selTracks ? 'Repuesto agregado y descontado del inventario' : 'Repuesto agregado (sin inventario)');
 
   return (
     <Modal
@@ -280,7 +291,7 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
         <>
           <button className="btn ghost" onClick={onClose}>Cancelar</button>
           <button className="btn primary"
-            disabled={busy || (mode === 'catalogo' ? !sel || (selTracks && qty > sel.stock) : !freeName.trim() || !price)}
+            disabled={busy || (mode === 'catalogo' ? !sel || (selTracks && qty > sel.stock) : !freeName.trim() || !freeCost)}
             onClick={() => submit().then((ok) => ok && onClose())}>
             {mode === 'catalogo' && selTracks ? 'Agregar y descontar stock' : 'Agregar a la orden'}
           </button>
@@ -288,7 +299,8 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
       }
     >
       <div className="stack">
-        <Seg value={mode} onChange={(m) => { setMode(m); setQty(1); setPrice(0); }} options={[
+        <div className="alert info"><div>El repuesto <b>no se le cobra aparte</b> al cliente: va incluido en «Cobro al cliente» de la orden. Su costo baja la ganancia.</div></div>
+        <Seg value={mode} onChange={(m) => { setMode(m); setQty(1); }} options={[
           { value: 'catalogo', label: 'Del inventario' },
           { value: 'libre', label: 'Repuesto libre (sin inventario)' },
         ]} />
@@ -297,11 +309,10 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
             <div className="form-grid">
               <Field label="Descripción del repuesto" required className="full"><input className="input" autoFocus value={freeName} onChange={(e) => setFreeName(e.target.value)} placeholder="Ej.: Flex de carga Moto G9 (comprado a Pepe)" /></Field>
               <Field label="Cantidad"><input className="input num" type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))} /></Field>
-              <Field label="Costo (lo que le costó)"><MoneyInput value={freeCost} onChange={setFreeCost} /></Field>
-              <Field label="Precio al cliente (unitario)" required><MoneyInput value={price} onChange={setPrice} /></Field>
+              <Field label="Costo (lo que le costó)" required><MoneyInput value={freeCost} onChange={setFreeCost} /></Field>
             </div>
             <BuyFromSupplierFields value={buy} onChange={setBuy} />
-            <div className="faint" style={{ fontSize: 12 }}>Para repuestos que no maneja en inventario: no descuenta stock, pero el costo y el precio quedan en la orden y en la factura.</div>
+            <div className="faint" style={{ fontSize: 12 }}>Para repuestos que no maneja en inventario: no descuenta stock; el costo queda en la orden y baja la ganancia.</div>
           </>
         ) : !sel ? (
           <>
@@ -309,12 +320,12 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
             <div className="card" style={{ maxHeight: 360, overflowY: 'auto' }}>
               {list.length === 0 ? <Empty>Sin resultados. Borre el texto o use «Repuesto libre».</Empty> : list.map((p) => (
                 <div key={p.id} className="list-row" style={{ cursor: available(p) ? 'pointer' : 'not-allowed', opacity: available(p) ? 1 : 0.5 }}
-                  onClick={() => available(p) && (setSel(p), setPrice(p.price || p.cost))}>
+                  onClick={() => available(p) && setSel(p)}>
                   <div className="grow">{p.name}<small className="faint mono" style={{ display: 'block' }}>{p.sku} · {p.type}</small></div>
                   {tracksStock(p)
                     ? <Badge tone={p.stock > p.minStock ? 'ok' : p.stock > 0 ? 'warn' : 'red'}>Stock {p.stock}</Badge>
                     : <Badge tone="info">Sin inventario</Badge>}
-                  <span className="mono">{money(p.price || p.cost)}</span>
+                  <span className="mono faint">costo {money(p.cost)}</span>
                 </div>
               ))}
             </div>
@@ -327,7 +338,6 @@ function AddPartModal({ order, onClose }: { order: RepairOrder; onClose: () => v
             </div>
             <div className="form-grid">
               <Field label="Cantidad"><input className="input num" type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))} /></Field>
-              <Field label="Precio al cliente (unitario)"><MoneyInput value={price} onChange={setPrice} /></Field>
             </div>
             {selTracks && qty > sel.stock && <div className="alert error">No hay stock suficiente. Registre una compra o use «Repuesto libre».</div>}
           </>

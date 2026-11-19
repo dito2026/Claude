@@ -92,18 +92,18 @@ export async function seedDemo() {
   const o1 = await createOrder(admin, {
     customer: customers[0], device: device('Huawei', 'Y70'), reportedIssue: 'Pantalla rota, no da imagen',
     technicianId: techs[1].id, technicianName: techs[1].name, technicianUserId: '', priority: 'normal',
-    promisedAt: inTwoDays, budget: 120000, laborPrice: 55000, technicianPay: 30000, warrantyDays: 30,
+    promisedAt: inTwoDays, budget: 120000, laborPrice: 120000, technicianPay: 30000, warrantyDays: 30,
     intakeDeposit: { amount: 50000, method: 'Nequi' },
   });
-  await addPart(admin, o1.id, pid['REP-0001'], 1, 65000);
+  await addPart(admin, o1.id, pid['REP-0001'], 1);
   await setStatus(admin, o1.id, 'Reparado / Listo', 'Pantalla instalada y probada');
 
   const o2 = await createOrder(admin, {
     customer: customers[1], device: device('Vivo', 'Y33S'), reportedIssue: 'La batería se descarga rápido',
     technicianId: techs[0].id, technicianName: techs[0].name, technicianUserId: uids.tecnico, priority: 'alta',
-    promisedAt: yesterday, budget: 70000, laborPrice: 30000, technicianPay: 15000, warrantyDays: 30,
+    promisedAt: yesterday, budget: 70000, laborPrice: 70000, technicianPay: 15000, warrantyDays: 30,
   });
-  await addPart(admin, o2.id, pid['REP-0002'], 1, 40000);
+  await addPart(admin, o2.id, pid['REP-0002'], 1);
   await setStatus(admin, o2.id, 'En reparación');
 
   await createOrder(admin, {

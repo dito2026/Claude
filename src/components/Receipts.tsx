@@ -1,8 +1,12 @@
 import { Mail, MessageCircle, Printer } from 'lucide-react';
-import type { BusinessSettings, Invoice, RepairOrder } from '../lib/types';
+import type { BusinessSettings, Invoice, InvoiceItem, RepairOrder } from '../lib/types';
 import { dateOnly, dateTime, money, pad, whatsappLink } from '../lib/format';
 import { depositsTotal, orderTotal } from '../services/orders';
 import { Modal, printNow } from './ui';
+
+/** Valor de la línea en el comprobante: los repuestos de la reparación van incluidos y lo encimado es obsequio. */
+const lineAmount = (it: InvoiceItem) =>
+  it.unitPrice > 0 ? money(it.qty * it.unitPrice) : it.gift ? 'Obsequio' : it.kind === 'repuesto' ? 'Incluido' : money(0);
 
 function Header({ s }: { s: BusinessSettings }) {
   return (
@@ -36,7 +40,7 @@ export function InvoiceReceipt({ inv, s }: { inv: Invoice; s: BusinessSettings }
             <tr key={i}>
               <td>{it.qty} × {it.description}{it.imei ? <><br />IMEI {it.imei}</> : null}
                 {it.unitId && <><br />{warrantyLine(it)}</>}</td>
-              <td className="r">{money(it.qty * it.unitPrice)}</td>
+              <td className="r">{lineAmount(it)}</td>
             </tr>
           ))}
         </tbody>
@@ -124,7 +128,7 @@ const invoiceText = (inv: Invoice, s: BusinessSettings) =>
   [
     `*${s.name}* · Comprobante N.º ${pad(inv.number, 6)}`,
     dateOnly(inv.createdAt),
-    ...inv.items.map((i) => `• ${i.qty} × ${i.description}: ${money(i.qty * i.unitPrice)}${i.imei ? `\n   IMEI ${i.imei}` : ''}${i.unitId && i.warrantyMonths != null ? `\n   ${warrantyLine(i)}` : ''}`),
+    ...inv.items.map((i) => `• ${i.qty} × ${i.description}: ${lineAmount(i)}${i.imei ? `\n   IMEI ${i.imei}` : ''}${i.unitId && i.warrantyMonths != null ? `\n   ${warrantyLine(i)}` : ''}`),
     `*Total: ${money(inv.total)}*`,
     s.ticketFooter,
     ...(s.warrantyTerms?.trim() ? ['', s.warrantyTerms.trim()] : []),
