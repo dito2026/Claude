@@ -295,7 +295,7 @@ try {
     await page.goto(BASE + '/tecnicos');
     await page.locator('tr:has-text("Cristian") button:has-text("Estado de cuenta")').click();
     await page.waitForSelector('.modal .stat:has-text("Por pagarle")');
-    await page.waitForSelector('.modal h3:has-text("Trabajos entregados")');
+    await page.waitForSelector('.modal h3:has-text("Trabajos listos y entregados")');
     await page.keyboard.press('Escape');
   });
 

@@ -748,3 +748,10 @@ Errores encontrados y corregidos (cada uno con prueba):
 4. Textos: «Eliminar pago… vuelve a la caja» y «vuelven a la caja al anular» ya no lo dicen para pagos hechos por fuera de la caja. En la lista de pagos de cada compra se marca si fue «por fuera de la caja», «de Caja descontado después» o «pasado desde C-xxxx».
 
 Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`payments` de una compra sin comprobar que cuadren; la app siempre los escribe juntos.
+
+## 69. El técnico gana desde que la OT queda lista
+
+- `EARNS_PAY` (`services/staff.ts`) = «Reparado / Listo» y «Entregado». `technicianBalance` suma el «pago al técnico» de esas OT, así que ya no hay que esperar a entregarla o facturarla. «No reparado» no suma. Si una OT vuelve de «Listo» a «En reparación», deja de sumar, porque el saldo se calcula, no se guarda.
+- Lo usan la pantalla Técnicos, el Estado de cuenta, Caja → «Pago a técnico» (por pagarle) y las alertas.
+- Estado de cuenta: «Trabajos listos y entregados», con la fecha en que quedó lista (`readyAt`: último paso a «Reparado / Listo» en el historial; si no hay, la entrega) y el estado (Lista o Entregada).
+- La contabilidad no cambia: el costo del técnico entra al estado de resultados con la factura de la OT.

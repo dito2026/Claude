@@ -18,16 +18,25 @@ export async function saveTechnician(actor: Actor, t: TechnicianInput, id?: stri
   return backend.create('technicians', { ...t, ...created(actor) });
 }
 
-/** Lo que se le debe a cada técnico: mano de obra de OT entregadas − pagos registrados. */
+/** Estados en que la OT ya le suma su «pago al técnico»: desde que queda lista (no hay que esperar a entregarla). */
+export const EARNS_PAY: ReadonlySet<RepairOrder['status']> = new Set<RepairOrder['status']>(['Reparado / Listo', 'Entregado']);
+
+/** Cuándo quedó lista la OT: la última vez que pasó a «Reparado / Listo»; si no hay, la entrega o el último cambio. */
+export function readyAt(o: Pick<RepairOrder, 'timeline' | 'deliveredAt' | 'updatedAt'>) {
+  const t = [...(o.timeline ?? [])].reverse().find((e) => e.status === 'Reparado / Listo');
+  return t?.at ?? o.deliveredAt ?? o.updatedAt;
+}
+
+/** Lo que se le debe a cada técnico: pago de las OT listas o entregadas − pagos registrados. */
 export function technicianBalance(t: Technician, orders: RepairOrder[], movements: CashMovement[]) {
-  const done = orders.filter((o) => o.technicianId === t.id && o.status === 'Entregado');
+  const done = orders.filter((o) => o.technicianId === t.id && EARNS_PAY.has(o.status));
   const earned = sum(done.map((o) => o.technicianPay || 0));
   const paid = sum(
     movements
       .filter((m) => m.category === 'pago_tecnico' && m.refId === t.id)
       .map((m) => (m.direction === 'egreso' ? m.amount : -m.amount)),
   );
-  const open = orders.filter((o) => o.technicianId === t.id && o.status !== 'Entregado' && o.status !== 'No reparado');
+  const open = orders.filter((o) => o.technicianId === t.id && !EARNS_PAY.has(o.status) && o.status !== 'No reparado');
   return { jobs: done.length, earned, paid, owed: earned - paid, open: open.length };
 }
 
@@ -101,9 +110,9 @@ export async function bootstrapAdmin(name: string, email: string, password: stri
  */
 export function technicianStatement(t: Technician, orders: RepairOrder[], movements: CashMovement[]) {
   const mine = orders.filter((o) => o.technicianId === t.id);
-  const delivered = mine.filter((o) => o.status === 'Entregado')
-    .sort((a, b) => (b.deliveredAt ?? b.updatedAt ?? '').localeCompare(a.deliveredAt ?? a.updatedAt ?? ''));
-  const pending = mine.filter((o) => o.status !== 'Entregado' && o.status !== 'No reparado')
+  const delivered = mine.filter((o) => EARNS_PAY.has(o.status))
+    .sort((a, b) => (readyAt(b) ?? '').localeCompare(readyAt(a) ?? ''));
+  const pending = mine.filter((o) => !EARNS_PAY.has(o.status) && o.status !== 'No reparado')
     .sort((a, b) => b.number - a.number);
   const payments = movements.filter((m) => m.category === 'pago_tecnico' && m.refId === t.id)
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));

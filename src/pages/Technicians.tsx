@@ -6,7 +6,7 @@ import type { CashMovement, RepairOrder, Technician } from '../lib/types';
 import { dateOnly, dateTime, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, PageHead, Stat, useAction, useToast } from '../components/ui';
-import { linkTechnicianPayment, saveTechnician, technicianBalance, technicianStatement, type TechnicianInput } from '../services/staff';
+import { linkTechnicianPayment, readyAt, saveTechnician, technicianBalance, technicianStatement, type TechnicianInput } from '../services/staff';
 
 const EMPTY: TechnicianInput = { name: '', phone: '', specialty: '', active: true, commissionPct: 0 };
 
@@ -27,7 +27,7 @@ export function Technicians() {
         {rows.length === 0 ? <Empty>No hay técnicos registrados.</Empty> : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Técnico</th><th>Especialidad</th><th>Estado</th><th>Usuario</th><th className="num">OT abiertas</th><th className="num">Trabajos entregados</th><th className="num">Ganado</th><th className="num">Pagado</th><th className="num">Por pagarle</th><th /></tr></thead>
+              <thead><tr><th>Técnico</th><th>Especialidad</th><th>Estado</th><th>Usuario</th><th className="num">OT abiertas</th><th className="num">Trabajos listos</th><th className="num">Ganado</th><th className="num">Pagado</th><th className="num">Por pagarle</th><th /></tr></thead>
               <tbody>
                 {[...rows].sort((a, b) => a.name.localeCompare(b.name)).map((t) => {
                   const b = technicianBalance(t, orders, movements);
@@ -54,7 +54,7 @@ export function Technicians() {
           </div>
         )}
       </div>
-      <p className="faint" style={{ fontSize: 12 }}>Cada OT entregada suma su «pago al técnico». Los pagos se registran en Caja → «Pago a técnico».</p>
+      <p className="faint" style={{ fontSize: 12 }}>Cada OT suma su «pago al técnico» desde que queda «Reparado / Listo» (no hay que esperar a entregarla). Los pagos se registran en Caja → «Pago a técnico».</p>
       {edit && <TechModal edit={edit} onClose={() => setEdit(null)} />}
       {statement && <TechStatementModal t={statement} orders={orders} movements={movements} onClose={() => setStatement(null)} />}
     </>
@@ -98,7 +98,7 @@ function TechStatementModal({ t, orders, movements, onClose }: { t: Technician; 
       <div className="stack">
         <div className="grid g3">
           <Stat accent label="Por pagarle" value={<span className={st.owed > 0 ? 'red' : ''}>{money(st.owed)}</span>} sub="ganado − pagado" />
-          <Stat label="Ganado" value={money(st.earned)} sub={`${st.jobs} trabajo(s) entregado(s)`} />
+          <Stat label="Ganado" value={money(st.earned)} sub={`${st.jobs} trabajo(s) listo(s) o entregado(s)`} />
           <Stat label="Pagado" value={money(st.paid)} sub={`${st.payments.length} pago(s)`} />
         </div>
 
@@ -127,16 +127,17 @@ function TechStatementModal({ t, orders, movements, onClose }: { t: Technician; 
         )}
 
         <div>
-          <h3 style={{ margin: '4px 0 6px' }}>Trabajos entregados · suman {money(st.earned)}</h3>
-          {st.noPay > 0 && <div className="alert warn" style={{ marginBottom: 8 }}><div>{st.noPay} trabajo(s) entregado(s) sin «pago al técnico»: no le suman nada. Ábralos y escriba cuánto se le paga.</div></div>}
-          {st.delivered.length === 0 ? <Empty>Aún no tiene trabajos entregados.</Empty> : (
+          <h3 style={{ margin: '4px 0 6px' }}>Trabajos listos y entregados · suman {money(st.earned)}</h3>
+          {st.noPay > 0 && <div className="alert warn" style={{ marginBottom: 8 }}><div>{st.noPay} trabajo(s) listo(s) sin «pago al técnico»: no le suman nada. Ábralos y escriba cuánto se le paga.</div></div>}
+          {st.delivered.length === 0 ? <Empty>Aún no tiene trabajos listos.</Empty> : (
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th>OT</th><th>Entregada</th><th>Cliente</th><th>Equipo</th><th className="num">Pago al técnico</th></tr></thead>
+                <thead><tr><th>OT</th><th>Lista</th><th>Estado</th><th>Cliente</th><th>Equipo</th><th className="num">Pago al técnico</th></tr></thead>
                 <tbody>{st.delivered.map((o) => (
                   <tr key={o.id}>
                     <td><Link className="mono red" to={`/taller/${o.id}`}>OT {pad(o.number)}</Link></td>
-                    <td>{dateOnly(o.deliveredAt ?? o.updatedAt)}</td>
+                    <td>{dateOnly(readyAt(o))}</td>
+                    <td><Badge tone={o.status === 'Entregado' ? 'ok' : 'info'}>{o.status === 'Entregado' ? 'Entregada' : 'Lista'}</Badge></td>
                     <td>{o.customer.name}</td>
                     <td>{deviceOf(o)}</td>
                     <td className="num strong">{o.technicianPay > 0 ? money(o.technicianPay) : <span className="red">Sin pago</span>}</td>
@@ -150,7 +151,7 @@ function TechStatementModal({ t, orders, movements, onClose }: { t: Technician; 
         {st.pending.length > 0 && (
           <div>
             <h3 style={{ margin: '4px 0 6px' }}>En proceso (aún no suman) · {money(st.pendingPay)}</h3>
-            <div className="faint" style={{ fontSize: 13, marginBottom: 6 }}>Se le suman cuando la orden quede «Entregado» (al facturarla o entregarla).</div>
+            <div className="faint" style={{ fontSize: 13, marginBottom: 6 }}>Se le suman cuando la orden quede «Reparado / Listo».</div>
             <div className="table-wrap">
               <table className="table">
                 <thead><tr><th>OT</th><th>Estado</th><th>Cliente</th><th>Equipo</th><th className="num">Pago al técnico</th></tr></thead>
