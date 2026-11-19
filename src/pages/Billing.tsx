@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Ban, Gift, HandCoins, Minus, PenLine, Plus, Trash2, Wrench, X } from 'lucide-react';
+import { Ban, Gift, HandCoins, Minus, PenLine, Pencil, Plus, Trash2, Wrench, X } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { Customer, Invoice, InvoiceItem, InvoiceItemKind, Payment, PhoneUnit, Product, RepairOrder, Seller } from '../lib/types';
 import { CREDIT_METHOD } from '../lib/types';
@@ -10,7 +10,7 @@ import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, useAc
 import { PayMethods } from '../components/PayMethods';
 import { CustomerPicker } from '../components/CustomerPicker';
 import { InvoiceModal } from '../components/Receipts';
-import { computeTotals, createInvoice, creditBalance, invoiceCost, itemsFromOrder, voidInvoice, lacksCost } from '../services/billing';
+import { computeTotals, createInvoice, creditBalance, invoiceCost, itemsFromOrder, voidInvoice, lacksCost, costEditable, fixInvoiceCosts } from '../services/billing';
 import { depositsTotal } from '../services/orders';
 import { customerRef } from '../services/orders';
 import { saveSettings, useSettings } from '../services/settings';
@@ -149,7 +149,7 @@ function Pos() {
   };
   const setQty = (i: number, qty: number) => setItems((xs) => xs.map((x, k) => (k === i ? { ...x, qty: Math.max(1, qty) } : x)));
   const setPrice = (i: number, unitPrice: number) => setItems((xs) => xs.map((x, k) => (k === i ? { ...x, unitPrice } : x)));
-  const setCost = (i: number, unitCost: number) => setItems((xs) => xs.map((x, k) => (k === i ? { ...x, unitCost } : x)));
+  const setCost = (i: number, unitCost: number) => setItems((xs) => xs.map((x, k) => (k === i ? { ...x, unitCost, askCost: true } : x)));
   const removeAt = (i: number) => setItems((xs) => xs.filter((_, k) => k !== i));
   const stockOf = (id?: string) => products.find((p) => p.id === id);
 
@@ -173,7 +173,7 @@ function Pos() {
       });
       const inv: Invoice = {
         id: r.id, number: r.number, customerId: customer?.id, customer: customer ? customerRef(customer) : { name: 'Consumidor final', phone: '', document: '' },
-        items: items.map((it) => (it.unitId && (it.warrantyMonths ?? 0) > 0 ? { ...it, warrantyUntil: addMonths(new Date().toISOString(), it.warrantyMonths!) } : it)), ...totals, depositsApplied: deposits, payments: payments.filter((p) => p.amount > 0), repairOrderId: order?.id,
+        items: items.map(({ askCost: _ask, ...it }) => (it.unitId && (it.warrantyMonths ?? 0) > 0 ? { ...it, warrantyUntil: addMonths(new Date().toISOString(), it.warrantyMonths!) } : it)), ...totals, depositsApplied: deposits, payments: payments.filter((p) => p.amount > 0), repairOrderId: order?.id,
         repairOrderNumber: order?.number, status: payments.some((p) => p.method === CREDIT_METHOD && p.amount > 0) ? 'credito' : 'pagada',
         cashSessionId: '', cashierName: profile?.name ?? '', createdAt: new Date().toISOString(),
         sellerName: seller?.name,
@@ -293,9 +293,9 @@ function Pos() {
                         ? <small className="gift-note"><Gift size={12} /> Encimado · costo {money(it.qty * it.unitCost)} · se le debe a {it.gift.supplierName}</small>
                         : <small className="faint">{it.kind === 'repuesto' ? 'Repuesto de la OT' : it.kind === 'mano_obra' ? 'Mano de obra' : money(it.unitPrice) + ' c/u'}</small>}
                       {over && <div className="red" style={{ fontSize: 12 }}>Solo hay {p!.stock} en stock</div>}
-                      {lacksCost(it) && !it.stockAlreadyMoved && (
+                      {(lacksCost(it) || it.askCost) && !it.stockAlreadyMoved && !it.gift && (
                         <div className="cost-missing" role="note">
-                          <span>Sin costo: la ganancia saldrá igual a la venta. ¿Cuánto le costó?</span>
+                          <span>{lacksCost(it) ? 'Sin costo: la ganancia saldrá igual a la venta. ¿Cuánto le costó?' : 'Costo que le costó (queda guardado para las próximas ventas):'}</span>
                           <div style={{ width: 120 }}><MoneyInput value={it.unitCost} onChange={(v) => setCost(i, v)} placeholder="Costo" /></div>
                         </div>
                       )}
@@ -383,6 +383,7 @@ function History() {
   const [cat, setCat] = useState('');
   const [onlyCredit, setOnlyCredit] = useState<'todas' | 'cobrar'>('todas');
   const [collecting, setCollecting] = useState<Invoice | null>(null);
+  const [fixingCost, setFixingCost] = useState<Invoice | null>(null);
   const products = useCollection<Product>('products').rows;
   const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const owedTotal = rows.reduce((a, i) => a + creditBalance(i), 0);
@@ -455,6 +456,9 @@ function History() {
                     })()}
                     <td className="right" onClick={(e) => e.stopPropagation()}>
                       {creditBalance(i) > 0 && can('billing') && <button className="btn sm" title="Registrar un pago del cliente" onClick={() => setCollecting(i)}><HandCoins size={14} />Cobrar</button>}
+                      {can('settings') && i.status !== 'anulada' && i.items.some(costEditable) && (
+                        <button className="btn sm ghost" title="Corregir el costo (ganancia) de esta venta" onClick={() => setFixingCost(i)}><Pencil size={15} /></button>
+                      )}
                       {can('billing.void') && i.status !== 'anulada' && (
                         <button className="btn sm ghost" title="Anular" onClick={() => { setVoiding(i); setReason(''); }}><Ban size={15} /></button>
                       )}
@@ -468,6 +472,7 @@ function History() {
       </div>
       {collecting && <CollectCreditModal inv={rows.find((x) => x.id === collecting.id) ?? collecting} onClose={() => setCollecting(null)} />}
       {view && <InvoiceModal inv={view} s={settings} onClose={() => setView(null)} />}
+      {fixingCost && <FixCostModal inv={rows.find((x) => x.id === fixingCost.id) ?? fixingCost} onClose={() => setFixingCost(null)} />}
       {voiding && (
         <Modal title={`Anular comprobante N.º ${pad(voiding.number, 6)}`} onClose={() => setVoiding(null)}
           footer={<><button className="btn ghost" onClick={() => setVoiding(null)}>Cancelar</button>
@@ -589,6 +594,39 @@ function GiftModal({ onClose, onAdd }: { onClose: () => void; onAdd: (it: Invoic
           El cliente no lo paga: sale en la factura como obsequio en $0. El costo ({money(qty * cost)}) baja la ganancia de esta venta y, al cobrar,
           queda como deuda con el proveedor (compra a crédito) para pagarle desde Compras. Lo ve en Contabilidad → Encimados.
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** Corregir el costo de las líneas de una venta ya hecha (solo administrador). */
+function FixCostModal({ inv, onClose }: { inv: Invoice; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const lines = inv.items.map((it, index) => ({ it, index })).filter(({ it }) => costEditable(it));
+  const [costs, setCosts] = useState<Record<number, number>>(() => Object.fromEntries(lines.map(({ it, index }) => [index, it.unitCost])));
+  const [reason, setReason] = useState('');
+  const changed = Object.fromEntries(lines.filter(({ it, index }) => costs[index] !== it.unitCost).map(({ index }) => [index, costs[index]]));
+  const sale = inv.items.reduce((a, it) => a + it.qty * it.unitPrice, 0) - (inv.discount || 0);
+  const costNow = inv.items.reduce((a, it, k) => a + it.qty * (costs[k] ?? it.unitCost), 0);
+  return (
+    <Modal title={`Corregir costo · venta ${pad(inv.number, 6)}`} onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || !reason.trim() || Object.keys(changed).length === 0}
+          onClick={() => run(() => fixInvoiceCosts(actor, inv.id, changed, reason), 'Costo corregido · ganancia recalculada').then((ok) => ok && onClose())}>Guardar</button></>}>
+      <div className="stack">
+        <div className="faint" style={{ fontSize: 13 }}>{inv.customer.name || 'Consumidor final'} · {dateTime(inv.createdAt)}. Escriba lo que le costó cada artículo. No cambia lo que pagó el cliente ni la caja.</div>
+        {lines.map(({ it, index }) => (
+          <Field key={index} label={`${it.qty > 1 ? `${it.qty} × ` : ''}${it.description}${it.imei ? ` · IMEI ${it.imei}` : ''} · vendido en ${money(it.qty * it.unitPrice)}`}>
+            <MoneyInput value={costs[index]} onChange={(v) => setCosts((c) => ({ ...c, [index]: v }))} placeholder="Costo (c/u)" />
+          </Field>
+        ))}
+        <div className="totals">
+          <div><span className="muted">Venta</span><span>{money(sale)}</span></div>
+          <div><span className="muted">Costo</span><span>-{money(costNow)}</span></div>
+          <div className="grand"><span>Ganancia</span><span>{money(sale - costNow)}</span></div>
+        </div>
+        <Field label="Motivo" required><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej.: se vendió sin costo · el costo real era otro" /></Field>
       </div>
     </Modal>
   );

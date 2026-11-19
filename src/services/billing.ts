@@ -408,13 +408,13 @@ export async function collectCredit(actor: Actor, invoiceId: string, amount: num
  * `newCost` devuelve el costo nuevo de la línea, o undefined si esa línea no cambia.
  */
 export async function prepareInvoiceCostFix(
-  tx: Tx, actor: Actor, invoiceId: string, newCost: (it: InvoiceItem) => number | undefined, reason: string,
+  tx: Tx, actor: Actor, invoiceId: string, newCost: (it: InvoiceItem, index: number) => number | undefined, reason: string,
 ): Promise<(() => void) | null> {
   const inv = await tx.get<Invoice>('invoices', invoiceId);
   if (!inv || inv.status === 'anulada') return null;
   const before: { index: number; unitCost: number }[] = [];
   const items = inv.items.map((it, index) => {
-    const c = newCost(it);
+    const c = newCost(it, index);
     if (c === undefined || c === it.unitCost) return it;
     before.push({ index, unitCost: it.unitCost });
     return { ...it, unitCost: c };
@@ -478,5 +478,44 @@ export async function applyCostToZeroSales(actor: Actor, fixes: { productId: str
     writes.forEach((w) => w());
     for (const u of units) tx.update('phoneUnits', u.id, { cost: unitIds.get(u.id)!, ...touched() });
     return writes.length;
+  });
+}
+
+/** Líneas de una venta a las que se les puede corregir el costo a mano (no mano de obra ni encimados). */
+export const costEditable = (it: InvoiceItem) => (it.kind === 'producto' || it.kind === 'repuesto') && !it.gift;
+
+/**
+ * Corrige a mano el costo de líneas de una venta ya hecha (solo administrador): p. ej. un celular que se vendió
+ * sin costo o con el costo mal escrito. Recalcula ganancia y comisión sobre utilidad; si es un celular, también
+ * el costo del equipo vendido. Si el producto no tenía costo, se le guarda para las próximas ventas.
+ */
+export async function fixInvoiceCosts(actor: Actor, invoiceId: string, costs: Record<number, number>, reason: string) {
+  if (!reason.trim()) throw new BusinessError('Escriba el motivo de la corrección.');
+  if (Object.values(costs).some((c) => !(c >= 0))) throw new BusinessError('Revise los costos.');
+  return backend.transaction(async (tx) => {
+    const inv = await tx.get<Invoice>('invoices', invoiceId);
+    if (!inv) throw new BusinessError('Venta no encontrada.');
+    if (inv.status === 'anulada') throw new BusinessError('La venta está anulada.');
+    for (const k of Object.keys(costs)) {
+      const it = inv.items[Number(k)];
+      if (!it || !costEditable(it)) throw new BusinessError('Esa línea no se puede corregir aquí.');
+    }
+    const write = await prepareInvoiceCostFix(tx, actor, invoiceId, (_it, index) => costs[index], reason.trim());
+    if (!write) throw new BusinessError('No hay cambios para guardar.');
+    const units: PhoneUnit[] = [];
+    const prods: Product[] = [];
+    for (const [k, c] of Object.entries(costs)) {
+      const it = inv.items[Number(k)];
+      if (it.unitId) {
+        const u = await tx.get<PhoneUnit>('phoneUnits', it.unitId);
+        if (u && u.cost !== c) units.push({ ...u, cost: c });
+      } else if (it.productId && c > 0 && !prods.some((p) => p.id === it.productId)) {
+        const p = await tx.get<Product>('products', it.productId);
+        if (p && !(p.cost > 0)) prods.push({ ...p, cost: c });
+      }
+    }
+    write();
+    for (const u of units) tx.update('phoneUnits', u.id, { cost: u.cost, ...touched() });
+    for (const p of prods) tx.update('products', p.id, { cost: p.cost, ...touched() });
   });
 }

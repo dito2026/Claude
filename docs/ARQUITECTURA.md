@@ -763,3 +763,9 @@ Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`pa
 - Órdenes viejas con repuestos que tenían precio: siguen cobrándose hasta tocar **«No cobrar»** (`stopChargingPart`), que deja el precio en 0, conserva el costo y anota el cambio en el historial.
 - Factura: las líneas de repuesto van en $0 y en el comprobante salen como «Incluido»; lo encimado sale como «Obsequio» (impreso y WhatsApp).
 - Demo: las órdenes de ejemplo cobran el total en «Cobro al cliente».
+
+## 71. La casilla «Sin costo» se cerraba al escribir
+
+- Error: en Facturación, la casilla amarilla «Sin costo… ¿Cuánto le costó?» se mostraba solo mientras el costo era $0. Al teclear la primera cifra, el costo pasaba a ser, por ejemplo, $3, la casilla desaparecía y el resto se perdía. La venta quedaba con costo $3, y el producto o celular también, porque el costo escrito en la venta se guarda en él.
+- Arreglo: al escribir en la casilla, la línea queda marcada `askCost` (solo en pantalla; se quita antes de guardar la venta) y la casilla sigue abierta hasta cobrar. Prueba e2e: escribe 380000 tecla por tecla y comprueba que quede 380.000.
+- **Corregir costo** (Facturación → Historial, lápiz, solo admin; `fixInvoiceCosts`): cambia el costo de los artículos de una venta ya hecha (no mano de obra ni encimados). Recalcula la ganancia y la comisión sobre utilidad (`prepareInvoiceCostFix`), corrige el costo del celular vendido y le pone costo al producto si no tenía. No cambia lo cobrado ni la caja. Queda el historial en `costEdits`.

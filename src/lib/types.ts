@@ -259,6 +259,8 @@ export interface InvoiceItem {
    * Se compró a un proveedor: al facturar queda la deuda (compra a crédito).
    */
   gift?: { supplierId: string; supplierName: string; purchaseId?: string; purchaseNumber?: number; line?: 'Equipos' | 'Accesorios' | 'Servicio técnico' };
+  /** solo en pantalla: la línea llegó sin costo y se está escribiendo (la casilla no se cierra al teclear) */
+  askCost?: boolean;
 }
 
 export interface Payment {

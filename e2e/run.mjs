@@ -100,6 +100,13 @@ try {
     await search.fill('Forro prueba sin costo');
     await search.press('Enter');
     await page.waitForSelector('.cost-missing');
+    // la casilla no se cierra mientras se escribe el costo tecla por tecla
+    await page.locator('.cost-missing input').click();
+    await page.keyboard.type('380000', { delay: 30 });
+    assert(await page.locator('.cost-missing').count() === 1, 'la casilla de costo se cerró al escribir');
+    const typed = await page.locator('.cost-missing input').inputValue();
+    assert(typed === '380.000', `el costo quedó en ${typed} y no en 380.000`);
+    await page.locator('.cost-missing input').fill('');
     // 2) se vende sin escribir el costo (queda en $0)
     await page.click('.pay-methods button:has-text("Efectivo")');
     await page.click('button:has-text("Cobrar")');
@@ -114,6 +121,13 @@ try {
     await page.waitForSelector('.modal:has-text("Ventas que quedaron sin costo")');
     await page.click('.modal button:has-text("Poner el costo a 1 venta")');
     await page.waitForSelector('.toast:has-text("Costo puesto en 1 venta")');
+    // 4) el administrador puede corregir a mano el costo de una venta desde el historial
+    await page.goto(BASE + '/facturacion');
+    await page.click('button:has-text("Historial")');
+    await page.locator('button[title^="Corregir el costo"]').first().click();
+    await page.waitForSelector('.modal:has-text("Corregir costo")');
+    await page.waitForSelector('.modal .totals:has-text("Ganancia")');
+    await page.keyboard.press('Escape');
   });
 
   await check('la caja muestra la venta con su ganancia', async () => {

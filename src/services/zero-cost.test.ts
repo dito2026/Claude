@@ -58,3 +58,23 @@ describe('ventas sin costo', () => {
     expect(zeroCostSales(await backend.list<Invoice>('invoices'), pid)).toHaveLength(0);
   });
 });
+
+describe('corregir a mano el costo de una venta', () => {
+  it('celular vendido con el costo mal: corrige la factura, la ganancia y el equipo', async () => {
+    const { fixInvoiceCosts } = await import('./billing');
+    await openSession(actor, 0);
+    const cel = String(await saveProduct(actor, { ...base, sku: 'C-1', type: 'EQUIPO', name: 'Redmi 13C', cost: 0, price: 450000, stock: 0, line: 'Equipos' }));
+    await registerUnits(actor, cel, [{ imei: '490154203237518', condition: 'NUEVO' }], { cost: 0, supplierName: '', note: '', alreadyInStock: false });
+    // la casilla se cerró al escribir: quedó con costo $3
+    const r = await createInvoice(actor, { customer, discount: 0, taxRate: 0, cashierName: 'T', payments: [{ method: 'Efectivo', amount: 450000 }],
+      items: [{ productId: cel, description: 'Redmi 13C', kind: 'producto', qty: 1, unitPrice: 450000, unitCost: 3, unitId: '490154203237518', imei: '490154203237518' }] });
+    expect((await backend.get<PhoneUnit>('phoneUnits', '490154203237518'))!.cost).toBe(3);
+    await expect(fixInvoiceCosts(actor, r.id, { 0: 380000 }, '')).rejects.toThrow(/motivo/);
+    await fixInvoiceCosts(actor, r.id, { 0: 380000 }, 'el costo era 380.000');
+    const inv = (await backend.get<Invoice>('invoices', r.id))!;
+    expect(invoiceCost(inv)).toBe(380000);
+    expect(inv.costEdits![0]).toMatchObject({ reason: 'el costo era 380.000', items: [{ index: 0, unitCost: 3 }] });
+    expect((await backend.get<PhoneUnit>('phoneUnits', '490154203237518'))!.cost).toBe(380000);
+    await expect(fixInvoiceCosts(actor, r.id, { 0: 380000 }, 'otra vez')).rejects.toThrow(/No hay cambios/);
+  });
+});
