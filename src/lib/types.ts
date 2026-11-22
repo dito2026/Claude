@@ -298,6 +298,8 @@ export interface Invoice extends BaseDoc {
   commissionBase?: CommissionBase;
   /** comisiones por categoría que tenía el vendedor al facturar (para recalcular si cambia el costo) */
   commissionRates?: CategoryRates;
+  /** recálculos de la comisión con otra configuración del vendedor: valores ANTERIORES */
+  commissionEdits?: { at: string; by: string; commission: number; pct?: number; base?: CommissionBase; rates?: CategoryRates }[];
   voidReason?: string;
   voidedAt?: string;
   voidedBy?: string;

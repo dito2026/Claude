@@ -161,3 +161,69 @@ export function sellerSalesDetail(sellerId: string, invoices: Invoice[], period?
   }
   return out.sort((a, b) => b.at.localeCompare(a.at) || a.invoiceNumber - b.invoiceNumber);
 }
+
+export interface CommissionRecalcRow { invoice: Invoice; before: number; after: number }
+
+/** Cómo quedaría la comisión de las ventas del vendedor (en el período) con su configuración ACTUAL. */
+export function commissionRecalcPreview(seller: Seller, invoices: Invoice[], products: Map<string, Product>, period?: Period): CommissionRecalcRow[] {
+  return invoices
+    .filter((i) => i.sellerId === seller.id && valid(i) && (!period || inPeriod(i.createdAt, period)))
+    .map((invoice) => ({ invoice, before: invoice.commission || 0, after: computeCommission(seller, invoice.items, invoice.discount, products) }))
+    .sort((a, b) => (b.invoice.createdAt ?? '').localeCompare(a.invoice.createdAt ?? ''));
+}
+
+/**
+ * Recalcula (solo administrador) la comisión de esas ventas con la configuración ACTUAL del vendedor
+ * (% general y % por línea). Guarda en cada factura la comisión anterior (`commissionEdits`).
+ * No mueve la caja: cambia lo que se le debe al vendedor (lo ya pagado se conserva).
+ */
+export async function recalcCommissions(actor: Actor, sellerId: string, invoiceIds: string[]) {
+  let changed = 0;
+  let diff = 0;
+  for (let i = 0; i < invoiceIds.length; i += 100) {
+    const chunk = invoiceIds.slice(i, i + 100);
+    const r = await backend.transaction(async (tx) => {
+      const seller = await tx.get<Seller>('sellers', sellerId);
+      if (!seller) throw new BusinessError('Vendedor no encontrado.');
+      const invs: Invoice[] = [];
+      for (const id of chunk) {
+        const inv = await tx.get<Invoice>('invoices', id);
+        if (inv && inv.sellerId === sellerId && valid(inv)) invs.push(inv);
+      }
+      const products = new Map<string, Product>();
+      for (const inv of invs) for (const it of inv.items) {
+        if (it.productId && !products.has(it.productId)) {
+          const p = await tx.get<Product>('products', it.productId);
+          if (p) products.set(p.id, p);
+        }
+      }
+      // ---------- ESCRITURAS ----------
+      const at = new Date().toISOString();
+      let n = 0;
+      let d = 0;
+      for (const inv of invs) {
+        const after = computeCommission(seller, inv.items, inv.discount, products);
+        if (after === (inv.commission || 0)) continue;
+        n += 1;
+        d += after - (inv.commission || 0);
+        tx.update('invoices', inv.id, {
+          commission: after,
+          commissionPct: seller.commissionPct,
+          commissionBase: seller.commissionBase,
+          commissionRates: seller.categoryRates ?? {},
+          commissionEdits: [...(inv.commissionEdits ?? []), {
+            at, by: actor.name, commission: inv.commission || 0,
+            ...(inv.commissionPct !== undefined ? { pct: inv.commissionPct } : {}),
+            ...(inv.commissionBase ? { base: inv.commissionBase } : {}),
+            ...(inv.commissionRates ? { rates: inv.commissionRates } : {}),
+          }],
+          ...touched(),
+        });
+      }
+      return { n, d };
+    });
+    changed += r.n;
+    diff += r.d;
+  }
+  return { changed, diff };
+}

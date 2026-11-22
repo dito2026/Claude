@@ -784,3 +784,9 @@ Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`pa
 - Para facturas hechas con la versión anterior, si guardaron un % por categoría de producto, ese % se sigue usando (`itemCategory`) para recalcular.
 - Se quitó «Gana comisión en» (casillas de líneas). Al abrir y al guardar un vendedor, las líneas no marcadas pasan a 0% y `lines` queda vacío. Un vendedor sin guardar de nuevo se sigue calculando igual que antes.
 - Ventana del vendedor: tabla «Comisión por línea» con Equipos (celulares), Accesorios y Servicio técnico (%, y si es sobre la venta o la ganancia; vacío = general). En la lista: «+ % por línea: Accesorios 10% …».
+
+## 74. Recalcular comisiones con la configuración actual
+
+- Vendedores → ventas del vendedor → **«Recalcular con la comisión actual»** (solo admin, `RecalcModal`). Período propio, por defecto este mes. `commissionRecalcPreview` muestra cada venta con la comisión de antes y la de ahora (configuración actual: general y % por línea), los totales y la diferencia. No cambia nada hasta «Aplicar».
+- **Aplicar** (`recalcCommissions`, en bloques de 100 facturas por transacción) actualiza solo las que cambian: `commission`, los % usados (`commissionPct`, `commissionBase`, `commissionRates`) y deja la anterior en `commissionEdits`. No mueve la caja: cambia lo que se le debe al vendedor (`sellerBalance`); lo ya pagado se conserva.
+- Reglas: solo admin y en facturas no anuladas, con una entrada más en `commissionEdits` (probado en el emulador).

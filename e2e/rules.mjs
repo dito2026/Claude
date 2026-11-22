@@ -58,6 +58,12 @@ const check = async (name, p) => { try { await p; console.log('  ✓', name); } 
   })));
   await check('admin corrige un saldo anterior', assertSucceeds(updateDoc(doc(adb, 'purchases/si'), { total: 300000, status: 'parcial', edits: [{ at: 'x', by: 'a', reason: 'r', total: 500000, items: [] }], updatedAt: 'x' })));
   await check('cajero no puede corregir un saldo anterior', assertFails(updateDoc(doc(cdb, 'purchases/si'), { total: 100000, edits: [{ at: 'x' }, { at: 'y' }], updatedAt: 'x' })));
+  await check('admin recalcula la comisión de una venta (queda la anterior)', assertSucceeds(updateDoc(doc(adb, 'invoices/old'), {
+    commission: 2000, commissionPct: 2, commissionBase: 'venta', commissionRates: { Accesorios: { pct: 10, base: 'venta' } },
+    commissionEdits: [{ at: 'x', by: 'a', commission: 400 }], updatedAt: 'x' })));
+  await check('cajero no puede recalcular comisiones', assertFails(updateDoc(doc(cdb, 'invoices/old'), {
+    commission: 9999, commissionEdits: [{ at: 'x' }, { at: 'y' }], updatedAt: 'y' })));
+  await check('recalcular sin dejar la anterior no se permite', assertFails(updateDoc(doc(adb, 'invoices/old'), { commission: 1, updatedAt: 'z' })));
   await check('cajero no puede pasar un gasto a pago de técnico', assertFails(updateDoc(doc(cdb, 'cashMovements/g1'), { category: 'pago_tecnico', expenseCategory: 'Pago a técnicos', refType: 'technician', refId: 't1', previousCategory: 'gasto', linkedAt: 'x', linkedBy: 'a', updatedAt: 'x' })));
   await check('admin pasa un gasto a pago de técnico', assertSucceeds(updateDoc(doc(adb, 'cashMovements/g1'), { category: 'pago_tecnico', expenseCategory: 'Pago a técnicos', refType: 'technician', refId: 't1', previousCategory: 'gasto', linkedAt: 'x', linkedBy: 'a', updatedAt: 'x' })));
   await check('…y no lo puede volver a cambiar', assertFails(updateDoc(doc(adb, 'cashMovements/g1'), { refId: 't2', updatedAt: 'y' })));

@@ -6,7 +6,7 @@ import { dateTime, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, PageHead, Seg, Stat, useAction } from '../components/ui';
 import { LINES, downloadExcel, periodRange, type PeriodKind } from '../services/accounting';
-import { BASE_LABEL, commissionLabel, hasCategoryRates, saveSeller, sellerBalance, sellerSalesDetail, type SellerInput } from '../services/sellers';
+import { BASE_LABEL, commissionLabel, commissionRecalcPreview, hasCategoryRates, recalcCommissions, saveSeller, sellerBalance, sellerSalesDetail, type SellerInput } from '../services/sellers';
 
 const LINE_LABEL: Record<string, string> = { Equipos: 'Equipos (celulares)', Accesorios: 'Accesorios', 'Servicio técnico': 'Servicio técnico' };
 
@@ -153,6 +153,8 @@ const PERIODS: { value: PeriodKind | 'todo'; label: string }[] = [
 ];
 
 function SellerDetail({ seller, invoices, onClose }: { seller: Seller; invoices: Invoice[]; onClose: () => void }) {
+  const { can } = useAuth();
+  const [recalc, setRecalc] = useState(false);
   const [kind, setKind] = useState<PeriodKind | 'todo'>('todo');
   const today = new Date();
   const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -174,7 +176,9 @@ function SellerDetail({ seller, invoices, onClose }: { seller: Seller; invoices:
   ]);
   return (
     <Modal wide title={`Ventas de ${seller.name}`} onClose={onClose}
-      footer={<><button className="btn" onClick={exportXls} disabled={rows.length === 0}><Download size={15} />Excel</button><button className="btn ghost" onClick={onClose}>Cerrar</button></>}>
+      footer={<>
+        {can('settings') && <button className="btn" style={{ marginRight: 'auto' }} onClick={() => setRecalc(true)}>Recalcular con la comisión actual</button>}
+        <button className="btn" onClick={exportXls} disabled={rows.length === 0}><Download size={15} />Excel</button><button className="btn ghost" onClick={onClose}>Cerrar</button></>}>
       <div className="row" style={{ marginBottom: 12 }}>
         <Seg value={kind} onChange={setKind} options={PERIODS} />
         {kind === 'rango' && <>
@@ -216,7 +220,59 @@ function SellerDetail({ seller, invoices, onClose }: { seller: Seller; invoices:
           </div>
         )}
       </div>
+      {recalc && <RecalcModal seller={seller} invoices={invoices} products={productMap} onClose={() => setRecalc(false)} />}
       <div className="faint" style={{ fontSize: 12, marginTop: 8 }}>Ganancia = venta − costo de lo vendido (antes de la comisión). Las facturas anuladas no se cuentan. Si vendió algo sin costo registrado, la ganancia sale igual a la venta.</div>
+    </Modal>
+  );
+}
+
+/** Vista previa y aplicación del recálculo de comisiones con la configuración actual del vendedor. */
+function RecalcModal({ seller, invoices, products, onClose }: { seller: Seller; invoices: Invoice[]; products: Map<string, Product>; onClose: () => void }) {
+  const { actor } = useAuth();
+  const { run, busy } = useAction();
+  const [kind, setKind] = useState<PeriodKind | 'todo'>('mes');
+  const period = kind === 'todo' || kind === 'rango' ? undefined : periodRange(kind, new Date());
+  const rows = useMemo(() => commissionRecalcPreview(seller, invoices, products, period), [seller, invoices, products, kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  const changes = rows.filter((r) => r.after !== r.before);
+  const before = rows.reduce((a, r) => a + r.before, 0);
+  const after = rows.reduce((a, r) => a + r.after, 0);
+  const label = PERIODS.find((p) => p.value === kind)!.label.toLowerCase();
+  const apply = () => run(() => recalcCommissions(actor, seller.id, changes.map((r) => r.invoice.id)),
+    `Comisiones recalculadas · ${changes.length} venta(s)`).then((ok) => ok && onClose());
+  return (
+    <Modal wide title={`Recalcular comisiones · ${seller.name}`} onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || changes.length === 0} onClick={apply}>Aplicar a {changes.length} venta(s)</button></>}>
+      <div className="stack">
+        <div className="faint" style={{ fontSize: 13 }}>
+          Calcula de nuevo la comisión de las ventas de {seller.name} con su configuración de hoy: <b>{commissionLabel(seller)}</b>
+          {hasCategoryRates(seller) && <> ({Object.entries(seller.categoryRates ?? {}).map(([l, r]) => `${l} ${r.pct}% ${BASE_LABEL[r.base]}`).join(' · ')})</>}.
+          No cambia nada hasta que toque «Aplicar». No mueve la caja: cambia lo que se le debe (lo ya pagado se conserva).
+        </div>
+        <Seg value={kind} onChange={setKind} options={PERIODS.filter((p) => p.value !== 'rango')} />
+        <div className="grid g3">
+          <Stat label={`Comisión ${label} · antes`} value={money(before)} sub={`${rows.length} venta(s)`} />
+          <Stat accent label="Con la comisión actual" value={money(after)} />
+          <Stat label="Diferencia" value={<span className={after - before < 0 ? 'red' : ''}>{after - before > 0 ? '+' : ''}{money(after - before)}</span>} sub={`${changes.length} venta(s) cambian`} />
+        </div>
+        {rows.length === 0 ? <Empty>No tiene ventas en este período.</Empty> : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Fecha</th><th>Factura</th><th>Cliente</th><th className="num">Venta</th><th className="num">Antes</th><th className="num">Ahora</th></tr></thead>
+              <tbody>{rows.map((r) => (
+                <tr key={r.invoice.id} style={{ opacity: r.after === r.before ? 0.55 : 1 }}>
+                  <td className="nowrap">{dateTime(r.invoice.createdAt)}</td>
+                  <td className="mono">{pad(r.invoice.number, 6)}</td>
+                  <td>{r.invoice.customer?.name || 'Consumidor final'}</td>
+                  <td className="num">{money(r.invoice.total - (r.invoice.tax || 0))}</td>
+                  <td className="num">{money(r.before)}</td>
+                  <td className={`num strong ${r.after < r.before ? 'red' : ''}`}>{money(r.after)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </Modal>
   );
 }

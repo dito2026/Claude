@@ -327,6 +327,12 @@ try {
     assert(await page.inputValue('.modal input[aria-label="Comisión Accesorios"]') === '10', 'no quedó guardado el 10% de Accesorios');
     assert(await page.inputValue('.modal select[aria-label="Base Accesorios"]') === 'utilidad', 'no quedó «sobre la ganancia» en Accesorios');
     await page.keyboard.press('Escape');
+    // recalcular comisiones con la configuración actual (vista previa)
+    await page.locator('tbody tr:has-text("Vendedor E2E") td').first().click();
+    await page.click('.modal button:has-text("Recalcular con la comisión actual")');
+    await page.waitForSelector('.modal:has-text("Recalcular comisiones")');
+    await page.waitForSelector('.modal .stat:has-text("Con la comisión actual")');
+    await page.keyboard.press('Escape');
   });
 
   await check('sin internet: la app abre y cambia de pantalla (pantallas guardadas)', async () => {

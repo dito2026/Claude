@@ -130,9 +130,14 @@ service cloud.firestore {
     match /invoices/{id} {
       allow read, create: if isCashier();
       // Anular: solo admin. Cobrar un crédito tienda: cajero o admin (solo agrega abonos). Nunca borrar.
+      // Recalcular la comisión del vendedor con su configuración actual: solo admin, queda la anterior en commissionEdits.
       // Corregir el costo de una venta (al corregir la compra): solo admin, mismas líneas y queda el historial.
       allow update: if (isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'voidReason', 'voidedAt', 'voidedBy', 'updatedAt']))
+        || (isAdmin()
+          && resource.data.status != 'anulada'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commission', 'commissionPct', 'commissionBase', 'commissionRates', 'commissionEdits', 'updatedAt'])
+          && request.resource.data.commissionEdits.size() == resource.data.get('commissionEdits', []).size() + 1)
         || (isAdmin()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items', 'commission', 'costEdits', 'updatedAt'])
           && request.resource.data.items.size() == resource.data.items.size()

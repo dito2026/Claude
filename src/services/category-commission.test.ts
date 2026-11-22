@@ -69,3 +69,36 @@ describe('comisión de vendedores por línea (Equipos, Accesorios, Servicio téc
     expect(computeCommission({ commissionPct: 2, commissionBase: 'venta', categoryRates: { Cargadores: { pct: 10, base: 'venta' } } }, items, 0, new Map())).toBe(2000);
   });
 });
+
+describe('recalcular comisiones del mes con la configuración actual', () => {
+  it('vista previa, aplica solo las que cambian, guarda la anterior y cambia lo que se le debe', async () => {
+    const { commissionRecalcPreview, recalcCommissions, sellerBalance } = await import('./sellers');
+    const { periodRange } = await import('./accounting');
+    await openSession(actor, 0);
+    const sid = String(await saveSeller(actor, { name: 'Guillermo Villa', phone: '', active: true, commissionPct: 2, commissionBase: 'venta', lines: [] }));
+    const car = String(await saveProduct(actor, { ...base, sku: 'A-1', type: 'ACCESORIO', name: 'Cargador tipo C', cost: 8000, price: 20000, stock: 9, line: 'Accesorios' }));
+    const sell = (it: object) => createInvoice(actor, { customer: { name: 'CF', phone: '', document: '' }, discount: 0, taxRate: 0, cashierName: 'T', sellerId: sid,
+      payments: [{ method: 'Efectivo', amount: 20000 }], items: [{ productId: car, description: 'Cargador tipo C', kind: 'producto', qty: 1, unitPrice: 20000, unitCost: 8000, ...it }] });
+    const a = await sell({});
+    await sell({});
+    // venta de mano de obra (servicio técnico): no cambia con el % nuevo de accesorios
+    await createInvoice(actor, { customer: { name: 'CF', phone: '', document: '' }, discount: 0, taxRate: 0, cashierName: 'T', sellerId: sid,
+      payments: [{ method: 'Efectivo', amount: 50000 }], items: [{ description: 'Mano de obra', kind: 'mano_obra', qty: 1, unitPrice: 50000, unitCost: 20000 }] });
+    let invs = await backend.list<Invoice>('invoices');
+    expect(invs.map((i) => i.commission).sort()).toEqual([1000, 400, 400]);
+
+    // nueva configuración: accesorios 10% sobre la venta
+    await saveSeller(actor, { name: 'Guillermo Villa', phone: '', active: true, commissionPct: 2, commissionBase: 'venta', lines: [], categoryRates: { Accesorios: { pct: 10, base: 'venta' } } }, sid);
+    const seller = { ...(await backend.get<Seller>('sellers', sid))!, id: sid };
+    const products = new Map((await backend.list<Product>('products')).map((p) => [p.id, p]));
+    const rows = commissionRecalcPreview(seller, invs, products, periodRange('mes'));
+    expect(rows.map((r) => [r.before, r.after]).sort()).toEqual([[1000, 1000], [400, 2000], [400, 2000]]);
+    const r = await recalcCommissions(actor, sid, rows.filter((x) => x.after !== x.before).map((x) => x.invoice.id));
+    expect(r).toEqual({ changed: 2, diff: 3200 });
+    invs = await backend.list<Invoice>('invoices');
+    const ia = invs.find((i) => i.id === a.id)!;
+    expect(ia).toMatchObject({ commission: 2000, commissionRates: { Accesorios: { pct: 10, base: 'venta' } } });
+    expect(ia.commissionEdits![0]).toMatchObject({ by: 'Jairo', commission: 400, pct: 2, base: 'venta' });
+    expect(sellerBalance(seller, invs, []).owed).toBe(5000);
+  });
+});
