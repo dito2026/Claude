@@ -4,7 +4,7 @@ import { backend } from '../data';
 import type { CashMovement, CategoryRates, CommissionBase, Invoice, InvoiceItem, Product, Seller } from '../lib/types';
 import { itemCategory } from '../lib/categories';
 import { BusinessError, created, sum, touched, type Actor } from './common';
-import { inPeriod, lineOf, type Line, type Period } from './accounting';
+import { LINES, inPeriod, lineOf, type Line, type Period } from './accounting';
 
 export type SellerInput = Omit<Seller, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>;
 
@@ -17,12 +17,15 @@ const clampPct = (n: unknown) => Math.max(0, Math.min(100, Number(n) || 0));
 
 export async function saveSeller(actor: Actor, s: SellerInput, id?: string) {
   const rates: CategoryRates = {};
-  for (const [cat, r] of Object.entries(s.categoryRates ?? {})) {
-    if (cat.trim() && r && r.pct !== undefined && r.pct !== null && !Number.isNaN(Number(r.pct))) {
-      rates[cat.trim()] = { pct: clampPct(r.pct), base: r.base === 'utilidad' ? 'utilidad' : 'venta' };
+  for (const line of LINES) {
+    const r = s.categoryRates?.[line];
+    if (r && r.pct !== undefined && r.pct !== null && !Number.isNaN(Number(r.pct))) {
+      rates[line] = { pct: clampPct(r.pct), base: r.base === 'utilidad' ? 'utilidad' : 'venta' };
+    } else if (s.lines?.length && !s.lines.includes(line)) {
+      rates[line] = { pct: 0, base: s.commissionBase }; // antes: «no gana comisión en esta línea»
     }
   }
-  const data = { ...s, name: s.name.trim(), commissionPct: clampPct(s.commissionPct), categoryRates: rates };
+  const data = { ...s, name: s.name.trim(), commissionPct: clampPct(s.commissionPct), categoryRates: rates, lines: [] };
   if (!data.name) throw new BusinessError('El nombre es obligatorio.');
   if (id) return backend.update('sellers', id, { ...data, ...touched() });
   return backend.create('sellers', { ...data, ...created(actor) });
@@ -30,9 +33,13 @@ export async function saveSeller(actor: Actor, s: SellerInput, id?: string) {
 
 export type CommissionRule = Pick<Seller, 'commissionPct' | 'commissionBase' | 'lines' | 'categoryRates'>;
 
-/** % y base de comisión de una categoría: la propia si la tiene; si no, la general del vendedor. */
-export function rateFor(rule: CommissionRule, category: string) {
-  return rule.categoryRates?.[category] ?? { pct: rule.commissionPct || 0, base: rule.commissionBase };
+/**
+ * % y base de comisión de un artículo: el de su línea de negocio (Equipos, Accesorios, Servicio técnico) si el
+ * vendedor tiene uno propio; si no, la comisión general. (Facturas de antes pueden traer % por categoría de producto.)
+ */
+export function rateFor(rule: CommissionRule, it: InvoiceItem, products: Map<string, Product>) {
+  const r = rule.categoryRates;
+  return r?.[lineOf(it, products)] ?? r?.[itemCategory(it, products)] ?? { pct: rule.commissionPct || 0, base: rule.commissionBase };
 }
 
 /** ¿Tiene alguna categoría con comisión propia? */
@@ -52,7 +59,7 @@ export function commissionByItem(rule: CommissionRule, items: InvoiceItem[], dis
   const groups = new Map<string, { pct: number; base: CommissionBase; sales: number; cost: number; idx: number[] }>();
   items.forEach((it, k) => {
     if (allowed && !allowed.has(lineOf(it, products) as Line)) return;
-    const r = rateFor(rule, itemCategory(it, products));
+    const r = rateFor(rule, it, products);
     if (!(r.pct > 0)) return;
     const key = `${r.base}|${r.pct}`;
     const g = groups.get(key) ?? { pct: r.pct, base: r.base, sales: 0, cost: 0, idx: [] };
@@ -85,9 +92,9 @@ export function computeCommission(rule: CommissionRule, items: InvoiceItem[], di
   return sum(commissionByItem(rule, items, discount, products));
 }
 
-/** Texto corto de la comisión de un vendedor: «5% sobre la venta · por categoría». */
+/** Texto corto de la comisión de un vendedor: «5% sobre la venta · con % por línea». */
 export function commissionLabel(s: CommissionRule) {
-  return `${s.commissionPct}% ${BASE_LABEL[s.commissionBase]}${hasCategoryRates(s) ? ' · con % por categoría' : ''}`;
+  return `${s.commissionPct}% ${BASE_LABEL[s.commissionBase]}${hasCategoryRates(s) ? ' · con % por línea' : ''}`;
 }
 
 const valid = (i: Invoice) => i.status !== 'anulada';

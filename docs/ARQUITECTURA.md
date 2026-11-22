@@ -777,3 +777,10 @@ Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`pa
 - La factura guarda `commissionRates` (los % que tenía el vendedor al vender). Si después se corrige el costo (`prepareInvoiceCostFix`), la comisión sobre la ganancia se recalcula con esos % y no con los actuales. El detalle de ventas del vendedor muestra la comisión real de cada artículo.
 - Pantalla Vendedores: en la ventana del vendedor, la tabla «Comisión por categoría» (%, sobre la venta o la ganancia; vacío = general). En la lista se indica «+ N categoría(s) con % propio». En Facturación y en el inicio del vendedor se muestra «… · con % por categoría».
 - Pruebas: `category-commission.test.ts` (celular 1% de la ganancia, cargador 10% de la venta, vidrio 0, cable con la general; detalle por artículo; recálculo al corregir costo) y e2e.
+
+## 73. La comisión por categoría pasa a ser por línea de negocio
+
+- El usuario lo quiere por **Equipos, Accesorios y Servicio técnico** (las 3 líneas), no por categoría de producto. `categoryRates` ahora usa como claves las líneas (`LINES`), y `rateFor(rule, item, products)` busca el % de la línea del artículo (`lineOf`).
+- Para facturas hechas con la versión anterior, si guardaron un % por categoría de producto, ese % se sigue usando (`itemCategory`) para recalcular.
+- Se quitó «Gana comisión en» (casillas de líneas). Al abrir y al guardar un vendedor, las líneas no marcadas pasan a 0% y `lines` queda vacío. Un vendedor sin guardar de nuevo se sigue calculando igual que antes.
+- Ventana del vendedor: tabla «Comisión por línea» con Equipos (celulares), Accesorios y Servicio técnico (%, y si es sobre la venta o la ganancia; vacío = general). En la lista: «+ % por línea: Accesorios 10% …».

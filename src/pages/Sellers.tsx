@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react';
 import { Download, Pencil, Plus } from 'lucide-react';
 import { useCollection } from '../data/hooks';
 import type { CashMovement, CommissionBase, Invoice, Product, Seller } from '../lib/types';
-import { DEFAULT_CATEGORIES, categoryOf, sortCategories } from '../lib/categories';
 import { dateTime, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, PageHead, Seg, Stat, useAction } from '../components/ui';
 import { LINES, downloadExcel, periodRange, type PeriodKind } from '../services/accounting';
 import { BASE_LABEL, commissionLabel, hasCategoryRates, saveSeller, sellerBalance, sellerSalesDetail, type SellerInput } from '../services/sellers';
+
+const LINE_LABEL: Record<string, string> = { Equipos: 'Equipos (celulares)', Accesorios: 'Accesorios', 'Servicio técnico': 'Servicio técnico' };
 
 const EMPTY: SellerInput = { name: '', phone: '', active: true, commissionPct: 2, commissionBase: 'venta', lines: [] };
 
@@ -52,7 +53,7 @@ export function Sellers() {
                     <td><span className="strong">{s.name}</span><small>{s.phone}{!s.active && ' · Inactivo'}</small></td>
                     <td><b>{s.commissionPct}%</b><small>{BASE_LABEL[s.commissionBase]}</small>
                       {hasCategoryRates(s) && <small className="faint" title={Object.entries(s.categoryRates ?? {}).map(([c, r]) => `${c}: ${r.pct}% ${BASE_LABEL[r.base]}`).join('\n')}>
-                        + {Object.keys(s.categoryRates ?? {}).length} categoría(s) con % propio</small>}</td>
+                        + % por línea: {Object.entries(s.categoryRates ?? {}).map(([c, r]) => `${c} ${r.pct}%`).join(' · ')}</small>}</td>
                     <td>{s.lines?.length ? s.lines.join(', ') : 'Todas las ventas'}</td>
                     <td>{s.userId ? <Badge tone="info">Con acceso</Badge> : <span className="faint">—</span>}</td>
                     <td className="num">{money(b.sales)}<small>{b.count} ventas</small></td>
@@ -83,19 +84,20 @@ export function Sellers() {
 function SellerModal({ edit, onClose }: { edit: { id?: string; data: SellerInput }; onClose: () => void }) {
   const { actor } = useAuth();
   const { run, busy } = useAction();
-  const [d, setD] = useState(edit.data);
-  const lines = d.lines ?? [];
-  const products = useCollection<Product>('products').rows;
-  const categories = useMemo(() => sortCategories([...DEFAULT_CATEGORIES, ...products.filter((p) => p.active).map(categoryOf), ...Object.keys(d.categoryRates ?? {})]), [products, d.categoryRates]);
+  // «Gana comisión en» (versión anterior) se muestra como 0% en las líneas que no estaban marcadas
+  const [d, setD] = useState<SellerInput>(() => {
+    const rates = { ...(edit.data.categoryRates ?? {}) };
+    for (const l of LINES) if (!rates[l] && edit.data.lines?.length && !edit.data.lines.includes(l)) rates[l] = { pct: 0, base: edit.data.commissionBase };
+    return { ...edit.data, categoryRates: rates };
+  });
   const rates = d.categoryRates ?? {};
-  const setRate = (cat: string, patch: { pct?: number | null; base?: CommissionBase }) => setD((x) => {
+  const setRate = (line: string, patch: { pct?: number | null; base?: CommissionBase }) => setD((x) => {
     const next = { ...(x.categoryRates ?? {}) };
-    const cur = next[cat] ?? { pct: x.commissionPct, base: x.commissionBase };
-    if (patch.pct === null) delete next[cat];
-    else next[cat] = { pct: patch.pct ?? cur.pct, base: patch.base ?? cur.base };
+    const cur = next[line] ?? { pct: x.commissionPct, base: x.commissionBase };
+    if (patch.pct === null) delete next[line];
+    else next[line] = { pct: patch.pct ?? cur.pct, base: patch.base ?? cur.base };
     return { ...x, categoryRates: next };
   });
-  const toggleLine = (l: string) => setD({ ...d, lines: lines.includes(l) ? lines.filter((x) => x !== l) : [...lines, l] });
   return (
     <Modal title={edit.id ? 'Editar vendedor' : 'Nuevo vendedor'} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
@@ -108,31 +110,23 @@ function SellerModal({ edit, onClose }: { edit: { id?: string; data: SellerInput
           <Seg<CommissionBase> value={d.commissionBase} onChange={(v) => setD({ ...d, commissionBase: v })}
             options={[{ value: 'venta', label: 'Sobre la venta' }, { value: 'utilidad', label: 'Sobre la ganancia' }]} />
         </Field>
-        <Field label="Gana comisión en" className="full">
-          <div className="row gap-sm">
-            {LINES.map((l) => (
-              <label key={l} className="checkbox"><input type="checkbox" checked={lines.includes(l)} onChange={() => toggleLine(l)} />{l}</label>
-            ))}
-          </div>
-          <small className="faint">{lines.length === 0 ? 'Sin marcar ninguna: gana comisión en todas las ventas.' : 'Solo en las líneas marcadas.'}</small>
-        </Field>
-        <Field label="Comisión por categoría (opcional)" className="full">
+        <Field label="Comisión por línea (opcional)" className="full">
           <div className="faint" style={{ fontSize: 12, marginBottom: 6 }}>
-            Escriba un % solo en las categorías que llevan una comisión distinta. Las que deje vacías usan la general ({d.commissionPct}% {BASE_LABEL[d.commissionBase]}). Ponga 0 para que no gane comisión en esa categoría.
+            Escriba un % solo en las líneas que llevan una comisión distinta. Las que deje vacías usan la general ({d.commissionPct}% {BASE_LABEL[d.commissionBase]}). Ponga 0 para que no gane comisión en esa línea.
           </div>
-          <div className="table-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
+          <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Categoría</th><th className="num" style={{ width: 90 }}>%</th><th>Sobre la</th></tr></thead>
-              <tbody>{categories.map((c) => {
-                const r = rates[c];
+              <thead><tr><th>Línea</th><th className="num" style={{ width: 90 }}>%</th><th>Sobre la</th></tr></thead>
+              <tbody>{LINES.map((l) => {
+                const r = rates[l];
                 return (
-                  <tr key={c}>
-                    <td className={r ? 'strong' : ''}>{c}</td>
-                    <td><input className="input num" type="number" min={0} max={100} step={0.5} aria-label={`Comisión ${c}`}
+                  <tr key={l}>
+                    <td className={r ? 'strong' : ''}>{LINE_LABEL[l]}</td>
+                    <td><input className="input num" type="number" min={0} max={100} step={0.5} aria-label={`Comisión ${l}`}
                       value={r ? r.pct : ''} placeholder={String(d.commissionPct)}
-                      onChange={(e) => setRate(c, { pct: e.target.value === '' ? null : Number(e.target.value) })} /></td>
+                      onChange={(e) => setRate(l, { pct: e.target.value === '' ? null : Number(e.target.value) })} /></td>
                     <td>{r
-                      ? <select className="input" value={r.base} aria-label={`Base ${c}`} onChange={(e) => setRate(c, { base: e.target.value as CommissionBase })}>
+                      ? <select className="input" value={r.base} aria-label={`Base ${l}`} onChange={(e) => setRate(l, { base: e.target.value as CommissionBase })}>
                           <option value="venta">Venta</option><option value="utilidad">Ganancia</option>
                         </select>
                       : <span className="faint">General</span>}</td>

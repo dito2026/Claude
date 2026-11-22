@@ -313,19 +313,19 @@ try {
     await page.keyboard.press('Escape');
   });
 
-  await check('comisión del vendedor por categoría', async () => {
+  await check('comisión del vendedor por línea', async () => {
     await page.goto(BASE + '/vendedores');
     await page.click('button:has-text("Nuevo vendedor")');
-    await page.waitForSelector('.modal:has-text("Comisión por categoría")');
+    await page.waitForSelector('.modal:has-text("Comisión por línea")');
     await page.fill('.modal label.field:has-text("Nombre") input', 'Vendedor E2E');
-    await page.fill('.modal input[aria-label="Comisión Cargadores"]', '10');
-    await page.selectOption('.modal select[aria-label="Base Cargadores"]', 'utilidad');
+    await page.fill('.modal input[aria-label="Comisión Accesorios"]', '10');
+    await page.selectOption('.modal select[aria-label="Base Accesorios"]', 'utilidad');
     await page.click('.modal button:has-text("Guardar")');
     await page.waitForSelector('.toast:has-text("Vendedor guardado")');
-    await page.waitForSelector('td:has-text("categoría(s) con % propio")');
+    await page.waitForSelector('td:has-text("% por línea: Accesorios 10%")');
     await page.locator('tbody tr').first().locator('button[title="Editar"]').click();
-    assert(await page.inputValue('.modal input[aria-label="Comisión Cargadores"]') === '10', 'no quedó guardado el 10% de Cargadores');
-    assert(await page.inputValue('.modal select[aria-label="Base Cargadores"]') === 'utilidad', 'no quedó «sobre la ganancia» en Cargadores');
+    assert(await page.inputValue('.modal input[aria-label="Comisión Accesorios"]') === '10', 'no quedó guardado el 10% de Accesorios');
+    assert(await page.inputValue('.modal select[aria-label="Base Accesorios"]') === 'utilidad', 'no quedó «sobre la ganancia» en Accesorios');
     await page.keyboard.press('Escape');
   });
 
