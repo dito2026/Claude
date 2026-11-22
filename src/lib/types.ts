@@ -296,6 +296,8 @@ export interface Invoice extends BaseDoc {
   commission?: number;
   commissionPct?: number;
   commissionBase?: CommissionBase;
+  /** comisiones por categoría que tenía el vendedor al facturar (para recalcular si cambia el costo) */
+  commissionRates?: CategoryRates;
   voidReason?: string;
   voidedAt?: string;
   voidedBy?: string;
@@ -517,8 +519,12 @@ export interface Seller extends BaseDoc {
   commissionBase: CommissionBase;
   /** líneas sobre las que gana comisión; vacío = todas */
   lines?: string[];
+  /** comisión propia de algunas categorías (Celulares, Cargadores…); las demás usan la general */
+  categoryRates?: CategoryRates;
   userId?: string;
 }
+
+export type CategoryRates = Record<string, { pct: number; base: CommissionBase }>;
 
 // ---------------- Recordatorios ----------------
 export interface Reminder extends BaseDoc {

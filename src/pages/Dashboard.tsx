@@ -13,7 +13,7 @@ import { useSettings } from '../services/settings';
 import { whatsappLink } from '../lib/format';
 import { useCollection, useDocument } from '../data/hooks';
 import type { CashMovement, CashSession, Invoice, Product, RepairOrder, Seller, Ticket } from '../lib/types';
-import { sellerBalance } from '../services/sellers';
+import { sellerBalance, commissionLabel } from '../services/sellers';
 import { OPEN_STATUSES } from '../lib/types';
 import { money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
@@ -193,7 +193,7 @@ export function Dashboard() {
       {myComm && (
         <div className="grid g3 mt">
           <Stat accent label="Mis ventas del mes" value={money(myComm.sales)} sub={`${myComm.count} ventas como ${mySeller!.name}`} />
-          <Stat label="Mi comisión del mes" value={money(myComm.periodCommission)} sub={`${mySeller!.commissionPct}% ${mySeller!.commissionBase === 'venta' ? 'sobre la venta' : 'sobre la ganancia'}`} />
+          <Stat label="Mi comisión del mes" value={money(myComm.periodCommission)} sub={commissionLabel(mySeller!)} />
           <Stat label="Comisión por cobrar" value={money(myComm.owed)} sub={`Pagado: ${money(myComm.paid)}`} />
         </div>
       )}

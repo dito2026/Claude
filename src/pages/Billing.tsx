@@ -24,7 +24,7 @@ import { brandFromText, matchesBrand, matchesModel } from '../lib/brands';
 import { BuyFromSupplierFields, EMPTY_BUY, useSuppliers, type BuyFromSupplierValue } from '../components/BuyFromSupplier';
 import { buyFreeItem } from '../services/purchases';
 import { CollectCreditModal } from '../components/CreditCollect';
-import { BASE_LABEL, computeCommission } from '../services/sellers';
+import { commissionLabel, computeCommission } from '../services/sellers';
 import type { CashState } from '../services/cash';
 
 export function Billing() {
@@ -264,7 +264,7 @@ function Pos() {
             <Field label="Vendedor (comisión)">
               <select className="input" value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
                 <option value="">Sin vendedor</option>
-                {sellers.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.commissionPct}% {BASE_LABEL[s.commissionBase]}</option>)}
+                {sellers.map((s) => <option key={s.id} value={s.id}>{s.name} · {commissionLabel(s)}</option>)}
               </select>
               {seller && items.length > 0 && (
                 <small className="muted">Comisión estimada: <b>{money(computeCommission(seller, items, discount, new Map(products.map((p) => [p.id, p]))))}</b></small>

@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Download, Pencil, Plus } from 'lucide-react';
 import { useCollection } from '../data/hooks';
-import type { CashMovement, CommissionBase, Invoice, Seller } from '../lib/types';
+import type { CashMovement, CommissionBase, Invoice, Product, Seller } from '../lib/types';
+import { DEFAULT_CATEGORIES, categoryOf, sortCategories } from '../lib/categories';
 import { dateTime, money, pad } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, PageHead, Seg, Stat, useAction } from '../components/ui';
 import { LINES, downloadExcel, periodRange, type PeriodKind } from '../services/accounting';
-import { BASE_LABEL, saveSeller, sellerBalance, sellerSalesDetail, type SellerInput } from '../services/sellers';
+import { BASE_LABEL, commissionLabel, hasCategoryRates, saveSeller, sellerBalance, sellerSalesDetail, type SellerInput } from '../services/sellers';
 
 const EMPTY: SellerInput = { name: '', phone: '', active: true, commissionPct: 2, commissionBase: 'venta', lines: [] };
 
@@ -49,7 +50,9 @@ export function Sellers() {
                 {list.map(({ s, b }) => (
                   <tr key={s.id} className="click" style={{ opacity: s.active ? 1 : 0.5 }} onClick={() => setDetail(s)}>
                     <td><span className="strong">{s.name}</span><small>{s.phone}{!s.active && ' · Inactivo'}</small></td>
-                    <td><b>{s.commissionPct}%</b><small>{BASE_LABEL[s.commissionBase]}</small></td>
+                    <td><b>{s.commissionPct}%</b><small>{BASE_LABEL[s.commissionBase]}</small>
+                      {hasCategoryRates(s) && <small className="faint" title={Object.entries(s.categoryRates ?? {}).map(([c, r]) => `${c}: ${r.pct}% ${BASE_LABEL[r.base]}`).join('\n')}>
+                        + {Object.keys(s.categoryRates ?? {}).length} categoría(s) con % propio</small>}</td>
                     <td>{s.lines?.length ? s.lines.join(', ') : 'Todas las ventas'}</td>
                     <td>{s.userId ? <Badge tone="info">Con acceso</Badge> : <span className="faint">—</span>}</td>
                     <td className="num">{money(b.sales)}<small>{b.count} ventas</small></td>
@@ -82,6 +85,16 @@ function SellerModal({ edit, onClose }: { edit: { id?: string; data: SellerInput
   const { run, busy } = useAction();
   const [d, setD] = useState(edit.data);
   const lines = d.lines ?? [];
+  const products = useCollection<Product>('products').rows;
+  const categories = useMemo(() => sortCategories([...DEFAULT_CATEGORIES, ...products.filter((p) => p.active).map(categoryOf), ...Object.keys(d.categoryRates ?? {})]), [products, d.categoryRates]);
+  const rates = d.categoryRates ?? {};
+  const setRate = (cat: string, patch: { pct?: number | null; base?: CommissionBase }) => setD((x) => {
+    const next = { ...(x.categoryRates ?? {}) };
+    const cur = next[cat] ?? { pct: x.commissionPct, base: x.commissionBase };
+    if (patch.pct === null) delete next[cat];
+    else next[cat] = { pct: patch.pct ?? cur.pct, base: patch.base ?? cur.base };
+    return { ...x, categoryRates: next };
+  });
   const toggleLine = (l: string) => setD({ ...d, lines: lines.includes(l) ? lines.filter((x) => x !== l) : [...lines, l] });
   return (
     <Modal title={edit.id ? 'Editar vendedor' : 'Nuevo vendedor'} onClose={onClose}
@@ -102,6 +115,32 @@ function SellerModal({ edit, onClose }: { edit: { id?: string; data: SellerInput
             ))}
           </div>
           <small className="faint">{lines.length === 0 ? 'Sin marcar ninguna: gana comisión en todas las ventas.' : 'Solo en las líneas marcadas.'}</small>
+        </Field>
+        <Field label="Comisión por categoría (opcional)" className="full">
+          <div className="faint" style={{ fontSize: 12, marginBottom: 6 }}>
+            Escriba un % solo en las categorías que llevan una comisión distinta. Las que deje vacías usan la general ({d.commissionPct}% {BASE_LABEL[d.commissionBase]}). Ponga 0 para que no gane comisión en esa categoría.
+          </div>
+          <div className="table-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
+            <table className="table">
+              <thead><tr><th>Categoría</th><th className="num" style={{ width: 90 }}>%</th><th>Sobre la</th></tr></thead>
+              <tbody>{categories.map((c) => {
+                const r = rates[c];
+                return (
+                  <tr key={c}>
+                    <td className={r ? 'strong' : ''}>{c}</td>
+                    <td><input className="input num" type="number" min={0} max={100} step={0.5} aria-label={`Comisión ${c}`}
+                      value={r ? r.pct : ''} placeholder={String(d.commissionPct)}
+                      onChange={(e) => setRate(c, { pct: e.target.value === '' ? null : Number(e.target.value) })} /></td>
+                    <td>{r
+                      ? <select className="input" value={r.base} aria-label={`Base ${c}`} onChange={(e) => setRate(c, { base: e.target.value as CommissionBase })}>
+                          <option value="venta">Venta</option><option value="utilidad">Ganancia</option>
+                        </select>
+                      : <span className="faint">General</span>}</td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
         </Field>
         <div className="alert info full" style={{ fontSize: 12 }}>
           Ejemplo: venta de $1.000.000 con costo $800.000 → {d.commissionBase === 'venta'
@@ -126,7 +165,9 @@ function SellerDetail({ seller, invoices, onClose }: { seller: Seller; invoices:
   const [from, setFrom] = useState(iso(new Date(today.getFullYear(), today.getMonth(), 1)));
   const [to, setTo] = useState(iso(today));
   const period = kind === 'todo' ? undefined : periodRange(kind, new Date(), from, to);
-  const rows = useMemo(() => sellerSalesDetail(seller.id, invoices, period), [seller.id, invoices, kind, from, to]); // eslint-disable-line react-hooks/exhaustive-deps
+  const products = useCollection<Product>('products').rows;
+  const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const rows = useMemo(() => sellerSalesDetail(seller.id, invoices, period, productMap), [seller.id, invoices, kind, from, to, productMap]); // eslint-disable-line react-hooks/exhaustive-deps
   const t = rows.reduce((a, r) => ({ sales: a.sales + r.sales, cost: a.cost + r.cost, profit: a.profit + r.profit, commission: a.commission + r.commission, units: a.units + r.qty }), { sales: 0, cost: 0, profit: 0, commission: 0, units: 0 });
   const invoicesCount = new Set(rows.map((r) => r.invoiceId)).size;
   const label = PERIODS.find((p) => p.value === kind)!.label;
@@ -151,7 +192,7 @@ function SellerDetail({ seller, invoices, onClose }: { seller: Seller; invoices:
         <Stat accent label="Vendido" value={money(t.sales)} sub={`${invoicesCount} factura(s) · ${t.units} unidad(es)`} />
         <Stat label="Costo" value={money(t.cost)} />
         <Stat label="Ganancia" value={<span className={t.profit < 0 ? 'red' : ''}>{money(t.profit)}</span>} sub={t.sales > 0 ? `${Math.round((t.profit / t.sales) * 100)}% de margen` : 'Sin ventas'} />
-        <Stat label="Comisión" value={money(t.commission)} sub={`${seller.commissionPct}% ${BASE_LABEL[seller.commissionBase]}`} />
+        <Stat label="Comisión" value={money(t.commission)} sub={commissionLabel(seller)} />
       </div>
       <div className="card">
         {rows.length === 0 ? <Empty>No tiene ventas en este periodo{kind !== 'todo' ? ' (pruebe con «Todo»)' : ''}.</Empty> : (

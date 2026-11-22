@@ -7,7 +7,7 @@ import { requireOpenSession, writeMovement } from './cash';
 import { moveStock } from './inventory';
 import { depositsTotal } from './orders';
 import { addMonths, isPhone, markAvailable, markSold } from './phones';
-import { computeCommission } from './sellers';
+import { computeCommission, hasCategoryRates } from './sellers';
 import { lineOf, type Line } from './accounting';
 import { readRemissionForInvoice, revertRemissionSale, writeRemissionSale } from './remissions';
 import type { Remission } from '../lib/types';
@@ -214,6 +214,7 @@ export async function createInvoice(actor: Actor, draft: InvoiceDraft) {
             sellerName: seller.name,
             commissionPct: seller.commissionPct,
             commissionBase: seller.commissionBase,
+            ...(hasCategoryRates(seller) ? { commissionRates: seller.categoryRates } : {}),
             commission: computeCommission(seller, items, totals.discount, products),
           }
         : {}),
@@ -421,7 +422,8 @@ export async function prepareInvoiceCostFix(
   });
   if (before.length === 0) return null;
   let commission = inv.commission;
-  if (inv.sellerId && inv.commissionBase === 'utilidad' && inv.commissionPct) {
+  const usesProfit = inv.commissionBase === 'utilidad' || Object.values(inv.commissionRates ?? {}).some((r) => r.base === 'utilidad');
+  if (inv.sellerId && usesProfit) {
     const seller = await tx.get<Seller>('sellers', inv.sellerId);
     const products = new Map<string, Product>();
     for (const it of items) {
@@ -429,7 +431,7 @@ export async function prepareInvoiceCostFix(
       const p = await tx.get<Product>('products', it.productId);
       if (p) products.set(p.id, p);
     }
-    commission = computeCommission({ commissionPct: inv.commissionPct, commissionBase: 'utilidad', lines: seller?.lines }, items, inv.discount, products);
+    commission = computeCommission({ commissionPct: inv.commissionPct ?? 0, commissionBase: inv.commissionBase ?? 'venta', lines: seller?.lines, categoryRates: inv.commissionRates }, items, inv.discount, products);
   }
   return () => tx.update('invoices', inv.id, {
     items,

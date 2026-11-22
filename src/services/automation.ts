@@ -8,7 +8,7 @@ import { isOverdue, orderBalance } from './orders';
 import { isOverduePurchase, purchaseBalance } from './purchases';
 import { isLowStock, tracksStock } from './inventory';
 import { technicianBalance } from './staff';
-import { sellerBalance } from './sellers';
+import { sellerBalance, commissionLabel } from './sellers';
 import { balanceToday, buildReport, periodRange } from './accounting';
 import { warrantyActive } from './phones';
 
@@ -195,7 +195,7 @@ export function businessSnapshot(d: {
     garantias_vigentes: d.units.filter(warrantyActive).length,
     deudas_proveedores: d.purchases.filter((p) => purchaseBalance(p) > 0).map((p) => ({ proveedor: p.supplierName, saldo: purchaseBalance(p), vence: p.dueDate?.slice(0, 10), vencida: isOverduePurchase(p) })),
     tecnicos: d.technicians.map((t) => ({ nombre: t.name, ...technicianBalance(t, d.orders, d.movements) })),
-    vendedores: d.sellers.map((s) => ({ nombre: s.name, comision: `${s.commissionPct}% ${s.commissionBase}`, ...sellerBalance(s, d.invoices, d.movements, new Date(new Date().getFullYear(), new Date().getMonth(), 1)) })),
+    vendedores: d.sellers.map((s) => ({ nombre: s.name, comision: commissionLabel(s), ...sellerBalance(s, d.invoices, d.movements, new Date(new Date().getFullYear(), new Date().getMonth(), 1)) })),
   };
   return JSON.stringify(snap);
 }

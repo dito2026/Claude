@@ -1,7 +1,8 @@
 // Vendedores: comisión por venta. Se calcula al facturar (queda fija en la factura),
 // se anula con la factura y se paga desde Caja → «Pago a vendedor».
 import { backend } from '../data';
-import type { CashMovement, CommissionBase, Invoice, InvoiceItem, Product, Seller } from '../lib/types';
+import type { CashMovement, CategoryRates, CommissionBase, Invoice, InvoiceItem, Product, Seller } from '../lib/types';
+import { itemCategory } from '../lib/categories';
 import { BusinessError, created, sum, touched, type Actor } from './common';
 import { inPeriod, lineOf, type Line, type Period } from './accounting';
 
@@ -12,36 +13,81 @@ export const BASE_LABEL: Record<CommissionBase, string> = {
   utilidad: 'sobre la ganancia',
 };
 
+const clampPct = (n: unknown) => Math.max(0, Math.min(100, Number(n) || 0));
+
 export async function saveSeller(actor: Actor, s: SellerInput, id?: string) {
-  const data = { ...s, name: s.name.trim(), commissionPct: Math.max(0, Math.min(100, Number(s.commissionPct) || 0)) };
+  const rates: CategoryRates = {};
+  for (const [cat, r] of Object.entries(s.categoryRates ?? {})) {
+    if (cat.trim() && r && r.pct !== undefined && r.pct !== null && !Number.isNaN(Number(r.pct))) {
+      rates[cat.trim()] = { pct: clampPct(r.pct), base: r.base === 'utilidad' ? 'utilidad' : 'venta' };
+    }
+  }
+  const data = { ...s, name: s.name.trim(), commissionPct: clampPct(s.commissionPct), categoryRates: rates };
   if (!data.name) throw new BusinessError('El nombre es obligatorio.');
   if (id) return backend.update('sellers', id, { ...data, ...touched() });
   return backend.create('sellers', { ...data, ...created(actor) });
 }
 
+export type CommissionRule = Pick<Seller, 'commissionPct' | 'commissionBase' | 'lines' | 'categoryRates'>;
+
+/** % y base de comisión de una categoría: la propia si la tiene; si no, la general del vendedor. */
+export function rateFor(rule: CommissionRule, category: string) {
+  return rule.categoryRates?.[category] ?? { pct: rule.commissionPct || 0, base: rule.commissionBase };
+}
+
+/** ¿Tiene alguna categoría con comisión propia? */
+export const hasCategoryRates = (rule: Pick<Seller, 'categoryRates'>) => Object.keys(rule.categoryRates ?? {}).length > 0;
+
 /**
- * Comisión de una venta. Solo cuentan las líneas de negocio elegidas para el vendedor
- * (vacío = todas). El descuento de la factura se reparte entre las líneas.
+ * Comisión por línea de la factura. Cada artículo toma el % de su categoría (o el general).
+ * Las líneas con el mismo % y base se suman; si es «sobre la ganancia», la ganancia del grupo no baja de 0.
+ * Solo cuentan las líneas de negocio elegidas para el vendedor (vacío = todas). El descuento se reparte.
  */
-export function computeCommission(
-  seller: Pick<Seller, 'commissionPct' | 'commissionBase' | 'lines'>,
-  items: InvoiceItem[],
-  discount: number,
-  products: Map<string, Product>,
-): number {
+export function commissionByItem(rule: CommissionRule, items: InvoiceItem[], discount: number, products: Map<string, Product>): number[] {
+  const out = items.map(() => 0);
   const subtotal = sum(items.map((i) => i.qty * i.unitPrice));
-  if (subtotal <= 0 || !(seller.commissionPct > 0)) return 0;
+  if (subtotal <= 0) return out;
   const factor = (subtotal - Math.min(discount || 0, subtotal)) / subtotal;
-  const allowed = seller.lines?.length ? new Set(seller.lines) : null;
-  let sales = 0;
-  let cost = 0;
-  for (const it of items) {
-    if (allowed && !allowed.has(lineOf(it, products) as Line)) continue;
-    sales += it.qty * it.unitPrice * factor;
-    cost += it.qty * it.unitCost;
+  const allowed = rule.lines?.length ? new Set(rule.lines) : null;
+  const groups = new Map<string, { pct: number; base: CommissionBase; sales: number; cost: number; idx: number[] }>();
+  items.forEach((it, k) => {
+    if (allowed && !allowed.has(lineOf(it, products) as Line)) return;
+    const r = rateFor(rule, itemCategory(it, products));
+    if (!(r.pct > 0)) return;
+    const key = `${r.base}|${r.pct}`;
+    const g = groups.get(key) ?? { pct: r.pct, base: r.base, sales: 0, cost: 0, idx: [] };
+    g.sales += it.qty * it.unitPrice * factor;
+    g.cost += it.qty * (it.unitCost || 0);
+    g.idx.push(k);
+    groups.set(key, g);
+  });
+  for (const g of groups.values()) {
+    const amount = Math.round(((g.base === 'utilidad' ? Math.max(0, g.sales - g.cost) : g.sales) * g.pct) / 100);
+    // se reparte entre los artículos del grupo según lo que aporta cada uno
+    const weight = (k: number) => {
+      const it = items[k];
+      const s = it.qty * it.unitPrice * factor;
+      return g.base === 'utilidad' ? Math.max(0, s - it.qty * (it.unitCost || 0)) : s;
+    };
+    const total = sum(g.idx.map(weight));
+    let left = amount;
+    g.idx.forEach((k, n) => {
+      const part = n === g.idx.length - 1 ? left : total > 0 ? Math.round((amount * weight(k)) / total) : 0;
+      out[k] += part;
+      left -= part;
+    });
   }
-  const base = seller.commissionBase === 'utilidad' ? Math.max(0, sales - cost) : sales;
-  return Math.round((base * seller.commissionPct) / 100);
+  return out;
+}
+
+/** Comisión de una venta (suma de sus líneas). */
+export function computeCommission(rule: CommissionRule, items: InvoiceItem[], discount: number, products: Map<string, Product>): number {
+  return sum(commissionByItem(rule, items, discount, products));
+}
+
+/** Texto corto de la comisión de un vendedor: «5% sobre la venta · por categoría». */
+export function commissionLabel(s: CommissionRule) {
+  return `${s.commissionPct}% ${BASE_LABEL[s.commissionBase]}${hasCategoryRates(s) ? ' · con % por categoría' : ''}`;
 }
 
 const valid = (i: Invoice) => i.status !== 'anulada';
@@ -83,7 +129,7 @@ export interface SellerSaleLine {
 }
 
 /** Detalle de ventas de un vendedor por producto, con costo, ganancia y comisión (sin facturas anuladas). */
-export function sellerSalesDetail(sellerId: string, invoices: Invoice[], period?: Period): SellerSaleLine[] {
+export function sellerSalesDetail(sellerId: string, invoices: Invoice[], period?: Period, products?: Map<string, Product>): SellerSaleLine[] {
   const out: SellerSaleLine[] = [];
   for (const inv of invoices) {
     if (inv.sellerId !== sellerId || !valid(inv)) continue;
@@ -91,13 +137,18 @@ export function sellerSalesDetail(sellerId: string, invoices: Invoice[], period?
     const factor = inv.subtotal > 0 ? (inv.subtotal - (inv.discount || 0)) / inv.subtotal : 1;
     const values = inv.items.map((it) => it.qty * it.unitPrice * factor);
     const total = sum(values);
+    // por categoría: cada línea con su propia comisión (la factura guardó los % que tenía el vendedor)
+    const byItem = inv.commissionRates && products
+      ? commissionByItem({ commissionPct: inv.commissionPct ?? 0, commissionBase: inv.commissionBase ?? 'venta', categoryRates: inv.commissionRates }, inv.items, inv.discount, products)
+      : null;
+    const exact = byItem && sum(byItem) === (inv.commission || 0);
     inv.items.forEach((it, k) => {
       const sales = Math.round(values[k]);
       const cost = Math.round(it.qty * (it.unitCost || 0));
       out.push({
         invoiceId: inv.id, invoiceNumber: inv.number, at: inv.createdAt ?? '', customer: inv.customer?.name || 'Consumidor final',
         description: it.description, imei: it.imei, qty: it.qty, sales, cost, profit: sales - cost,
-        commission: total > 0 ? Math.round(((inv.commission || 0) * values[k]) / total) : 0,
+        commission: exact ? byItem![k] : total > 0 ? Math.round(((inv.commission || 0) * values[k]) / total) : 0,
       });
     });
   }
