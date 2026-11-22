@@ -7,6 +7,7 @@ import type {
   Priority,
   Product,
   RepairOrder,
+  Technician,
 } from '../lib/types';
 import { BusinessError, created, readNext, sum, touched, writeCounter, type Actor } from './common';
 import { adjustCash, requireOpenSession, writeMovement } from './cash';
@@ -319,5 +320,52 @@ export async function stopChargingPart(actor: Actor, orderId: string, lineId: st
       timeline: [...o.timeline, { at: new Date().toISOString(), by: actor.name, note: `Repuesto incluido en el cobro (no se cobra aparte): ${part.name}` }],
       ...touched(),
     });
+  });
+}
+
+export interface QuickIntake {
+  name: string;
+  phone: string;
+  unlockCode: string;
+  brand: string;
+  model: string;
+  issue: string;
+  technician?: Pick<Technician, 'id' | 'name' | 'userId'>;
+  warrantyDays: number;
+}
+
+const phoneKey = (p: string) => p.replace(/\D/g, '').slice(-10);
+
+/**
+ * Recepción rápida de un equipo: solo nombre, teléfono, clave, marca, modelo y falla.
+ * Si ya hay un cliente con ese teléfono se usa; si no, se crea. La orden queda «Recibido» con entrega en 2 días.
+ */
+export async function quickIntake(actor: Actor, d: QuickIntake) {
+  const name = d.name.trim();
+  const phone = d.phone.trim();
+  if (!name) throw new BusinessError('Escriba el nombre del cliente.');
+  if (phoneKey(phone).length < 7) throw new BusinessError('Escriba el teléfono del cliente.');
+  if (!d.brand.trim() || !d.model.trim()) throw new BusinessError('Escriba la marca y el modelo.');
+  if (!d.issue.trim()) throw new BusinessError('Escriba la falla.');
+  const customers = await backend.list<Customer>('customers');
+  let customer = customers.find((c) => phoneKey(c.phone ?? '') === phoneKey(phone));
+  if (!customer) {
+    const data = { name, phone, document: '', email: '', address: '', notes: '' };
+    const id = await backend.create('customers', { ...data, ...created(actor) });
+    customer = { ...data, id } as Customer;
+  }
+  return createOrder(actor, {
+    customer,
+    device: { brand: d.brand.trim(), model: d.model.trim(), imei: '', color: '', unlockCode: d.unlockCode.trim(), accessories: '', condition: '' },
+    reportedIssue: d.issue,
+    technicianId: d.technician?.id ?? '',
+    technicianName: d.technician?.name ?? '',
+    technicianUserId: d.technician?.userId ?? '',
+    priority: 'normal',
+    promisedAt: new Date(Date.now() + 2 * 86400000).toISOString(),
+    budget: 0,
+    laborPrice: 0,
+    technicianPay: 0,
+    warrantyDays: d.warrantyDays,
   });
 }

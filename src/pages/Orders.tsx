@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Plus, Zap } from 'lucide-react';
 import { useCollection } from '../data/hooks';
 import type { Customer, Device, Priority, RepairOrder, Technician } from '../lib/types';
 import { OPEN_STATUSES } from '../lib/types';
@@ -13,7 +13,7 @@ import { BrandModelFilter, BrandInput, ModelInput, brandModelsOf, type BrandMode
 import { matchesBrand, matchesModel } from '../lib/brands';
 
 import { orderTone, PRIORITIES, priorityTone } from '../components/status';
-import { createOrder, isOverdue, orderTotal } from '../services/orders';
+import { createOrder, isOverdue, orderTotal, quickIntake } from '../services/orders';
 import { useSettings } from '../services/settings';
 
 type Filter = 'abiertas' | 'listas' | 'atrasadas' | 'cerradas' | 'todas';
@@ -27,6 +27,7 @@ export function Orders() {
   const [filter, setFilter] = useState<Filter>('abiertas');
   const [mineOnly, setMineOnly] = useState(profile?.role === 'tecnico');
   const creating = params.get('nueva') === '1';
+  const quick = params.get('rapida') === '1';
   const [bm, setBm] = useState<BrandModelValue>({ brand: '', model: '' });
   const brandOptions = useMemo(() => brandModelsOf(rows.map((o) => ({ brand: o.device.brand, model: o.device.model }))), [rows]);
 
@@ -54,9 +55,10 @@ export function Orders() {
         actions={
           <>
             <SearchBox value={q} onChange={setQ} placeholder="OT, cliente, equipo o IMEI" />
-            {can('orders.create') && (
-              <button className="btn primary" onClick={() => setParams({ nueva: '1' })}><Plus size={16} />Nueva orden</button>
-            )}
+            {can('orders.create') && <>
+              <button className="btn primary" onClick={() => setParams({ rapida: '1' })}><Zap size={16} />Recepción rápida</button>
+              <button className="btn" onClick={() => setParams({ nueva: '1' })}><Plus size={16} />Orden completa</button>
+            </>}
           </>
         }
       />
@@ -104,6 +106,7 @@ export function Orders() {
         )}
       </div>
       {creating && <NewOrderModal onClose={() => setParams({})} onCreated={(id) => nav(`/taller/${id}`)} />}
+      {quick && <QuickIntakeModal onClose={() => setParams({})} onCreated={(id) => nav(`/taller/${id}?recibo=1`)} />}
     </>
   );
 }
@@ -215,6 +218,56 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
         </div>
         <div className="faint" style={{ fontSize: 12 }}>Los repuestos se agregan desde la orden y se descuentan del inventario en ese momento.</div>
       </div>
+    </Modal>
+  );
+}
+
+/** Recepción rápida: nombre, teléfono, clave, marca, modelo y falla. Al guardar abre el recibo para el cliente. */
+function QuickIntakeModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+  const { actor } = useAuth();
+  const settings = useSettings();
+  const techs = useCollection<Technician>('technicians').rows.filter((t) => t.active);
+  const { run, busy } = useAction();
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [unlockCode, setUnlockCode] = useState('');
+  const [brand, setBrand] = useState('');
+  const [model, setModel] = useState('');
+  const [issue, setIssue] = useState('');
+  const [techId, setTechIdRaw] = useState(() => { try { return localStorage.getItem('dcpro:lastTech') ?? ''; } catch { return ''; } });
+  const setTechId = (v: string) => { setTechIdRaw(v); try { localStorage.setItem('dcpro:lastTech', v); } catch { /* sin almacenamiento */ } };
+  const ok = name.trim() && phone.replace(/\D/g, '').length >= 7 && brand.trim() && model.trim() && issue.trim();
+  const now = new Date();
+  const submit = () => run(async () => {
+    const r = await quickIntake(actor, {
+      name, phone, unlockCode, brand, model, issue,
+      technician: techs.find((t) => t.id === techId), warrantyDays: settings.defaultWarrantyDays,
+    });
+    onCreated(r.id);
+  }, 'Equipo recibido');
+  return (
+    <Modal title="Recepción rápida" onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn primary" disabled={busy || !ok} onClick={submit}>Recibir e imprimir recibo</button></>}>
+      <form className="form-grid" onSubmit={(e) => { e.preventDefault(); if (ok && !busy) submit(); }}>
+        <div className="full faint" style={{ fontSize: 13 }}>Fecha de ingreso: <b>{dateTime(now.toISOString())}</b></div>
+        <Field label="Nombre" required><input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" /></Field>
+        <Field label="Teléfono" required><input className="input" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" /></Field>
+        <Field label="Marca" required><BrandInput value={brand} onChange={setBrand} required /></Field>
+        <Field label="Modelo" required><ModelInput brand={brand} value={model} onChange={setModel} /></Field>
+        <Field label="Contraseña / patrón"><input className="input" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)} autoComplete="off" placeholder="Ej.: 1234 · patrón L · sin clave" /></Field>
+        {techs.length > 0 && (
+          <Field label="Técnico">
+            <select className="input" value={techId} onChange={(e) => setTechId(e.target.value)}>
+              <option value="">Sin asignar</option>
+              {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </Field>
+        )}
+        <Field label="Falla" required className="full"><textarea className="input" rows={2} value={issue} onChange={(e) => setIssue(e.target.value)} placeholder="Ej.: no carga, pantalla rota, se apaga" /></Field>
+        <div className="full faint" style={{ fontSize: 12 }}>Si el teléfono ya es de un cliente, se usa ese cliente. El precio, el IMEI y lo demás se completan después en la orden.</div>
+        <button type="submit" hidden />
+      </form>
     </Modal>
   );
 }

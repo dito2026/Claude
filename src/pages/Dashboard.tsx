@@ -150,7 +150,7 @@ export function Dashboard() {
         subtitle="Resumen del negocio en tiempo real."
         actions={
           <>
-            {can('orders.create') && <Link className="btn" to="/taller?nueva=1"><Wrench size={16} />Nueva orden</Link>}
+            {can('orders.create') && <Link className="btn" to="/taller?rapida=1"><Wrench size={16} />Recibir equipo</Link>}
             {finance && settings.phone && (
               <a className="btn" title="Resumen de ventas, utilidad y órdenes de hoy al WhatsApp del negocio"
                 href={whatsappLink(settings.phone, dailySummaryText({ invoices, movements, products, orders, businessName: settings.name }))} target="_blank" rel="noreferrer">

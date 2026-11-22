@@ -76,7 +76,7 @@ export function LineModule({ module }: { module: ModuleKey }) {
     servicio: <>
       <Link className="btn" to="/tickets"><LifeBuoy size={16} />Tickets</Link>
       <Link className="btn" to="/taller"><ClipboardList size={16} />Ver órdenes</Link>
-      {can('orders.create') && <Link className="btn primary" to="/taller?nueva=1"><Wrench size={16} />Nueva orden</Link>}
+      {can('orders.create') && <Link className="btn primary" to="/taller?rapida=1"><Wrench size={16} />Recepción rápida</Link>}
     </>,
   }[module];
 

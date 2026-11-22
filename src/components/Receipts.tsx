@@ -92,26 +92,30 @@ export function OrderReceipt({ o, s }: { o: RepairOrder; s: BusinessSettings }) 
       <div className="big c">ORDEN DE SERVICIO</div>
       <div className="big c">OT {pad(o.number)}</div>
       <hr />
-      <div>Ingreso: {dateTime(o.createdAt)}</div>
+      <div>Fecha de ingreso: {dateTime(o.createdAt)}</div>
       {o.promisedAt && <div>Entrega estimada: {dateTime(o.promisedAt)}</div>}
       <div>Cliente: {o.customer.name}</div>
       {o.customer.phone && <div>Cel.: {o.customer.phone}</div>}
       <hr />
-      <div>Equipo: {o.device.brand} {o.device.model}</div>
+      <div>Marca: {o.device.brand}</div>
+      <div>Modelo: {o.device.model}</div>
       {o.device.imei && <div>IMEI/serial: {o.device.imei}</div>}
       {o.device.color && <div>Color: {o.device.color}</div>}
-      <div>Accesorios: {o.device.accessories || 'Ninguno'}</div>
-      <div>Estado físico: {o.device.condition || '—'}</div>
+      {o.device.unlockCode && <div>Contraseña: {o.device.unlockCode}</div>}
+      {o.device.accessories && <div>Accesorios: {o.device.accessories}</div>}
+      {o.device.condition && <div>Estado físico: {o.device.condition}</div>}
       <div>Falla: {o.reportedIssue}</div>
       <hr />
-      <table>
-        <tbody>
-          <tr><td>Presupuesto</td><td className="r">{money(o.budget || total)}</td></tr>
-          <tr><td>Abonado</td><td className="r">{money(deposits)}</td></tr>
-          <tr className="big"><td>Saldo</td><td className="r">{money(Math.max(0, (o.budget || total) - deposits))}</td></tr>
-        </tbody>
-      </table>
-      <hr />
+      {(o.budget || total || deposits) > 0 && <>
+        <table>
+          <tbody>
+            <tr><td>Presupuesto</td><td className="r">{money(o.budget || total)}</td></tr>
+            <tr><td>Abonado</td><td className="r">{money(deposits)}</td></tr>
+            <tr className="big"><td>Saldo</td><td className="r">{money(Math.max(0, (o.budget || total) - deposits))}</td></tr>
+          </tbody>
+        </table>
+        <hr />
+      </>}
       <div style={{ fontSize: 10 }}>
         Garantía de {o.warrantyDays} días sobre la reparación realizada, no cubre golpes, humedad ni
         manipulación de terceros. Equipos no reclamados después de 90 días se consideran abandonados.
@@ -137,7 +141,9 @@ const invoiceText = (inv: Invoice, s: BusinessSettings) =>
 const orderText = (o: RepairOrder, s: BusinessSettings) =>
   [
     `*${s.name}* · Orden de servicio *OT ${pad(o.number)}*`,
+    `Fecha de ingreso: ${dateTime(o.createdAt)}`,
     `Equipo: ${o.device.brand} ${o.device.model}`,
+    `Falla: ${o.reportedIssue}`,
     `Estado: *${o.status}*`,
     o.promisedAt ? `Entrega estimada: ${dateTime(o.promisedAt)}` : '',
     `Abonado: ${money(depositsTotal(o))}`,

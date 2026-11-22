@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, LifeBuoy, MessageCircle, PackagePlus, Pencil, Printer, Receipt, Sparkles, Trash2 } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { OrderStatus, Product, RepairOrder, Technician } from '../lib/types';
@@ -30,7 +30,9 @@ export function OrderDetail() {
   const techs = useCollection<Technician>('technicians').rows;
   const { run, busy } = useAction();
   const [editingDeposit, setEditingDeposit] = useState<number | null>(null);
-  const [modal, setModal] = useState<'part' | 'deposit' | 'status' | 'receipt' | 'ai' | 'notify' | null>(null);
+  const [params, setParams] = useSearchParams();
+  const [modal, setModalRaw] = useState<'part' | 'deposit' | 'status' | 'receipt' | 'ai' | 'notify' | null>(() => (params.get('recibo') === '1' ? 'receipt' : null));
+  const setModal = (m: typeof modal) => { setModalRaw(m); if (m === null && params.get('recibo')) setParams({}, { replace: true }); };
   const [diagnosis, setDiagnosis] = useState<string | null>(null);
   const [note, setNote] = useState('');
 

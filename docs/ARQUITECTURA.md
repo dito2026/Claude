@@ -790,3 +790,11 @@ Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`pa
 - Vendedores → ventas del vendedor → **«Recalcular con la comisión actual»** (solo admin, `RecalcModal`). Período propio, por defecto este mes. `commissionRecalcPreview` muestra cada venta con la comisión de antes y la de ahora (configuración actual: general y % por línea), los totales y la diferencia. No cambia nada hasta «Aplicar».
 - **Aplicar** (`recalcCommissions`, en bloques de 100 facturas por transacción) actualiza solo las que cambian: `commission`, los % usados (`commissionPct`, `commissionBase`, `commissionRates`) y deja la anterior en `commissionEdits`. No mueve la caja: cambia lo que se le debe al vendedor (`sellerBalance`); lo ya pagado se conserva.
 - Reglas: solo admin y en facturas no anuladas, con una entrada más en `commissionEdits` (probado en el emulador).
+
+## 75. Recepción rápida de equipos (servicio técnico)
+
+- **«Recepción rápida»** (`QuickIntakeModal` en Órdenes; `/taller?rapida=1`): botón principal en Órdenes y en Servicio técnico; en el panel dice «Recibir equipo». Pide nombre, teléfono, marca, modelo, contraseña/patrón y falla. La fecha de ingreso se pone sola y el técnico es opcional (se recuerda el último usado). La orden completa sigue disponible como «Orden completa».
+- `quickIntake` (`services/orders.ts`): busca el cliente por teléfono (últimos 10 dígitos, sin importar espacios ni +57). Si no existe, lo crea con nombre y teléfono. La orden se crea «Recibido», con entrega en 2 días y la garantía por defecto. El precio, el IMEI y lo demás se completan después en la orden.
+- Al guardar se abre la orden con `?recibo=1` y su **recibo de ingreso**, listo para imprimir o mandar por WhatsApp.
+- Recibo: fecha de ingreso, cliente, celular, marca, modelo, **contraseña**, falla. El presupuesto, abonado y saldo solo salen si hay valores. Accesorios y estado físico solo si se escribieron. El texto de WhatsApp incluye fecha de ingreso y falla (no la contraseña).
+- Pruebas: `quick-intake.test.ts` y e2e (los 6 datos → recibo con fecha, clave y falla; sin presupuesto en $0).
