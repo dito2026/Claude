@@ -798,3 +798,4 @@ Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`pa
 - Al guardar se abre la orden con `?recibo=1` y su **recibo de ingreso**, listo para imprimir o mandar por WhatsApp.
 - Recibo: fecha de ingreso, cliente, celular, marca, modelo, **contraseña**, falla. El presupuesto, abonado y saldo solo salen si hay valores. Accesorios y estado físico solo si se escribieron. El texto de WhatsApp incluye fecha de ingreso y falla (no la contraseña).
 - Pruebas: `quick-intake.test.ts` y e2e (los 6 datos → recibo con fecha, clave y falla; sin presupuesto en $0).
+- **Precio** (opcional) en la recepción rápida: queda como presupuesto (`budget`) y como «Cobro al cliente (incluye repuestos)» (`laborPrice`). En el recibo salen el presupuesto, lo abonado y el saldo. Vacío = se pone después en la orden.

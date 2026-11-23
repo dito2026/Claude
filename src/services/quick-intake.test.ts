@@ -15,6 +15,12 @@ describe('recepción rápida de equipos', () => {
     expect(o).toMatchObject({ number: 1, status: 'Recibido', reportedIssue: 'No carga', device: { brand: 'Redmi', model: '13C', unlockCode: '1234' }, customer: { name: 'Daily Hidalgo', phone: '313 783 8929' } });
     expect(new Date(o.promisedAt).getTime()).toBeGreaterThan(Date.now() + 86400000);
     expect(await backend.list<Customer>('customers')).toHaveLength(1);
+    expect(o).toMatchObject({ budget: 0, laborPrice: 0 }); // sin precio: se pone después
+  });
+
+  it('con precio: queda como presupuesto y cobro al cliente', async () => {
+    const r = await quickIntake(actor, { ...base, price: 120000 });
+    expect((await backend.get<RepairOrder>('repairOrders', r.id))!).toMatchObject({ budget: 120000, laborPrice: 120000 });
   });
 
   it('si el teléfono ya es de un cliente, usa ese cliente (aunque esté escrito distinto)', async () => {

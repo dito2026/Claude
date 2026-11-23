@@ -264,7 +264,7 @@ try {
     assert(await page.locator('tr:has-text("Pepe E2E") button:has-text("Abonar")').count() === 0, 'la deuda debía quedar en 0');
   });
 
-  await check('recepción rápida: 6 datos y sale el recibo con fecha, clave y falla', async () => {
+  await check('recepción rápida: datos y precio, y sale el recibo con fecha, clave, falla y precio', async () => {
     await page.goto(BASE + '/taller');
     await page.click('button:has-text("Recepción rápida")');
     await page.waitForSelector('.modal:has-text("Recepción rápida")');
@@ -276,13 +276,14 @@ try {
     await page.locator('.modal label.field:has-text("Modelo") input').fill('13C');
     await page.fill('.modal label.field:has-text("Contraseña") input', '1234');
     await page.fill('.modal label.field:has-text("Falla") textarea', 'No carga');
+    await page.fill('.modal label.field:has-text("Precio") input', '120000');
     await save.click();
     await page.waitForSelector('.modal:has-text("Recibo de ingreso")');
     const r = await page.locator('.modal .receipt').innerText();
     for (const t of ['Fecha de ingreso', 'Daily Hidalgo', '3137838929', 'Marca: Redmi', 'Modelo: 13C', 'Contraseña: 1234', 'Falla: No carga']) {
       assert(r.includes(t), `al recibo le falta «${t}»`);
     }
-    assert(!r.includes('Presupuesto'), 'sin precio no debía salir el presupuesto en $0');
+    assert(r.includes('Presupuesto') && r.includes('120.000'), 'el recibo debía mostrar el precio de 120.000');
     await page.keyboard.press('Escape');
   });
 

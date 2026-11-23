@@ -330,6 +330,8 @@ export interface QuickIntake {
   brand: string;
   model: string;
   issue: string;
+  /** precio acordado con el cliente (opcional): queda como presupuesto y cobro al cliente */
+  price?: number;
   technician?: Pick<Technician, 'id' | 'name' | 'userId'>;
   warrantyDays: number;
 }
@@ -347,6 +349,7 @@ export async function quickIntake(actor: Actor, d: QuickIntake) {
   if (phoneKey(phone).length < 7) throw new BusinessError('Escriba el teléfono del cliente.');
   if (!d.brand.trim() || !d.model.trim()) throw new BusinessError('Escriba la marca y el modelo.');
   if (!d.issue.trim()) throw new BusinessError('Escriba la falla.');
+  const price = Math.max(0, Math.round(Number(d.price) || 0));
   const customers = await backend.list<Customer>('customers');
   let customer = customers.find((c) => phoneKey(c.phone ?? '') === phoneKey(phone));
   if (!customer) {
@@ -363,8 +366,8 @@ export async function quickIntake(actor: Actor, d: QuickIntake) {
     technicianUserId: d.technician?.userId ?? '',
     priority: 'normal',
     promisedAt: new Date(Date.now() + 2 * 86400000).toISOString(),
-    budget: 0,
-    laborPrice: 0,
+    budget: price,
+    laborPrice: price,
     technicianPay: 0,
     warrantyDays: d.warrantyDays,
   });

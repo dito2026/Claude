@@ -234,13 +234,14 @@ function QuickIntakeModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const [issue, setIssue] = useState('');
+  const [price, setPrice] = useState(0);
   const [techId, setTechIdRaw] = useState(() => { try { return localStorage.getItem('dcpro:lastTech') ?? ''; } catch { return ''; } });
   const setTechId = (v: string) => { setTechIdRaw(v); try { localStorage.setItem('dcpro:lastTech', v); } catch { /* sin almacenamiento */ } };
   const ok = name.trim() && phone.replace(/\D/g, '').length >= 7 && brand.trim() && model.trim() && issue.trim();
   const now = new Date();
   const submit = () => run(async () => {
     const r = await quickIntake(actor, {
-      name, phone, unlockCode, brand, model, issue,
+      name, phone, unlockCode, brand, model, issue, price,
       technician: techs.find((t) => t.id === techId), warrantyDays: settings.defaultWarrantyDays,
     });
     onCreated(r.id);
@@ -265,7 +266,8 @@ function QuickIntakeModal({ onClose, onCreated }: { onClose: () => void; onCreat
           </Field>
         )}
         <Field label="Falla" required className="full"><textarea className="input" rows={2} value={issue} onChange={(e) => setIssue(e.target.value)} placeholder="Ej.: no carga, pantalla rota, se apaga" /></Field>
-        <div className="full faint" style={{ fontSize: 12 }}>Si el teléfono ya es de un cliente, se usa ese cliente. El precio, el IMEI y lo demás se completan después en la orden.</div>
+        <Field label="Precio (incluye repuestos)"><MoneyInput value={price} onChange={setPrice} placeholder="Ej.: 120k · opcional" /></Field>
+        <div className="full faint" style={{ fontSize: 12 }}>Si el teléfono ya es de un cliente, se usa ese cliente. Si aún no sabe el precio, déjelo vacío y póngalo después en la orden.</div>
         <button type="submit" hidden />
       </form>
     </Modal>
