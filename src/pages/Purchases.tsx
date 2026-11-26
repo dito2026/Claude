@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { HandCoins, History, PackagePlus, PenLine, Pencil, Plus, Sparkles, Trash2, Truck } from 'lucide-react';
+import { Download, HandCoins, History, PackagePlus, PenLine, Pencil, Plus, Sparkles, Trash2, Truck } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { PhoneCondition, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
 import { dateOnly, dateTime, fromLocalInput, matches, money, pad, toLocalInput, addDays, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction, useToast } from '../components/ui';
 import { PayMethods } from '../components/PayMethods';
+import { downloadExcel } from '../services/accounting';
 import {
-  changePurchaseSupplier, createPurchase, editOpeningBalance, editPurchase, editSupplierPayment, movePayment, supplierPayments, isOverduePurchase, voidPurchase, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
+  changePurchaseSupplier, createPurchase, supplierItems, editOpeningBalance, editPurchase, editSupplierPayment, movePayment, supplierPayments, isOverduePurchase, voidPurchase, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
 } from '../services/purchases';
 import type { CashState } from '../services/cash';
 import { EMPTY_PRODUCT, ProductModal } from './Inventory';
@@ -440,6 +441,54 @@ function SupplierStatement({ supplier, purchases, onPay }: { supplier: Supplier;
   );
 }
 
+const TYPE_LABEL: Record<string, string> = { REPUESTO: 'Repuesto', ACCESORIO: 'Accesorio', EQUIPO: 'Celular', SERVICIO: 'Servicio', libre: 'Sin inventario' };
+
+/** Todo lo que se le ha comprado al proveedor (o solo repuestos): cuántas veces, cuánto y a qué costo. */
+function SupplierItems({ supplier, purchases }: { supplier: Supplier; purchases: Purchase[] }) {
+  const products = useCollection<Product>('products').rows;
+  const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const [onlyParts, setOnlyParts] = useState<'todo' | 'repuestos'>('repuestos');
+  const [q, setQ] = useState('');
+  const all = useMemo(() => supplierItems(supplier.id, purchases, productMap), [supplier.id, purchases, productMap]);
+  const rows = all.filter((r) => (onlyParts === 'todo' || r.isPart) && matches(q, r.name));
+  const exportXls = () => downloadExcel(`compras-${supplier.name.replace(/\s+/g, '-')}_${onlyParts}.csv`, [
+    [`Lo que se le ha comprado a ${supplier.name}`, onlyParts === 'repuestos' ? 'Solo repuestos' : 'Todo'],
+    [],
+    ['Artículo', 'Tipo', 'Veces', 'Cantidad', 'Total comprado', 'Último costo', 'Última compra', 'Compra N.º', 'Costo más bajo', 'Costo más alto'],
+    ...rows.map((r) => [r.name, TYPE_LABEL[r.type] ?? r.type, r.times, r.qty, r.total, r.lastCost, dateOnly(r.lastAt), `C-${pad(r.lastNumber, 4)}`, r.minCost, r.maxCost]),
+  ]);
+  return (
+    <div className="stack" style={{ marginTop: 18 }}>
+      <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <h3 style={{ margin: 0 }}>Lo que le ha comprado</h3>
+        <div className="row gap-sm" style={{ flexWrap: 'wrap' }}>
+          <Seg value={onlyParts} onChange={setOnlyParts} options={[{ value: 'repuestos', label: 'Solo repuestos' }, { value: 'todo', label: 'Todo' }]} />
+          <SearchBox value={q} onChange={setQ} placeholder="Buscar repuesto" />
+          <button className="btn sm" onClick={exportXls} disabled={rows.length === 0}><Download size={15} />Excel</button>
+        </div>
+      </div>
+      {rows.length === 0 ? <Empty>{all.length === 0 ? 'Aún no hay compras a este proveedor.' : onlyParts === 'repuestos' ? 'No le ha comprado repuestos. Toque «Todo» para ver lo demás.' : 'Sin resultados.'}</Empty> : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Artículo</th><th>Tipo</th><th className="num">Veces</th><th className="num">Cantidad</th><th className="num">Último costo</th><th>Última compra</th><th className="num">Costo más bajo / alto</th></tr></thead>
+            <tbody>{rows.map((r) => (
+              <tr key={r.key}>
+                <td className="strong">{r.name}</td>
+                <td><Badge tone={r.isPart ? 'info' : ''}>{TYPE_LABEL[r.type] ?? r.type}{r.type === 'libre' && r.isPart ? ' · para OT' : ''}</Badge></td>
+                <td className="num">{r.times}</td>
+                <td className="num">{r.qty}</td>
+                <td className="num strong">{money(r.lastCost)}</td>
+                <td>{dateOnly(r.lastAt)} <small className="mono faint">C-{pad(r.lastNumber, 4)}</small></td>
+                <td className="num faint">{r.minCost === r.maxCost ? money(r.lastCost) : `${money(r.minCost)} – ${money(r.maxCost)}`}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------------- Pagos a proveedores ----------------
 function PaymentsTab({ suppliers, purchases }: { suppliers: Supplier[]; purchases: Purchase[] }) {
   const [sid, setSid] = useState('');
@@ -552,6 +601,7 @@ function SupplierList({ suppliers, purchases }: { suppliers: Supplier[]; purchas
       {history && (
         <Modal wide title={`Estado de cuenta · ${history.name}`} onClose={() => setHistory(null)}>
           <SupplierStatement supplier={history} purchases={purchases} onPay={() => { setPaying(history); setHistory(null); }} />
+          <SupplierItems supplier={history} purchases={purchases} />
           <h3 style={{ margin: '18px 0 6px' }}>Pagos y abonos</h3>
           <PaymentsList purchases={purchases} supplierId={history.id} />
         </Modal>

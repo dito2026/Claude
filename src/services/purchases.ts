@@ -680,3 +680,60 @@ export async function editOpeningBalance(actor: Actor, purchaseId: string, total
     });
   });
 }
+
+export interface SupplierItemRow {
+  key: string;
+  name: string;
+  productId: string;
+  /** REPUESTO, ACCESORIO, EQUIPO… o «libre» (artículo sin inventario) */
+  type: string;
+  isPart: boolean;
+  times: number;
+  qty: number;
+  total: number;
+  lastCost: number;
+  lastAt: string;
+  lastNumber: number;
+  minCost: number;
+  maxCost: number;
+}
+
+/** Nombres que son repuestos de celular (para artículos sin inventario). */
+const PART_RE = /\b(pantallas?|display|lcd|oled|touch|tactil|visor(es)?|modulos?|baterias?|pilas?|flex|puertos?|pin de carga|centro de carga|conector(es)?|tapas?|carcasa trasera|camaras?|lentes? de camara|parlantes? internos?|auricular(es)? internos?|microfonos?|botones?|placas?|board|ic|chips? de carga|antenas?|sensores?|vibradores?)\b/;
+
+/**
+ * Lo que se le ha comprado a un proveedor, agrupado por artículo (compras no anuladas).
+ * «Repuesto»: producto de tipo REPUESTO, o artículo sin inventario comprado para una orden de reparación
+ * o cuyo nombre es de repuesto (pantalla, batería, flex, puerto…).
+ */
+export function supplierItems(supplierId: string, purchases: Purchase[], products: Map<string, Pick<Product, 'type' | 'name'>>): SupplierItemRow[] {
+  const rows = new Map<string, SupplierItemRow>();
+  const list = purchases
+    .filter((p) => p.supplierId === supplierId && p.status !== 'anulada' && p.kind !== 'saldo_inicial')
+    .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+  for (const p of list) {
+    const forRepair = /reparaci|\bOT\b/i.test(p.note ?? '');
+    for (const it of p.items) {
+      const prod = it.productId ? products.get(it.productId) : undefined;
+      const key = it.productId || `libre:${normalize(it.name)}`;
+      const type = prod?.type ?? 'libre';
+      const r = rows.get(key) ?? {
+        key, name: prod?.name ?? it.name, productId: it.productId, type,
+        isPart: type === 'REPUESTO' || (type === 'libre' && (forRepair || PART_RE.test(normalize(it.name)))),
+        times: 0, qty: 0, total: 0, lastCost: 0, lastAt: '', lastNumber: 0, minCost: Infinity, maxCost: 0,
+      };
+      r.times += 1;
+      r.qty += it.qty;
+      r.total += it.qty * it.unitCost;
+      r.lastCost = it.unitCost;
+      r.lastAt = p.createdAt ?? '';
+      r.lastNumber = p.number;
+      r.minCost = Math.min(r.minCost, it.unitCost);
+      r.maxCost = Math.max(r.maxCost, it.unitCost);
+      if (type === 'libre' && forRepair) r.isPart = true;
+      rows.set(key, r);
+    }
+  }
+  return [...rows.values()].map((r) => ({ ...r, minCost: Number.isFinite(r.minCost) ? r.minCost : 0 }))
+    .sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+}

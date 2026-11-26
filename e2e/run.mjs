@@ -225,6 +225,7 @@ try {
     await page.waitForSelector('.modal .stat:has-text("Le debe")');
     const txt = await page.locator('.modal').innerText();
     assert(txt.includes('Total que le debe') && txt.includes('120.000'), 'no muestra la deuda de 120.000');
+    await page.waitForSelector('.modal h3:has-text("Lo que le ha comprado")');
     await page.keyboard.press('Escape');
   });
 

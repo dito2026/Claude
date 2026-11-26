@@ -799,3 +799,9 @@ Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`pa
 - Recibo: fecha de ingreso, cliente, celular, marca, modelo, **contraseña**, falla. El presupuesto, abonado y saldo solo salen si hay valores. Accesorios y estado físico solo si se escribieron. El texto de WhatsApp incluye fecha de ingreso y falla (no la contraseña).
 - Pruebas: `quick-intake.test.ts` y e2e (los 6 datos → recibo con fecha, clave y falla; sin presupuesto en $0).
 - **Precio** (opcional) en la recepción rápida: queda como presupuesto (`budget`) y como «Cobro al cliente (incluye repuestos)» (`laborPrice`). En el recibo salen el presupuesto, lo abonado y el saldo. Vacío = se pone después en la orden.
+
+## 76. Repuestos por proveedor
+
+- En Compras → Proveedores y saldos → **Estado de cuenta** hay una nueva sección, **«Lo que le ha comprado»** (`SupplierItems`, `supplierItems`). Agrupa por artículo todo lo comprado a ese proveedor en compras no anuladas (sin el saldo anterior). Muestra tipo, cuántas veces, cantidad, último costo con fecha y compra, y el costo más bajo y más alto. Tiene buscador y Excel.
+- Filtro **«Solo repuestos»** (por defecto) o **«Todo»**. Cuenta como repuesto un producto de tipo REPUESTO, o un artículo sin inventario comprado para una OT (nota «Repuesto para OT…») o cuyo nombre es de repuesto (`PART_RE`: pantalla, display, batería, flex, puerto, tapa, cámara…).
+- Prueba: `supplier-items.test.ts` y e2e.
