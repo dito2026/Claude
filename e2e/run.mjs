@@ -239,6 +239,29 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await check('compra: mismo producto a dos precios y pago con varios medios', async () => {
+    await page.goto(BASE + '/compras');
+    await page.click('button:has-text("Nueva compra")');
+    await page.waitForSelector('.modal:has-text("Nueva compra a proveedor")');
+    const opt = await page.locator('.modal select option', { hasText: 'Proveedor E2E' }).first().getAttribute('value');
+    await page.locator('.modal label.field:has-text("Proveedor") select').selectOption(opt);
+    await page.locator('.modal .product-tile', { hasText: 'Cargador' }).first().click();
+    await page.locator('.modal .product-tile', { hasText: 'Cargador' }).first().click(); // 2 al mismo precio
+    await page.locator('.modal button:has-text("Otro precio")').first().click();
+    const costs = page.locator('.modal table tbody tr td:nth-child(3) input');
+    await costs.nth(0).fill('10000');
+    await costs.nth(1).fill('12000');
+    await page.click('.modal .seg button:has-text("De contado")');
+    await page.click('.modal button:has-text("Pagar con varios medios")');
+    await page.selectOption('.modal select[aria-label="Medio 1"]', 'Efectivo');
+    await page.fill('.modal input[aria-label="Valor 1"]', '20000');
+    await page.selectOption('.modal select[aria-label="Medio 2"]', 'Nequi');
+    await page.fill('.modal input[aria-label="Valor 2"]', '12000');
+    await page.waitForSelector('.modal :text("completo")');
+    await page.click('.modal button:has-text("Registrar compra $ 32.000")');
+    await page.waitForSelector('.toast:has-text("Compra de contado registrada")');
+  });
+
   await check('Caja → Pago a proveedor pide el proveedor y baja su deuda', async () => {
     await page.goto(BASE + '/compras');
     await page.click('.tabs button:has-text("Proveedores")');

@@ -77,6 +77,8 @@ export interface PurchaseDraft {
   paymentType: 'contado' | 'credito';
   /** medio con que se paga (solo contado) */
   method: string;
+  /** contado con varios medios (p. ej. parte efectivo y parte Nequi): deben sumar el total */
+  payments?: { method: string; amount: number }[];
   invoiceRef: string;
   dueDate?: string;
   note: string;
@@ -99,8 +101,15 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
   if (items.length === 0) throw new BusinessError('Agregue al menos un producto a la compra.');
   if (items.some((i) => !i.productId && !i.name.trim())) throw new BusinessError('Escriba la descripción del artículo libre.');
   if (items.some((i) => !Number.isInteger(i.qty) || i.unitCost < 0)) throw new BusinessError('Revise cantidades y costos.');
-  if (d.paymentType === 'contado' && (!d.method || d.method === CREDIT_METHOD)) throw new BusinessError('Elija con qué medio paga de contado.');
   const total = sum(items.map((i) => i.qty * i.unitCost));
+  // De contado: un medio por el total, o varios que sumen el total
+  const pays = d.paymentType !== 'contado' ? [] : d.payments?.some((x) => x.amount > 0)
+    ? d.payments.filter((x) => x.amount > 0).map((x) => ({ method: x.method, amount: Math.round(x.amount) }))
+    : [{ method: d.method, amount: total }];
+  if (pays.some((x) => !x.method || x.method === CREDIT_METHOD)) throw new BusinessError('Elija con qué medio paga de contado.');
+  if (d.paymentType === 'contado' && sum(pays.map((x) => x.amount)) !== total) {
+    throw new BusinessError(`Los pagos (${sum(pays.map((x) => x.amount)).toLocaleString('es-CO')}) no suman el total de la compra (${total.toLocaleString('es-CO')}).`);
+  }
 
   return backend.transaction(async (tx) => {
     // ---------- LECTURAS ----------
@@ -137,7 +146,7 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
       invoiceRef: d.invoiceRef.trim(),
       dueDate: d.paymentType === 'credito' ? d.dueDate || addDays(now, d.supplier.termDays || 30) : undefined,
       paid,
-      payments: paid > 0 ? [{ at: now, amount: paid, method: d.method, by: actor.name }] : [],
+      payments: paid > 0 ? pays.map((x) => ({ at: now, amount: x.amount, method: x.method, by: actor.name })) : [],
       status: statusFor(total, paid),
       note: d.note.trim(),
       ...created(actor),
@@ -163,15 +172,17 @@ export async function createPurchase(actor: Actor, d: PurchaseDraft) {
     }
 
     if (sessionId) {
-      writeMovement(tx, actor, sessionId, {
-        direction: 'egreso',
-        category: 'pago_proveedor',
-        method: d.method,
-        amount: total,
-        description: `Compra de contado ${number} · ${d.supplier.name}`,
-        refType: 'purchase',
-        refId: pid,
-      });
+      for (const x of pays) {
+        writeMovement(tx, actor, sessionId, {
+          direction: 'egreso',
+          category: 'pago_proveedor',
+          method: x.method,
+          amount: x.amount,
+          description: `Compra de contado ${number} · ${d.supplier.name}${pays.length > 1 ? ` (${x.method})` : ''}`,
+          refType: 'purchase',
+          refId: pid,
+        });
+      }
     }
     return { id: pid, number, total };
   });

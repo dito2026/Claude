@@ -3,10 +3,12 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Download, HandCoins, History, PackagePlus, PenLine, Pencil, Plus, Sparkles, Trash2, Truck } from 'lucide-react';
 import { useCollection, useDocument } from '../data/hooks';
 import type { PhoneCondition, Product, Purchase, PurchaseItem, Supplier } from '../lib/types';
+import { CREDIT_METHOD } from '../lib/types';
 import { dateOnly, dateTime, fromLocalInput, matches, money, pad, toLocalInput, addDays, whatsappLink } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { Badge, Empty, Field, Modal, MoneyInput, PageHead, SearchBox, Seg, Stat, useAction, useToast } from '../components/ui';
 import { PayMethods } from '../components/PayMethods';
+import { useSettings } from '../services/settings';
 import { downloadExcel } from '../services/accounting';
 import {
   changePurchaseSupplier, createPurchase, supplierItems, editOpeningBalance, editPurchase, editSupplierPayment, movePayment, supplierPayments, isOverduePurchase, voidPurchase, purchaseBalance, saveSupplier, supplierSummary, type SupplierInput,
@@ -642,7 +644,7 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
   const [supplierId, setSupplierId] = useState(prefill.supplierId ?? '');
   const [newSupplier, setNewSupplier] = useState(false);
   const [pendingSupplier, setPendingSupplier] = useState('');
-  const [items, setItems] = useState<PurchaseItem[]>(prefill.items ?? []);
+  const [items, setItems] = useState<(PurchaseItem & { key: string })[]>(() => (prefill.items ?? []).map((it, i) => ({ ...it, key: it.productId || `l${i}` })));
   const [q, setQ] = useState('');
   const [paymentType, setPaymentType] = useState<'credito' | 'contado'>(prefill.paymentType ?? 'credito');
   const [method, setMethod] = useState('');
@@ -656,8 +658,11 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
   const [imeiText, setImeiText] = useState<Record<string, string>>(prefill.imeiText ?? {});
   const [imeiCond, setImeiCond] = useState<Record<string, PhoneCondition>>({});
   const isPhoneLine = (it: PurchaseItem) => products.find((p) => p.id === it.productId)?.type === 'EQUIPO';
-  const lineUnits = (it: PurchaseItem) => parseImeiLines(imeiText[it.productId] ?? '', imeiCond[it.productId] ?? 'NUEVO');
-  const effectiveItems = items.map((it) => (isPhoneLine(it) ? { ...it, units: lineUnits(it), qty: lineUnits(it).length } : it));
+  const lineUnits = (it: { key: string }) => parseImeiLines(imeiText[it.key] ?? '', imeiCond[it.key] ?? 'NUEVO');
+  const effectiveItems: PurchaseItem[] = items.map(({ key, ...it }) => (isPhoneLine(it) ? { ...it, units: lineUnits({ key }), qty: lineUnits({ key }).length } : it));
+  const newKey = () => Math.random().toString(36).slice(2, 9);
+  // Mismo producto a otro precio: otra línea debajo con el mismo producto
+  const otherPrice = (k: number) => setItems((xs) => [...xs.slice(0, k + 1), { productId: xs[k].productId, name: xs[k].name, qty: 1, unitCost: xs[k].unitCost, key: newKey() }, ...xs.slice(k + 1)]);
 
   const supplier = suppliers.find((s) => s.id === supplierId) ?? null;
   useEffect(() => {
@@ -668,9 +673,12 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
   useEffect(() => {
     if (pendingSupplier && suppliers.some((s) => s.id === pendingSupplier)) { setSupplierId(pendingSupplier); setPendingSupplier(''); }
   }, [suppliers, pendingSupplier]);
-  const add = (p: Product) => setItems((xs) => xs.some((x) => x.productId === p.id)
-    ? xs.map((x) => (x.productId === p.id ? { ...x, qty: x.qty + 1 } : x))
-    : [...xs, { productId: p.id, name: p.name, qty: 1, unitCost: p.cost }]);
+  const add = (p: Product) => setItems((xs) => {
+    const last = xs.map((x) => x.productId).lastIndexOf(p.id);
+    return last >= 0
+      ? xs.map((x, i) => (i === last ? { ...x, qty: x.qty + 1 } : x))
+      : [...xs, { productId: p.id, name: p.name, qty: 1, unitCost: p.cost, key: newKey() }];
+  });
   useEffect(() => {
     const p = pendingProduct && products.find((x) => x.id === pendingProduct);
     if (p) { add(p); setPendingProduct(''); }
@@ -683,6 +691,12 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
   );
   const total = effectiveItems.reduce((a, i) => a + i.qty * i.unitCost, 0);
   const setItem = (k: number, patch: Partial<PurchaseItem>) => setItems((xs) => xs.map((x, i) => (i === k ? { ...x, ...patch } : x)));
+  // De contado con varios medios
+  const settings = useSettings();
+  const payMethodsList = settings.paymentMethods.filter((m) => m !== CREDIT_METHOD);
+  const [split, setSplit] = useState<{ method: string; amount: number }[] | null>(null);
+  const splitSum = (split ?? []).reduce((a, x) => a + (x.amount || 0), 0);
+  const splitOk = !split || (splitSum === total && split.every((x) => !(x.amount > 0) || x.method));
   const needsCash = paymentType === 'contado' && !cash?.openSessionId;
 
   const fixes = useMemo<CostFix[]>(() => (can('settings') ? effectiveItems
@@ -691,7 +705,8 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
   const zeroSales = useZeroCostSales(fixes);
   const [askZero, setAskZero] = useState<CostFix[] | null>(null);
   const submit = () => run(() => createPurchase(actor, {
-    supplier: supplier!, items: effectiveItems, paymentType, method, invoiceRef, note, updateCost,
+    supplier: supplier!, items: effectiveItems, paymentType, method: split ? (split.find((x) => x.amount > 0)?.method ?? '') : method, invoiceRef, note, updateCost,
+    ...(paymentType === 'contado' && split ? { payments: split } : {}),
     dueDate: paymentType === 'credito' && due ? fromLocalInput(due) : undefined,
   }), paymentType === 'credito' ? 'Compra a crédito registrada · stock actualizado' : 'Compra de contado registrada · stock actualizado')
     .then((ok) => {
@@ -706,7 +721,7 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
       footer={<>
         <span className="grow faint">{items.length} producto(s)</span>
         <button className="btn ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={busy || !supplier || items.length === 0 || needsCash || (paymentType === 'contado' && !method)} onClick={submit}>
+        <button className="btn primary" disabled={busy || !supplier || items.length === 0 || needsCash || (paymentType === 'contado' && (split ? !splitOk : !method))} onClick={submit}>
           Registrar compra {money(total)}
         </button>
       </>}>
@@ -726,8 +741,35 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
           </Field>
           {paymentType === 'credito' ? (
             <Field label="Fecha límite de pago"><input className="input" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
+          ) : !split ? (
+            <div className="field">
+              <PayMethods label="Paga con" value={method} onChange={setMethod} missing={!method} />
+              <button type="button" className="btn sm ghost" style={{ justifyContent: 'flex-start', paddingLeft: 0 }}
+                onClick={() => setSplit([{ method: method || payMethodsList[0] || '', amount: total }, { method: '', amount: 0 }])}>+ Pagar con varios medios</button>
+            </div>
           ) : (
-            <PayMethods label="Paga con" value={method} onChange={setMethod} missing={!method} />
+            <div className="field full">
+              <span>Paga con varios medios <em>*</em></span>
+              <div className="stack" style={{ gap: 6 }}>
+                {split.map((x, k) => (
+                  <div key={k} className="row gap-sm" style={{ flexWrap: 'nowrap' }}>
+                    <select className="input" value={x.method} aria-label={`Medio ${k + 1}`} onChange={(e) => setSplit(split.map((y, i) => (i === k ? { ...y, method: e.target.value } : y)))}>
+                      <option value="">Medio…</option>
+                      {payMethodsList.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <div style={{ width: 150 }}><MoneyInput value={x.amount} aria-label={`Valor ${k + 1}`} onChange={(v) => setSplit(split.map((y, i) => (i === k ? { ...y, amount: v } : y)))} /></div>
+                    <button type="button" className="btn sm ghost" title="Quitar" onClick={() => { const next = split.filter((_, i) => i !== k); setSplit(next.length ? next : null); }}><Trash2 size={14} /></button>
+                  </div>
+                ))}
+                <div className="row gap-sm">
+                  <button type="button" className="btn sm" onClick={() => setSplit([...split, { method: '', amount: Math.max(0, total - splitSum) }])}><Plus size={14} />Otro medio</button>
+                  <button type="button" className="btn sm ghost" onClick={() => setSplit(null)}>Un solo medio</button>
+                  <span className={splitSum === total ? 'faint' : 'red'} style={{ fontSize: 13 }}>
+                    {splitSum === total ? `Suma ${money(splitSum)} · completo` : splitSum < total ? `Faltan ${money(total - splitSum)}` : `Sobran ${money(splitSum - total)}`}
+                  </span>
+                </div>
+              </div>
+            </div>
           )}
           <Field label="Factura o nota del proveedor"><input className="input" value={invoiceRef} onChange={(e) => setInvoiceRef(e.target.value)} placeholder="Opcional" /></Field>
         </div>
@@ -735,7 +777,7 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
 
         <div className="row gap-sm">
           <input className="input grow" placeholder="Buscar repuesto o accesorio por nombre, SKU o modelo…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <button type="button" className="btn" title="Algo que no está en el inventario" onClick={() => setItems((xs) => [...xs, { productId: '', name: q.trim(), qty: 1, unitCost: 0 }])}><PenLine size={15} />Artículo libre</button>
+          <button type="button" className="btn" title="Algo que no está en el inventario" onClick={() => setItems((xs) => [...xs, { productId: '', name: q.trim(), qty: 1, unitCost: 0, key: newKey() }])}><PenLine size={15} />Artículo libre</button>
           {can('inventory.edit') && <button type="button" className="btn" onClick={() => setNewProduct(true)}><PackagePlus size={15} />Producto nuevo</button>}
         </div>
         <div className="product-grid">
@@ -751,13 +793,14 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
 
         <div className="card">
           {items.length === 0 ? <Empty>Toque los productos de arriba para agregarlos a la compra.</Empty> : (
+            <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Producto</th><th className="num" style={{ width: 110 }}>Cantidad</th><th className="num" style={{ width: 160 }}>Costo unitario</th><th className="num">Subtotal</th><th /></tr></thead>
               <tbody>
                 {items.map((it, k) => (
-                  <tr key={it.productId || `libre-${k}`}>
+                  <tr key={it.key}>
                     <td>
-                      {it.productId ? <span className="strong">{it.name}</span> : (
+                      {it.productId ? <span className="strong">{it.name}{items.filter((x) => x.productId === it.productId).length > 1 && <small className="faint"> · a {money(it.unitCost)}</small>}</span> : (
                         <>
                           <input className="input" placeholder="Descripción del artículo libre" value={it.name} onChange={(e) => setItem(k, { name: e.target.value })} />
                           <small className="faint">Sin inventario: solo registra la compra y la deuda</small>
@@ -765,8 +808,8 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
                       )}
                       {isPhoneLine(it) && (
                         <div className="stack" style={{ gap: 6, marginTop: 6 }}>
-                          <ImeiTextarea value={imeiText[it.productId] ?? ''} onChange={(v) => setImeiText({ ...imeiText, [it.productId]: v })} />
-                          <Seg value={imeiCond[it.productId] ?? 'NUEVO'} onChange={(v) => setImeiCond({ ...imeiCond, [it.productId]: v })}
+                          <ImeiTextarea value={imeiText[it.key] ?? ''} onChange={(v) => setImeiText({ ...imeiText, [it.key]: v })} />
+                          <Seg value={imeiCond[it.key] ?? 'NUEVO'} onChange={(v) => setImeiCond({ ...imeiCond, [it.key]: v })}
                             options={[{ value: 'NUEVO', label: 'Nuevos' }, { value: 'USADO', label: 'Usados' }]} />
                         </div>
                       )}
@@ -776,12 +819,16 @@ function NewPurchaseModal({ suppliers, prefill = {}, onClose }: { suppliers: Sup
                       : <input className="input num" type="number" min={1} value={it.qty} onChange={(e) => setItem(k, { qty: Math.max(1, Math.floor(Number(e.target.value) || 1)) })} />}</td>
                     <td><MoneyInput value={it.unitCost} onChange={(v) => setItem(k, { unitCost: v })} /></td>
                     <td className="num">{money((isPhoneLine(it) ? lineUnits(it).length : it.qty) * it.unitCost)}</td>
-                    <td className="right"><button className="btn sm ghost" onClick={() => setItems(items.filter((_, i) => i !== k))}><Trash2 size={14} /></button></td>
+                    <td className="right nowrap">
+                      {it.productId && <button type="button" className="btn sm ghost" title="Agregar el mismo producto con otro costo (ej.: 3 a $10.000 y 2 a $12.000)" onClick={() => otherPrice(k)}><Plus size={14} />Otro precio</button>}
+                      <button className="btn sm ghost" title="Quitar" onClick={() => setItems(items.filter((_, i) => i !== k))}><Trash2 size={14} /></button>
+                    </td>
                   </tr>
                 ))}
                 <tr><td colSpan={3} className="strong right">Total</td><td className="num strong">{money(total)}</td><td /></tr>
               </tbody>
             </table>
+            </div>
           )}
         </div>
         <div className="form-grid">

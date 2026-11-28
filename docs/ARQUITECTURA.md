@@ -811,3 +811,10 @@ Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`pa
 - Botón **«Equipos vendidos»** en el módulo Celulares → `/inventario?ver=vendidos`. Abre Inventario → Celulares (IMEI) ya filtrado en «Vendidos» (`UnitsTab initialStatus`).
 - En «Vendidos»: período (hoy, 7 días, este mes, mes anterior, este año, todo; por defecto este mes, según la fecha de venta `soldAt`), cantidad de equipos y total vendido. Con permiso de finanzas también costo, ganancia y %. Excel con fecha, factura, cliente, equipo, IMEI, condición, origen, costo, venta, ganancia y garantía. Cada fila muestra la ganancia del equipo.
 - La venta es el precio de la línea (`salePrice`, antes del descuento de la factura). Si se anula la factura, el equipo vuelve a «Disponible» y sale de la lista.
+
+## 78. Compras: varios medios de pago y el mismo producto a distinto precio
+
+- **Varios medios (de contado):** en Nueva compra, «+ Pagar con varios medios» abre filas de medio y valor, con «Otro medio» y «Un solo medio». Muestra cuánto falta o sobra y no deja registrar si no suma el total. `createPurchase` acepta `payments` (deben sumar el total y cada uno con medio válido). Guarda un pago por medio en la compra y saca de la caja un egreso por medio. Al anular, cada medio vuelve a la caja (ya agrupado por medio).
+- **Mismo producto a otro precio:** cada línea de la compra tiene su clave. El botón «Otro precio» agrega debajo el mismo producto con cantidad 1 para escribir otro costo (ej.: 3 a $10.000 y 2 a $12.000). Tocar el producto en el catálogo suma a su última línea. En celulares, los IMEI van por línea (cada línea con su costo). El stock suma todas las líneas (`moveStock` actualiza el stock en memoria dentro de la transacción).
+- La tabla de productos de la compra se desplaza dentro de su recuadro en el celular.
+- Pruebas: `purchase-split.test.ts` y e2e (2 precios + efectivo y Nequi).
