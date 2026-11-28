@@ -359,6 +359,13 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await check('equipos vendidos: acceso desde Celulares, período y totales', async () => {
+    await page.goto(BASE + '/celulares');
+    await page.locator('a:has-text("Equipos vendidos")').first().click();
+    await page.waitForSelector('main :text("equipo(s) vendido(s)")');
+    await page.waitForSelector('main button:has-text("Mes anterior")');
+  });
+
   await check('sin internet: la app abre y cambia de pantalla (pantallas guardadas)', async () => {
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.waitForFunction(async () => {

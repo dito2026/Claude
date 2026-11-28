@@ -805,3 +805,9 @@ Riesgo conocido (no cambiado): las reglas dejan que un cajero escriba `paid`/`pa
 - En Compras → Proveedores y saldos → **Estado de cuenta** hay una nueva sección, **«Lo que le ha comprado»** (`SupplierItems`, `supplierItems`). Agrupa por artículo todo lo comprado a ese proveedor en compras no anuladas (sin el saldo anterior). Muestra tipo, cuántas veces, cantidad, último costo con fecha y compra, y el costo más bajo y más alto. Tiene buscador y Excel.
 - Filtro **«Solo repuestos»** (por defecto) o **«Todo»**. Cuenta como repuesto un producto de tipo REPUESTO, o un artículo sin inventario comprado para una OT (nota «Repuesto para OT…») o cuyo nombre es de repuesto (`PART_RE`: pantalla, display, batería, flex, puerto, tapa, cámara…).
 - Prueba: `supplier-items.test.ts` y e2e.
+
+## 77. Equipos vendidos
+
+- Botón **«Equipos vendidos»** en el módulo Celulares → `/inventario?ver=vendidos`. Abre Inventario → Celulares (IMEI) ya filtrado en «Vendidos» (`UnitsTab initialStatus`).
+- En «Vendidos»: período (hoy, 7 días, este mes, mes anterior, este año, todo; por defecto este mes, según la fecha de venta `soldAt`), cantidad de equipos y total vendido. Con permiso de finanzas también costo, ganancia y %. Excel con fecha, factura, cliente, equipo, IMEI, condición, origen, costo, venta, ganancia y garantía. Cada fila muestra la ganancia del equipo.
+- La venta es el precio de la línea (`salePrice`, antes del descuento de la factura). Si se anula la factura, el equipo vuelve a «Disponible» y sale de la lista.

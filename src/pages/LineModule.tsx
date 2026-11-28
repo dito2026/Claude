@@ -64,6 +64,7 @@ export function LineModule({ module }: { module: ModuleKey }) {
 
   const actions: ReactNode = {
     celulares: <>
+      <Link className="btn" to="/inventario?ver=vendidos"><Smartphone size={16} />Equipos vendidos</Link>
       {can('purchases') && <Link className="btn" to="/usados"><Handshake size={16} />Comprar usado</Link>}
       {can('purchases') && <Link className="btn" to="/compras"><Truck size={16} />Comprar a proveedor</Link>}
       {can('billing') && <Link className="btn primary" to="/facturacion"><Receipt size={16} />Vender</Link>}

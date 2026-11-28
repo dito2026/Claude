@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Smartphone } from 'lucide-react';
+import { Download, Smartphone } from 'lucide-react';
 import { useCollection } from '../data/hooks';
 import type { PhoneCondition, PhoneUnit, PhoneUnitInput, Product } from '../lib/types';
-import { dateOnly, matches, money, pad } from '../lib/format';
+import { dateOnly, dateTime, matches, money, pad } from '../lib/format';
+import { downloadExcel, inPeriod, periodRange, type PeriodKind } from '../services/accounting';
 import { useAuth } from '../auth/AuthContext';
 import { registerUnits, voidUnitEntry, warrantyActive } from '../services/phones';
 import { Badge, Empty, Field, Modal, MoneyInput, SearchBox, Seg, useAction } from './ui';
@@ -114,7 +115,12 @@ export function UnitPickerModal({ product, exclude, onPick, onClose }: {
 }
 
 /** Pestaña de Inventario: todos los celulares por IMEI (historial y garantía). */
-export function UnitsTab() {
+const SOLD_PERIODS: { value: PeriodKind | 'todo'; label: string }[] = [
+  { value: 'hoy', label: 'Hoy' }, { value: '7dias', label: '7 días' }, { value: 'mes', label: 'Este mes' },
+  { value: 'mes_anterior', label: 'Mes anterior' }, { value: 'anio', label: 'Este año' }, { value: 'todo', label: 'Todo' },
+];
+
+export function UnitsTab({ initialStatus = 'disponible' }: { initialStatus?: 'disponible' | 'vendido' | 'todos' } = {}) {
   const { rows } = useCollection<PhoneUnit>('phoneUnits');
   const products = useCollection<Product>('products').rows;
   const [bm, setBm] = useState<BrandModelValue>({ brand: '', model: '' });
@@ -124,14 +130,17 @@ export function UnitsTab() {
   }, [products]);
   const brandOptions = useMemo(() => brandModelsOf(rows.map((u) => ({ brand: brandOf(u), model: u.productName }))), [rows, brandOf]);
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState<'disponible' | 'vendido' | 'todos'>('disponible');
+  const [status, setStatus] = useState<'disponible' | 'vendido' | 'todos'>(initialStatus);
+  const [soldPeriod, setSoldPeriod] = useState<PeriodKind | 'todo'>('mes');
+  const finance = useAuth().can('dashboard.finance');
   const list = useMemo(
     () => rows
       .filter((u) => status === 'todos' || u.status === status)
+      .filter((u) => status !== 'vendido' || soldPeriod === 'todo' || inPeriod(u.soldAt, periodRange(soldPeriod, new Date())))
       .filter((u) => matchesBrand(bm.brand, brandOf(u)) && matchesModel(bm.model, u.productName))
       .filter((u) => matches(q, u.imei, u.imei2, u.productName, u.customerName, u.supplierName, u.invoiceNumber))
       .sort((a, b) => (b.soldAt ?? b.createdAt ?? '').localeCompare(a.soldAt ?? a.createdAt ?? '')),
-    [rows, q, status, bm, brandOf],
+    [rows, q, status, bm, brandOf, soldPeriod],
   );
   const available = rows.filter((u) => u.status === 'disponible');
   const isAdmin = useAuth().can('settings');
@@ -149,7 +158,36 @@ export function UnitsTab() {
         <BrandModelFilter value={bm} onChange={setBm} brands={brandOptions} />
         <span className="faint">Valor disponible a costo: {money(available.reduce((a, u) => a + u.cost, 0))}</span>
       </div>
-      {manual > 0 && (
+      {status === 'vendido' && (() => {
+        const sales = list.reduce((a, u) => a + (u.salePrice || 0), 0);
+        const cost = list.reduce((a, u) => a + (u.cost || 0), 0);
+        const label = SOLD_PERIODS.find((x) => x.value === soldPeriod)!.label.toLowerCase();
+        const exportXls = () => downloadExcel(`celulares-vendidos_${soldPeriod}.csv`, [
+          ['Celulares vendidos', label],
+          [],
+          ['Fecha de venta', 'Factura', 'Cliente', 'Equipo', 'IMEI', 'Condición', 'Origen', ...(finance ? ['Costo'] : []), 'Venta', ...(finance ? ['Ganancia'] : []), 'Garantía hasta'],
+          ...list.map((u) => [dateTime(u.soldAt), pad(u.invoiceNumber, 6), u.customerName ?? '', u.productName, u.imei, u.condition, origin(u),
+            ...(finance ? [u.cost || 0] : []), u.salePrice || 0, ...(finance ? [(u.salePrice || 0) - (u.cost || 0)] : []), u.warrantyUntil ? dateOnly(u.warrantyUntil) : 'Sin garantía']),
+          ['Total', '', '', `${list.length} equipo(s)`, '', '', '', ...(finance ? [cost] : []), sales, ...(finance ? [sales - cost] : []), ''],
+        ]);
+        return (
+          <div className="card card-pad stack" style={{ marginBottom: 14, gap: 10 }}>
+            <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+              <Seg value={soldPeriod} onChange={setSoldPeriod} options={SOLD_PERIODS} />
+              <button className="btn sm" onClick={exportXls} disabled={list.length === 0}><Download size={15} />Excel</button>
+            </div>
+            <div className="row" style={{ flexWrap: 'wrap', gap: 20 }}>
+              <span><b style={{ fontSize: 18 }}>{list.length}</b> <span className="muted">equipo(s) vendido(s) · {label}</span></span>
+              <span><span className="muted">Vendido</span> <b>{money(sales)}</b></span>
+              {finance && <>
+                <span><span className="muted">Costo</span> <b>{money(cost)}</b></span>
+                <span><span className="muted">Ganancia</span> <b className={sales - cost < 0 ? 'red' : ''}>{money(sales - cost)}</b>{sales > 0 && <span className="faint"> ({Math.round(((sales - cost) / sales) * 100)}%)</span>}</span>
+              </>}
+            </div>
+          </div>
+        );
+      })()}
+      {manual > 0 && status === 'disponible' && (
         <div className="alert info" style={{ marginBottom: 14 }}><div>
           {manual} celular(es) disponibles entraron como «Inventario inicial» (sin compra): por eso no aparecen en Compras ni descontaron dinero de la caja.
           Lo que se compra a un proveedor va en <b>Compras → Nueva compra</b>, y lo que se le compra a un cliente, en <b>Compraventa usados</b>.
@@ -171,7 +209,7 @@ export function UnitsTab() {
                     <td className="nowrap">{dateOnly(u.createdAt)}</td>
                     <td className="num">{money(u.cost)}</td>
                     <td>{u.status === 'anulado' ? <Badge tone="red">Anulado</Badge> : u.status === 'remisionado' ? <Badge tone="warn">Remisionado · R-{pad(u.remissionNumber, 4)}</Badge> : <Badge tone={u.status === 'disponible' ? 'info' : ''}>{u.status === 'disponible' ? 'Disponible' : 'Vendido'}</Badge>}{u.status === 'anulado' && u.voidReason && <small>{u.voidReason}</small>}</td>
-                    <td>{u.status === 'vendido' ? <>{u.customerName}<small>Fact. {pad(u.invoiceNumber, 6)} · {dateOnly(u.soldAt)} · {money(u.salePrice)}</small></> : <span className="faint">—</span>}</td>
+                    <td>{u.status === 'vendido' ? <>{u.customerName}<small>Fact. {pad(u.invoiceNumber, 6)} · {dateOnly(u.soldAt)} · {money(u.salePrice)}{finance && <> · ganancia <b className={(u.salePrice || 0) - u.cost < 0 ? 'red' : ''}>{money((u.salePrice || 0) - u.cost)}</b></>}</small></> : <span className="faint">—</span>}</td>
                     <td>{u.status !== 'vendido' ? <span className="faint">{u.warrantyMonths} meses</span>
                       : u.warrantyUntil ? <Badge tone={warrantyActive(u) ? 'ok' : ''}>{warrantyActive(u) ? 'Vigente' : 'Vencida'} · {dateOnly(u.warrantyUntil)}</Badge>
                       : <span className="faint">Sin garantía</span>}</td>

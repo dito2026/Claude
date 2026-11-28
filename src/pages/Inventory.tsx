@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ArchiveRestore, ArrowDownToLine, Pencil, Plus, SlidersHorizontal, Smartphone, Trash2 } from 'lucide-react';
 import { useCollection } from '../data/hooks';
 import type { PhoneUnit, Product, ProductType, StockMovement } from '../lib/types';
@@ -36,7 +36,8 @@ export function Inventory() {
   const [registering, setRegistering] = useState<Product | null>(null);
   const availableUnits = (pid: string) => phoneUnits.filter((u) => u.productId === pid && u.status === 'disponible').length;
   const { can } = useAuth();
-  const [tab, setTab] = useState<'productos' | 'celulares' | 'kardex'>('productos');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<'productos' | 'celulares' | 'kardex'>(params.get('ver') === 'vendidos' ? 'celulares' : 'productos');
   const [q, setQ] = useState('');
   const [type, setType] = useState<ProductType | 'TODOS' | 'BAJO'>('TODOS');
   const [edit, setEdit] = useState<{ id?: string; data: ProductInput } | null>(null);
@@ -166,7 +167,7 @@ export function Inventory() {
         </>
       )}
 
-      {tab === 'celulares' && <UnitsTab />}
+      {tab === 'celulares' && <UnitsTab initialStatus={params.get('ver') === 'vendidos' ? 'vendido' : 'disponible'} />}
 
       {tab === 'kardex' && (
         <>
